@@ -53,11 +53,6 @@ jobs:
             git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" | sed '/-----BEGIN/,$d'
             echo '__EOF__'
           } >> "$GITHUB_ENV"
-      - run: node scripts/build-site.mjs
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-          retention-days: 1
       - name: GitHub Release (version record)
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -78,6 +73,12 @@ jobs:
             echo "delete release $t"
             gh release delete "$t" --yes
           done
+      # the site last: if the Pages artifact cannot be stored (quota), the release record above is still made
+      - run: node scripts/build-site.mjs
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+          retention-days: 1
 
   deploy:
     needs: build
