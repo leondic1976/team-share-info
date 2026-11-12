@@ -1,0 +1,110 @@
+import { BrowserWindow, Notification, screen } from 'electron'
+import { join } from 'node:path'
+import type { UrgentPayload } from '../shared/schemas/notices'
+import { getMainWindow, isQuitting, loadRenderer, secureWebContents, showMainWindow } from './windows/main-window'
+import { resourcePath } from './paths'
+
+/**
+ * Urgent popup windows (6.3) and Windows toast notifications.
+ * The popup is a separate always-on-top window that stays until the user confirms.
+ */
+const popups = new Map<string, BrowserWindow>()
+const payloads = new Map<string, UrgentPayload>()
+
+export function getPopupPayload(id: string): UrgentPayload | null {
+  return payloads.get(id) ?? null
+}
+
+export function showUrgentPopup(p: UrgentPayload): void {
+  payloads.set(p.id, p)
+  const existing = popups.get(p.id)
+  if (existing && !existing.isDestroyed()) {
+    existing.webContents.send('popup:refresh', { id: p.id })
+    existing.show()
+    existing.moveTop()
+    existing.focus()
+    existing.flashFrame(true)
+    return
+  }
+  const area = screen.getPrimaryDisplay().workArea
+  const width = 520
+  const height = 440
+  const offset = popups.size * 28
+  const win = new BrowserWindow({
+    width,
+    height,
+    x: Math.round(area.x + (area.width - width) / 2) + offset,
+    y: Math.round(area.y + (area.height - height) / 3) + offset,
+    minWidth: 400,
+    minHeight: 320,
+    alwaysOnTop: true,
+    skipTaskbar: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    title: `[긴급] ${p.title}`,
+    icon: resourcePath('icon.png'),
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: join(import.meta.dirname, '../preload/index.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false
+    }
+  })
+  win.setMenu(null)
+  // Above full-screen apps (13.13).
+  win.setAlwaysOnTop(true, 'screen-saver')
+  secureWebContents(win)
+  loadRenderer(win, `/popup/urgent/${p.id}`)
+  win.once('ready-to-show', () => {
+    win.show()
+    win.focus()
+    win.flashFrame(true)
+  })
+  // Urgent notices that require acknowledgement can only be closed by confirming (6.3).
+  win.on('close', (e) => {
+    if (payloads.get(p.id)?.requireAck && !isQuitting()) {
+      e.preventDefault()
+      win.webContents.send('popup:refresh', { id: p.id })
+    }
+  })
+  win.on('closed', () => {
+    popups.delete(p.id)
+  })
+  popups.set(p.id, win)
+  getMainWindow()?.flashFrame(true)
+}
+
+export function closeUrgentPopup(id: string): void {
+  const w = popups.get(id)
+  if (w && !w.isDestroyed()) w.destroy()
+  popups.delete(id)
+  payloads.delete(id)
+}
+
+export interface ToastOptions {
+  title: string
+  body: string
+  route?: string
+  silent?: boolean
+}
+
+/** Focus mode (6.12 ③) holds back normal toasts; the gate returns false to hold. */
+let toastGate: (o: ToastOptions) => boolean = () => true
+export function setToastGate(fn: (o: ToastOptions) => boolean): void {
+  toastGate = fn
+}
+
+export function showToast(opts: ToastOptions, force = false): void {
+  if (!force && !toastGate(opts)) return
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title: opts.title, body: opts.body, icon: resourcePath('icon.png'), silent: opts.silent ?? false })
+  n.on('click', () => {
+    showMainWindow()
+    if (opts.route) getMainWindow()?.webContents.send('app:navigate', { path: opts.route })
+  })
+  n.show()
+}

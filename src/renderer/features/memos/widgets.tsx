@@ -1,0 +1,165 @@
+import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { format } from 'date-fns'
+import { Globe, ListChecks, Plus, Star, Trash2 } from 'lucide-react'
+import type { TaskDto } from '@shared/schemas/work'
+import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import { Button } from '@renderer/components/ui/button'
+import { Input, Label } from '@renderer/components/ui/input'
+import { Dialog } from '@renderer/components/Dialog'
+import { api } from '@renderer/lib/api'
+import { invoke } from '@renderer/lib/bridge'
+import { startOfDay, DAY } from '@renderer/lib/dates'
+import { useConn } from '@renderer/app/conn-store'
+import { useSpace } from '@renderer/app/space-store'
+import { cn } from '@renderer/lib/utils'
+import { usePersonalEvents, useServerEvents } from '@renderer/features/calendar/calendar-api'
+import { SOURCE_LABEL, todayReminders } from '@renderer/features/alarms/useTeamAlarms'
+import { useFavorites } from './tools-api'
+
+interface Row {
+  key: string
+  at: number | null
+  kind: string
+  title: string
+  route: string
+  overdue?: boolean
+  done?: boolean
+}
+
+/** Home widget "오늘의 업무" (6.12 ③): events, deadlines, to-dos and alarms in time order. */
+export function TodayWorkWidget(): React.JSX.Element {
+  const navigate = useNavigate()
+  const online = useConn((s) => s.state === 'online')
+  const space = useSpace((s) => s.space)
+  const range = useMemo(() => {
+    const s = startOfDay(Date.now())
+    return { from: s, to: s + DAY }
+  }, [])
+  const server = useServerEvents(range, { groupId: space === 'team' ? undefined : space })
+  const personal = usePersonalEvents(range)
+  const tasks = useQuery({ queryKey: ['tasks', 'today-work'], queryFn: () => api.get<TaskDto[]>('/api/tasks', { filter: 'received', state: 'open', dueTo: range.to }), enabled: online })
+  const ptasks = useQuery({ queryKey: ['local', 'tasks', 'today-work'], queryFn: () => invoke('local:tasks.list', { includeDone: false }), networkMode: 'always' })
+  const reminders = useQuery({ queryKey: ['local', 'upcoming-today'], queryFn: todayReminders, networkMode: 'always', refetchInterval: 60_000 })
+
+  const rows: Row[] = [
+    ...(server.data ?? []).filter((e) => e.kind !== 'busy' && e.kind !== 'absence').map((e) => ({ key: `e${e.id}${e.key}`, at: e.allDay ? null : e.start, kind: '일정', title: e.title, route: '/calendar' })),
+    ...(personal.data ?? []).map((e) => ({ key: `p${e.id}${e.key}`, at: e.allDay ? null : e.start, kind: '개인 일정', title: e.title, route: '/calendar' })),
+    ...(tasks.data ?? []).filter((t) => t.state !== 'done').map((t) => ({ key: `t${t.id}`, at: t.dueAt, kind: '할 일 마감', title: t.title, route: '/tasks', overdue: (t.dueAt ?? 0) < range.from })),
+    ...(ptasks.data ?? []).filter((t) => t.dueAt !== null && t.dueAt < range.to).map((t) => ({ key: `pt${t.id}`, at: t.dueAt, kind: '개인 할 일', title: t.title, route: '/tasks', overdue: (t.dueAt ?? 0) < range.from })),
+    ...(reminders.data ?? []).filter((r) => r.source === 'alarms').map((r) => ({ key: r.key, at: r.fireAt, kind: SOURCE_LABEL.alarms, title: r.title, route: '/alarms', done: r.fired }))
+  ]
+  rows.sort((a, b) => Number(!!b.overdue) - Number(!!a.overdue) || (a.at ?? 0) - (b.at ?? 0))
+
+  return (
+    <Card data-testid="widget-todaywork">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5">
+          <ListChecks className="size-4" /> 오늘의 업무
+        </CardTitle>
+        <Button size="sm" variant="ghost" onClick={() => navigate('/alarms')}>
+          오늘 울릴 알림
+        </Button>
+      </CardHeader>
+      <CardContent className="max-h-80 space-y-0.5 overflow-y-auto p-2">
+        {!rows.length ? (
+          <p className="px-2 py-4 text-center text-sm text-muted-foreground">오늘 할 일과 일정이 없습니다.</p>
+        ) : (
+          rows.map((r) => (
+            <button key={r.key} className={cn('flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted', r.done && 'opacity-50')} onClick={() => navigate(r.route)}>
+              <span className={cn('w-12 shrink-0 text-xs text-muted-foreground', r.overdue && 'font-semibold text-urgent')}>{r.overdue ? '지남' : r.at === null ? '종일' : format(r.at, 'HH:mm')}</span>
+              <span className="w-20 shrink-0 truncate rounded bg-muted px-1.5 py-0.5 text-center text-xs">{r.kind}</span>
+              <span className="truncate">{r.title}</span>
+            </button>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+export function openFavorite(route: string, navigate: (p: string) => void): void {
+  if (/^https?:\/\//i.test(route)) void invoke('app:openExternal', { url: route })
+  else navigate(route)
+}
+
+/** Home widget: favorites (documents, posts, files, work sites). Stored on this PC. */
+export function FavoritesWidget(): React.JSX.Element {
+  const navigate = useNavigate()
+  const favs = useFavorites()
+  const [open, setOpen] = useState(false)
+  const [title, setTitle] = useState('')
+  const [url, setUrl] = useState('https://')
+  const validUrl = /^https?:\/\/[^\s]+\.[^\s]+/i.test(url)
+  return (
+    <Card data-testid="widget-favorites">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5">
+          <Star className="size-4" /> 즐겨찾기
+        </CardTitle>
+        <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
+          <Plus /> 업무 사이트
+        </Button>
+      </CardHeader>
+      <CardContent className="max-h-80 space-y-0.5 overflow-y-auto p-2">
+        {!favs.data?.length ? (
+          <p className="px-2 py-4 text-center text-sm text-muted-foreground">기록·게시글·자료·공지의 ☆를 누르면 여기에 모입니다.</p>
+        ) : (
+          favs.data.map((f) => (
+            <div key={f.id} className="group flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted">
+              {f.itemType === 'url' ? <Globe className="size-3.5 shrink-0 text-muted-foreground" /> : <Star className="size-3.5 shrink-0 fill-amber-400 text-amber-400" />}
+              <button className="min-w-0 flex-1 cursor-pointer truncate text-left" onClick={() => openFavorite(f.route, navigate)}>
+                {f.title}
+              </button>
+              <button
+                className="invisible cursor-pointer rounded p-1 hover:bg-background group-hover:visible"
+                aria-label={`${f.title} 즐겨찾기 해제`}
+                onClick={() => void invoke('local:favorites.toggle', { itemType: f.itemType, itemId: f.itemId, title: f.title, route: f.route })}
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          ))
+        )}
+      </CardContent>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="업무 사이트 추가"
+        footer={
+          <Button
+            disabled={!title.trim() || !validUrl}
+            onClick={() => {
+              void invoke('local:favorites.toggle', { itemType: 'url', itemId: url.trim(), title: title.trim(), route: url.trim() }).then(() => {
+                setOpen(false)
+                setTitle('')
+                setUrl('https://')
+              })
+            }}
+          >
+            추가
+          </Button>
+        }
+      >
+        <div className="space-y-2">
+          <Label htmlFor="fav-title">이름</Label>
+          <Input id="fav-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 전자결재" />
+          <Label htmlFor="fav-url">주소</Label>
+          <Input id="fav-url" value={url} onChange={(e) => setUrl(e.target.value)} />
+        </div>
+      </Dialog>
+    </Card>
+  )
+}
+
+/** ☆ toggle placed on documents, posts, files and notices. */
+export function FavoriteStar({ itemType, itemId, title, route }: { itemType: string; itemId: string; title: string; route: string }): React.JSX.Element {
+  const favs = useFavorites()
+  const on = !!favs.data?.some((f) => f.itemType === itemType && f.itemId === itemId)
+  return (
+    <Button size="icon-sm" variant="ghost" aria-label={on ? '즐겨찾기 해제' : '즐겨찾기'} aria-pressed={on} title={on ? '즐겨찾기 해제' : '즐겨찾기'} onClick={() => void invoke('local:favorites.toggle', { itemType, itemId, title, route })}>
+      <Star className={cn(on && 'fill-amber-400 text-amber-400')} />
+    </Button>
+  )
+}

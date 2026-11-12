@@ -1,0 +1,142 @@
+import Fastify, { type FastifyInstance } from 'fastify'
+import cors from '@fastify/cors'
+import type { Db } from '../node/sqlite'
+import type { ServerContext } from './context'
+import { recordError } from './context'
+import { AppError } from './errors'
+import { Hub } from './ws/hub'
+import { makeRequireAdmin, makeRequireAuth } from './auth'
+import { registerCoreRoutes } from './routes/core'
+import { registerAdminRoutes } from './routes/admin'
+import { registerUpdateRoutes } from './routes/updates'
+import { registerGroupRoutes } from './routes/groups'
+import { registerAttachmentRoutes } from './routes/attachments'
+import { registerNoticeRoutes, runNoticeJobs } from './routes/notices'
+import { registerEventRoutes } from './routes/events'
+import { registerWorklogRoutes } from './routes/worklogs'
+import { registerFileRoutes, runFileJobs } from './routes/files'
+import { registerChatRoutes, runChatJobs } from './routes/chat'
+import { registerCommentRoutes } from './routes/comments'
+import { registerTaskRoutes } from './routes/tasks'
+import { registerBoardRoutes } from './routes/boards'
+import { registerDirectoryRoutes } from './routes/directory'
+import { registerDocRoutes } from './routes/docs'
+import { registerToolRoutes, runAlarmJobs } from './routes/tools'
+import { registerLauncherRoutes } from './routes/launcher'
+import { leaveAllMeetings, registerMeetingRoutes } from './routes/meetings'
+import { registerBackupRoutes } from './routes/backup'
+import { runBackupJob } from './backup'
+
+export interface BuildOptions {
+  db: Db
+  dataDir: string
+  version: string
+  logger?: boolean
+  /** Run periodic jobs (scheduled publish, re-notify). Tests call the job functions directly. */
+  jobs?: boolean
+}
+
+export interface BuiltApp {
+  app: FastifyInstance
+  ctx: ServerContext
+}
+
+/** Build the Fastify app without listening, so tests can use app.inject(). */
+export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
+  const app = Fastify({
+    logger: opts.logger ?? false,
+    bodyLimit: 5 * 1024 * 1024,
+    trustProxy: false,
+    forceCloseConnections: true
+  })
+  // eslint-disable-next-line prefer-const
+  let ctx: ServerContext
+  const hub = new Hub(() => ctx)
+  ctx = { db: opts.db, dataDir: opts.dataDir, version: opts.version, startedAt: Date.now(), hub, recentErrors: [] }
+
+  // Header-based auth (no cookies), so allowing any origin is safe (13.3).
+  await app.register(cors, {
+    origin: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Protocol', 'X-Win-User', 'X-App-Version', 'X-Admin-Pin', 'X-File-Name', 'Range'],
+    exposedHeaders: ['Content-Disposition', 'Content-Range', 'Accept-Ranges']
+  })
+
+  app.setErrorHandler((err, req, reply) => {
+    if (err instanceof AppError) {
+      void reply.status(err.status).send({ error: { code: err.code, message: err.message } })
+      return
+    }
+    const e = err as { statusCode?: number; code?: string; message: string }
+    if (e.statusCode && e.statusCode < 500) {
+      void reply.status(e.statusCode).send({ error: { code: 'BAD_REQUEST', message: e.message } })
+      return
+    }
+    recordError(ctx, `${req.method} ${req.url}: ${e.message}`)
+    req.log.error(err)
+    void reply.status(500).send({ error: { code: 'INTERNAL', message: '서버 오류가 발생했습니다.' } })
+  })
+  app.setNotFoundHandler((_req, reply) => {
+    void reply.status(404).send({ error: { code: 'NOT_FOUND', message: '요청한 주소를 찾을 수 없습니다.' } })
+  })
+
+  const requireAuth = makeRequireAuth(ctx)
+  const requireAdmin = makeRequireAdmin(ctx)
+  registerCoreRoutes(app, ctx, requireAuth)
+  registerAdminRoutes(app, ctx, { requireAuth, requireAdmin })
+  registerUpdateRoutes(app, ctx, { requireAuth, requireAdmin })
+  registerGroupRoutes(app, ctx, { requireAuth, requireAdmin })
+  registerAttachmentRoutes(app, ctx, { requireAuth })
+  registerNoticeRoutes(app, ctx, { requireAuth })
+  registerEventRoutes(app, ctx, { requireAuth, requireAdmin })
+  registerWorklogRoutes(app, ctx, { requireAuth })
+  registerFileRoutes(app, ctx, { requireAuth })
+  registerChatRoutes(app, ctx, { requireAuth })
+  registerCommentRoutes(app, ctx, { requireAuth })
+  registerTaskRoutes(app, ctx, { requireAuth })
+  registerBoardRoutes(app, ctx, { requireAuth, requireAdmin })
+  registerDirectoryRoutes(app, ctx, { requireAuth, requireAdmin })
+  registerDocRoutes(app, ctx, { requireAuth, requireAdmin })
+  registerToolRoutes(app, ctx, { requireAuth })
+  registerLauncherRoutes(app, ctx, { requireAuth, requireAdmin })
+  registerMeetingRoutes(app, ctx, { requireAuth })
+  registerBackupRoutes(app, ctx, { requireAuth, requireAdmin })
+  hub.onMemberOffline = (memberId) => leaveAllMeetings(ctx, memberId)
+
+  const timers: NodeJS.Timeout[] = []
+  if (opts.jobs !== false) {
+    timers.push(
+      setInterval(() => {
+        try {
+          runNoticeJobs(ctx)
+          runAlarmJobs(ctx)
+        } catch (e) {
+          recordError(ctx, `notice jobs: ${(e as Error).message}`)
+        }
+      }, 15000),
+      setInterval(() => {
+        try {
+          runBackupJob(ctx)
+        } catch (e) {
+          recordError(ctx, `backup: ${(e as Error).message}`)
+        }
+      }, 60_000),
+      setInterval(() => {
+        try {
+          runFileJobs(ctx)
+          runChatJobs(ctx)
+        } catch (e) {
+          recordError(ctx, `file jobs: ${(e as Error).message}`)
+        }
+      }, 3600_000)
+    )
+  }
+
+  app.addHook('onClose', async () => {
+    for (const t of timers) clearInterval(t)
+    hub.close()
+  })
+  await app.ready()
+  hub.attach(app.server)
+  return { app, ctx }
+}

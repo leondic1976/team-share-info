@@ -1,0 +1,134 @@
+import { app, powerSaveBlocker, utilityProcess, type UtilityProcess } from 'electron'
+import { join } from 'node:path'
+import log from 'electron-log/main'
+import type { HostToServer, ServerStatus, ServerToHost } from '../shared/server-host'
+
+/**
+ * Runs the embedded server in an Electron utilityProcess, watches it and
+ * restarts it after crashes (13.3, M1-1).
+ */
+let child: UtilityProcess | null = null
+let config: { dataDir: string } | null = null
+let status: ServerStatus = { state: 'stopped', restarts: 0 }
+let stopping = false
+let blockerId: number | null = null
+const listeners = new Set<(s: ServerStatus) => void>()
+let readyWaiters: { failFast: boolean; resolve: (s: ServerStatus) => void }[] = []
+
+function setStatus(s: Partial<ServerStatus>): void {
+  status = { ...status, ...s }
+  for (const l of listeners) l(status)
+  const settled = status.state === 'running' || (status.state === 'error' && status.restarts > 10)
+  const failed = status.state === 'error'
+  if (settled || failed) {
+    const keep: typeof readyWaiters = []
+    for (const w of readyWaiters) {
+      if (settled || (failed && w.failFast)) w.resolve(status)
+      else keep.push(w)
+    }
+    readyWaiters = keep
+  }
+}
+
+export function onServerStatus(cb: (s: ServerStatus) => void): () => void {
+  listeners.add(cb)
+  return () => listeners.delete(cb)
+}
+
+export function serverStatus(): ServerStatus {
+  return status
+}
+
+function spawn(): void {
+  if (!config) return
+  const entry = join(import.meta.dirname, 'server.js')
+  setStatus({ state: 'starting', message: undefined })
+  const proc = utilityProcess.fork(entry, [], { serviceName: 'TeamHub Server', stdio: 'pipe' })
+  child = proc
+  proc.stdout?.on('data', (d: Buffer) => log.info(`[server] ${d.toString().trimEnd()}`))
+  proc.stderr?.on('data', (d: Buffer) => {
+    const text = d.toString().trimEnd()
+    if (!text.includes('ExperimentalWarning') && !text.includes('--trace-warnings')) log.warn(`[server] ${text}`)
+  })
+  proc.on('message', (msg: ServerToHost) => {
+    switch (msg.type) {
+      case 'ready':
+        log.info(`[server] listening on ${msg.bindIp}:${msg.port}`)
+        setStatus({ state: 'running', port: msg.port, restarts: 0 })
+        break
+      case 'error':
+        log.error(`[server] ${msg.message}`)
+        // Fatal start errors are followed by an exit and an automatic restart.
+        if (msg.fatal) setStatus({ state: 'error', message: msg.message })
+        break
+      case 'log':
+        log[msg.level](`[server] ${msg.message}`)
+        break
+      case 'restart-requested':
+        log.info(`[server] restart requested: ${msg.reason}`)
+        void restartServer()
+        break
+      case 'stopped':
+        break
+    }
+  })
+  proc.on('exit', (code) => {
+    child = null
+    if (stopping) {
+      setStatus({ state: 'stopped' })
+      return
+    }
+    log.error(`[server] exited unexpectedly (code ${code})`)
+    const restarts = status.restarts + 1
+    setStatus({ state: 'error', message: `서버 프로세스가 종료되었습니다(code ${code}). 다시 시작합니다.`, restarts })
+    if (restarts <= 10) setTimeout(spawn, Math.min(30000, 1000 * 2 ** Math.min(restarts, 5)))
+    else setStatus({ state: 'error', restarts })
+  })
+  const start: HostToServer = { type: 'start', dataDir: config.dataDir, version: app.getVersion() }
+  proc.postMessage(start)
+}
+
+export function startServer(dataDir: string, opts: { preventSleep: boolean; failFast?: boolean }): Promise<ServerStatus> {
+  config = { dataDir }
+  stopping = false
+  if (opts.preventSleep && blockerId === null) blockerId = powerSaveBlocker.start('prevent-app-suspension')
+  if (!opts.preventSleep && blockerId !== null) {
+    powerSaveBlocker.stop(blockerId)
+    blockerId = null
+  }
+  const p = new Promise<ServerStatus>((resolve) => readyWaiters.push({ failFast: !!opts.failFast, resolve }))
+  if (!child) spawn()
+  else setStatus({})
+  return p
+}
+
+export async function stopServer(): Promise<void> {
+  stopping = true
+  const proc = child
+  if (!proc) return
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      proc.kill()
+      resolve()
+    }, 3000)
+    proc.once('exit', () => {
+      clearTimeout(timer)
+      resolve()
+    })
+    const msg: HostToServer = { type: 'stop' }
+    proc.postMessage(msg)
+  })
+  child = null
+  if (blockerId !== null) {
+    powerSaveBlocker.stop(blockerId)
+    blockerId = null
+  }
+  setStatus({ state: 'stopped' })
+}
+
+export async function restartServer(): Promise<ServerStatus> {
+  const dataDir = config?.dataDir
+  await stopServer()
+  if (!dataDir) return status
+  return startServer(dataDir, { preventSleep: blockerId !== null })
+}

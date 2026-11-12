@@ -1,0 +1,93 @@
+import { z } from 'zod'
+import { DEFAULT_NOTICE_TEXT, DEFAULT_PORT, FEATURES, LIMITS } from '../constants'
+
+export const orgSettingsSchema = z.object({
+  orgName: z.string().trim().min(1, '기관/회사명을 입력하세요').max(60),
+  teamName: z.string().trim().min(1, '소속 팀명을 입력하세요').max(60),
+  noticeText: z.string().trim().min(1).max(200).default(DEFAULT_NOTICE_TEXT)
+})
+export type OrgSettings = z.infer<typeof orgSettingsSchema>
+
+const cidr = z
+  .string()
+  .trim()
+  .regex(/^(\d{1,3}\.){3}\d{1,3}\/(\d|[12]\d|3[0-2])$/, 'CIDR 형식(예: 192.168.10.0/24)')
+
+export const networkSettingsSchema = z.object({
+  bindIp: z.string().trim().default('0.0.0.0'),
+  advertisedIp: z.string().trim().default(''),
+  port: z.number().int().min(1024).max(65535).default(DEFAULT_PORT),
+  allowedCidrs: z.array(cidr).max(20).default([]),
+  approvalMode: z.enum(['manual', 'auto-in-cidr']).default('manual'),
+  reapproveOnIpChange: z.boolean().default(false)
+})
+export type NetworkSettings = z.infer<typeof networkSettingsSchema>
+
+export const storageSettingsSchema = z.object({
+  quotaBytes: z.number().int().positive().default(LIMITS.defaultQuotaBytes),
+  maxFileBytes: z.number().int().positive().default(LIMITS.defaultMaxFileBytes),
+  blockedExtensions: z.array(z.string().trim().toLowerCase()).default(['exe', 'bat', 'cmd', 'com', 'scr', 'ps1', 'vbs', 'js', 'msi'])
+})
+export type StorageSettings = z.infer<typeof storageSettingsSchema>
+
+export const backupSettingsSchema = z.object({
+  dir: z.string().trim().default(''),
+  time: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .default('12:30'),
+  keep: z.number().int().min(1).max(365).default(14)
+})
+export type BackupSettings = z.infer<typeof backupSettingsSchema>
+
+export const featureKeySchema = z.enum(FEATURES)
+
+export const opsSettingsSchema = z.object({
+  disabledFeatures: z.array(featureKeySchema).default([]),
+  preventSleep: z.boolean().default(true),
+  urgentSenders: z.enum(['admins', 'everyone']).default('admins'),
+  groupCreators: z.enum(['admins', 'everyone']).default('everyone'),
+  messageRetentionDays: z.number().int().min(30).max(3650).default(365)
+})
+export type OpsSettings = z.infer<typeof opsSettingsSchema>
+
+export const allSettingsSchema = z.object({
+  org: orgSettingsSchema,
+  network: networkSettingsSchema,
+  storage: storageSettingsSchema,
+  backup: backupSettingsSchema,
+  ops: opsSettingsSchema
+})
+export type AllSettings = z.infer<typeof allSettingsSchema>
+
+export const settingsPatchSchema = z.object({
+  org: orgSettingsSchema.partial().optional(),
+  network: networkSettingsSchema.partial().optional(),
+  storage: storageSettingsSchema.partial().optional(),
+  backup: backupSettingsSchema.partial().optional(),
+  ops: opsSettingsSchema.partial().optional(),
+  adminPin: z.union([z.string().regex(/^\d{4,8}$/, '숫자 4~8자리'), z.literal('')]).optional()
+})
+export type SettingsPatch = z.infer<typeof settingsPatchSchema>
+
+/** Input of the first-run server wizard (4장). */
+export const serverSetupSchema = z.object({
+  org: orgSettingsSchema,
+  admin: z.object({
+    name: z.string().trim().min(1, '이름을 입력하세요').max(40),
+    deptName: z.string().trim().max(40).default(''),
+    title: z.string().trim().max(40).default(''),
+    ext: z.string().trim().max(20).default('')
+  }),
+  adminPin: z.union([z.string().regex(/^\d{4,8}$/, '숫자 4~8자리'), z.literal('')]).default(''),
+  network: networkSettingsSchema,
+  dataDir: z.string().trim().min(3, '데이터 폴더를 지정하세요'),
+  storage: storageSettingsSchema,
+  backup: backupSettingsSchema,
+  ops: z.object({
+    autostart: z.boolean().default(true),
+    preventSleep: z.boolean().default(true),
+    registerFirewall: z.boolean().default(true)
+  })
+})
+export type ServerSetupInput = z.infer<typeof serverSetupSchema>

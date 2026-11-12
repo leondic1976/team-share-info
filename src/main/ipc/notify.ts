@@ -1,0 +1,34 @@
+import { BrowserWindow } from 'electron'
+import { z } from 'zod'
+import { handle } from './registry'
+import { closeUrgentPopup, getPopupPayload, showToast, showUrgentPopup } from '../notifications'
+import { getMainWindow, showMainWindow } from '../windows/main-window'
+
+const urgentSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  bodyHtml: z.string(),
+  authorName: z.string(),
+  requireAck: z.boolean(),
+  replyOptions: z.array(z.string()),
+  publishedAt: z.number(),
+  level: z.enum(['urgent', 'important', 'normal'])
+})
+
+export function registerNotifyIpc(): void {
+  handle('notify:urgent', urgentSchema, (p) => showUrgentPopup(p))
+  handle('notify:closeUrgent', z.object({ id: z.string() }), ({ id }) => {
+    closeUrgentPopup(id)
+    // Tell the main window so it can refresh notice state.
+    getMainWindow()?.webContents.send('popup:closed', { id })
+  })
+  handle('notify:toast', z.object({ title: z.string().max(200), body: z.string().max(500), route: z.string().max(200).optional() }), (o) => showToast(o))
+  handle('popup:get', z.object({ id: z.string() }), ({ id }) => getPopupPayload(id))
+  handle('window:showMain', z.object({ path: z.string().max(200).optional() }), ({ path }) => {
+    showMainWindow()
+    if (path) getMainWindow()?.webContents.send('app:navigate', { path })
+  })
+  handle('window:flash', z.object({ on: z.boolean() }), ({ on }, e) => {
+    BrowserWindow.fromWebContents(e.sender)?.flashFrame(on)
+  })
+}
