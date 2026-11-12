@@ -99,6 +99,7 @@ export function MeetingRoom({ id }: { id: string }): React.JSX.Element {
         if (c.memberId) {
           const r = new Room(id, c.memberId)
           room.current = r
+          ;(window as unknown as { __teamhubRoom?: Room }).__teamhubRoom = r // for diagnostics (E2E)
           r.subscribe(rerender)
           const n = await r.openMedia({ audio: true, video: m.mode === 'video' })
           if (n) setNote(n)

@@ -21,6 +21,8 @@ interface Peer {
   state: PeerView['state']
   level: number
   screenSenders: RTCRtpSender[]
+  /** candidates that arrived before the remote description */
+  pendingIce: RTCIceCandidateInit[]
 }
 
 export interface ChatLine {
@@ -51,6 +53,9 @@ export class Room {
   private analysers = new Map<string, AnalyserNode>()
   private levelTimer: number | null = null
   private offSignal: () => void
+  private closed = false
+  private lastOpts: { audio: boolean; video: boolean; audioId?: string; videoId?: string } = { audio: true, video: true }
+  private queue: Promise<void> = Promise.resolve()
 
   constructor(
     readonly meetingId: string,
@@ -58,7 +63,8 @@ export class Room {
   ) {
     this.offSignal = realtime.on('rtc.signal', (p) => {
       const m = p as { meetingId: string; from: string; data: RtcData }
-      if (m.meetingId === this.meetingId) void this.onSignal(m.from, m.data)
+      // Signals are handled strictly in order (an ICE candidate must not overtake its offer).
+      if (m.meetingId === this.meetingId) this.queue = this.queue.then(() => this.onSignal(m.from, m.data)).catch(() => undefined)
     })
     this.levelTimer = window.setInterval(() => this.measure(), 250)
   }
@@ -95,6 +101,8 @@ export class Room {
     }
     this.mic = opts.audio && this.local.getAudioTracks().length > 0
     this.cam = opts.video && this.local.getVideoTracks().length > 0
+    this.lastOpts = opts
+    for (const t of this.local.getTracks()) this.watchEnded(t)
     this.watchLevel('me', this.local)
     // replace tracks for existing connections (device change)
     for (const p of this.peers.values()) {
@@ -113,6 +121,36 @@ export class Room {
   /** Signals sent while the WebSocket is not open yet are kept and sent in order later. */
   private outbox: { to: string; data: RtcData | StateMsg }[] = []
   private flushTimer: number | null = null
+  /** A device track that ends by itself (camera taken by another app, unplugged) is re-acquired. */
+  private watchEnded(t: MediaStreamTrack): void {
+    t.addEventListener('ended', () => {
+      if (this.closed || !this.local.getTracks().includes(t)) return
+      window.setTimeout(() => void this.reacquire(t), 800)
+    })
+  }
+  private async reacquire(old: MediaStreamTrack): Promise<void> {
+    const kind = old.kind as 'audio' | 'video'
+    const id = kind === 'audio' ? this.lastOpts.audioId : this.lastOpts.videoId
+    let track: MediaStreamTrack | undefined
+    try {
+      const s = await navigator.mediaDevices.getUserMedia(kind === 'audio' ? { audio: id ? { deviceId: { exact: id } } : true } : { video: id ? { deviceId: { exact: id } } : { width: 640, height: 360 } })
+      track = kind === 'audio' ? s.getAudioTracks()[0] : s.getVideoTracks()[0]
+    } catch {
+      return
+    }
+    if (!track || this.closed) return track?.stop()
+    track.enabled = kind === 'audio' ? this.mic : this.cam
+    this.local.removeTrack(old)
+    this.local.addTrack(track)
+    this.watchEnded(track)
+    for (const p of this.peers.values()) {
+      const sender = p.pc.getSenders().find((x) => x.track === old) ?? p.pc.getSenders().find((x) => x.track?.kind === kind && x.track.readyState === 'ended' && !p.screenSenders.includes(x))
+      if (sender) await sender.replaceTrack(track).catch(() => undefined)
+    }
+    if (kind === 'audio') this.watchLevel('me', this.local)
+    this.emit()
+  }
+
   private send(to: string, data: RtcData | StateMsg): void {
     if (this.outbox.length || !realtime.send({ type: 'rtc', meetingId: this.meetingId, to, data })) {
       this.outbox.push({ to, data })
@@ -133,7 +171,7 @@ export class Room {
     const existing = this.peers.get(id)
     if (existing) return existing
     const pc = new RTCPeerConnection({ iceServers: [], bundlePolicy: 'max-bundle' })
-    const p: Peer = { id, pc, polite: this.me > id, makingOffer: false, ignoreOffer: false, streams: new Map(), state: { mic: false, cam: false, screen: false, hand: false, screenId: null }, level: 0, screenSenders: [] }
+    const p: Peer = { id, pc, polite: this.me > id, makingOffer: false, ignoreOffer: false, streams: new Map(), state: { mic: false, cam: false, screen: false, hand: false, screenId: null }, level: 0, screenSenders: [], pendingIce: [] }
     this.peers.set(id, p)
     pc.onnegotiationneeded = async () => {
       try {
@@ -217,11 +255,16 @@ export class Room {
         p.ignoreOffer = !p.polite && collision
         if (p.ignoreOffer) return
         await pc.setRemoteDescription({ type: data.kind, sdp: data.sdp })
+        for (const c of p.pendingIce.splice(0)) await pc.addIceCandidate(c).catch(() => undefined)
         if (data.kind === 'offer') {
           await pc.setLocalDescription()
           if (pc.localDescription) this.send(from, { kind: 'answer', sdp: pc.localDescription.sdp })
         }
       } else if (data.kind === 'ice') {
+        if (!pc.remoteDescription) {
+          p.pendingIce.push(data.candidate)
+          return
+        }
         try {
           await pc.addIceCandidate(data.candidate)
         } catch (e) {
@@ -344,6 +387,7 @@ export class Room {
   }
 
   close(): void {
+    this.closed = true
     this.offSignal()
     if (this.flushTimer) window.clearInterval(this.flushTimer)
     if (this.levelTimer) window.clearInterval(this.levelTimer)

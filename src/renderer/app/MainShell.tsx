@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
+import { OrgBadge } from './OrgBadge'
 import { StatusBar } from './StatusBar'
 import { MENU } from './menu'
 import { useConn } from './conn-store'
@@ -104,7 +105,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   const disabled = me?.disabledFeatures ?? []
   return (
     <div className="flex h-full flex-col">
-      <TopBar />
+      <TopBar left={<OrgBadge />} />
       <div className="flex min-h-0 flex-1">
         <Sidebar isAdmin={isAdmin} disabledFeatures={disabled} badges={{ notices: unread, chat: chatUnread.messages + chatUnread.notes, meetings: liveMeetings.data?.length ?? 0 }} />
         <main className="min-w-0 flex-1 overflow-hidden">

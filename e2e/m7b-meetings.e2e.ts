@@ -65,6 +65,15 @@ describe('M7-B meetings: 1:1 video call, screen sharing, chat (same PC, two prof
   it('both sides receive each other’s video', async () => {
     await expect.poll(() => roomA.getByTestId('tile-peer').count(), { timeout: 20000 }).toBe(1)
     await expect.poll(() => roomB.getByTestId('tile-peer').count(), { timeout: 20000 }).toBe(1)
+    const diag = (p: Page) =>
+      p.evaluate(() => {
+        const r = (window as unknown as { __teamhubRoom?: { peers: Map<string, { pc: RTCPeerConnection; streams: Map<string, MediaStream> }>; local: MediaStream } }).__teamhubRoom
+        if (!r) return 'no room'
+        return JSON.stringify({ local: r.local.getTracks().map((t) => `${t.kind}:${t.readyState}:${t.enabled}`), peers: [...r.peers.values()].map((x) => ({ c: x.pc.connectionState, i: x.pc.iceConnectionState, s: x.pc.signalingState, streams: [...x.streams.values()].map((m) => m.getTracks().map((t) => `${t.kind}:${t.readyState}:${t.muted}`)) })) })
+      })
+    await new Promise((r) => setTimeout(r, 8000))
+    console.log('[diag A]', await diag(roomA))
+    console.log('[diag B]', await diag(roomB))
     await expect.poll(() => playing(roomA, 'video-peer'), { timeout: 30000, interval: 1000 }).toBeGreaterThan(0)
     await expect.poll(() => playing(roomB, 'video-peer'), { timeout: 30000, interval: 1000 }).toBeGreaterThan(0)
     expect(await roomB.getByTestId('tile-peer').getAttribute('data-name')).toBe('서버관리자')

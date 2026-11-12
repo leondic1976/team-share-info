@@ -25,6 +25,8 @@ export interface BackupState {
   lastAt: number | null
   lastPath: string | null
   lastError: string | null
+  /** scheduled time of the last automatic run (so each day's slot runs once) */
+  lastAutoDue?: number | null
 }
 
 const MANIFEST = 'manifest.json'
@@ -124,7 +126,7 @@ export function runBackup(ctx: ServerContext, root = backupRoot(ctx.db, ctx.data
     const info = { createdAt: Date.now(), version: ctx.version, dbBytes: statSync(dbFile).size, fileCount: count, fileBytes: bytes }
     writeFileSync(join(folder, MANIFEST), JSON.stringify(info, null, 2))
     prune(root, getSection(ctx.db, 'backup').keep)
-    writeState(ctx.db, { lastAt: info.createdAt, lastPath: folder, lastError: null })
+    writeState(ctx.db, { ...readState(ctx.db), lastAt: info.createdAt, lastPath: folder, lastError: null })
     return { ...info, name, path: folder }
   } catch (e) {
     writeState(ctx.db, { ...readState(ctx.db), lastError: (e as Error).message })
@@ -137,9 +139,13 @@ export function runBackupJob(ctx: ServerContext, now = new Date()): BackupInfo |
   const s = getSection(ctx.db, 'backup')
   const [h, m] = s.time.split(':').map(Number)
   const due = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m).getTime()
-  const last = readState(ctx.db).lastAt ?? 0
-  if (now.getTime() < due || last >= due) return null
-  return runBackup(ctx)
+  const st = readState(ctx.db)
+  if (now.getTime() < due || (st.lastAutoDue ?? 0) >= due) return null
+  try {
+    return runBackup(ctx)
+  } finally {
+    writeState(ctx.db, { ...readState(ctx.db), lastAutoDue: due })
+  }
 }
 
 function isBackupFolder(p: string): boolean {

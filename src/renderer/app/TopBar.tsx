@@ -8,9 +8,9 @@ import type { ReactNode } from 'react'
 export function TopBar({ left, center, right }: { left?: ReactNode; center?: ReactNode; right?: ReactNode }): React.JSX.Element {
   return (
     <header className="drag flex h-[44px] shrink-0 items-center gap-3 border-b border-border pl-3 pr-[150px]">
-      <div className="no-drag flex items-center gap-2">
+      <div className="no-drag flex min-w-0 items-center gap-2">
         <img src="./icon.png" alt="" className="size-6" />
-        <span className="text-sm font-bold tracking-tight">TeamHub</span>
+        <span className="shrink-0 text-sm font-bold tracking-tight">TeamHub</span>
         {left}
       </div>
       <div className="flex flex-1 justify-center">
