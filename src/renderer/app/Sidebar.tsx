@@ -1,3 +1,6 @@
+import { useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { invoke, onMain } from '@renderer/lib/bridge'
 import { NavLink } from 'react-router-dom'
 import { ChevronsLeft, ChevronsRight, Lock } from 'lucide-react'
 import { MENU, BOTTOM_MENU, type MenuItem } from './menu'
@@ -25,6 +28,10 @@ export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps
   const { sidebarCollapsed: collapsed, update, menuOrder, hiddenMenus } = usePrefs()
   const items = orderedMenu(menuOrder, hiddenMenus, disabledFeatures)
   const bottom = BOTTOM_MENU.filter((m) => !m.adminOnly || isAdmin)
+  // Installed plugins appear under "확장 기능".
+  const qc = useQueryClient()
+  const plugins = useQuery({ queryKey: ['local', 'plugins'], queryFn: () => invoke('plugins:list'), networkMode: 'always' })
+  useEffect(() => onMain('plugins:changed', () => void qc.invalidateQueries({ queryKey: ['local', 'plugins'] })), [qc])
 
   const renderItem = (m: MenuItem): React.JSX.Element => {
     const Icon = m.icon
@@ -68,7 +75,25 @@ export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps
       )}
     >
       <SpaceSwitcher />
-      <div className="flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden p-2">{items.map(renderItem)}</div>
+      <div className="flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden p-2">
+        {items.map(renderItem)}
+        {(plugins.data ?? [])
+          .filter((p) => p.enabled && !hiddenMenus.includes('plugins'))
+          .map((p) => (
+            <NavLink
+              key={p.manifest.id}
+              to={`/plugins/${p.manifest.id}`}
+              title={p.manifest.name}
+              aria-label={p.manifest.name}
+              className={({ isActive }) => cn('flex h-8 items-center gap-2.5 rounded-md text-sm', collapsed ? 'px-2.5' : 'pl-5 pr-2.5', isActive ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground/70 hover:bg-muted')}
+            >
+              <span className="w-[1.15rem] shrink-0 text-center" aria-hidden>
+                {p.manifest.icon}
+              </span>
+              {!collapsed && <span className="truncate">{p.manifest.name}</span>}
+            </NavLink>
+          ))}
+      </div>
       <div className="space-y-0.5 border-t border-border p-2">
         {bottom.map(renderItem)}
         <button

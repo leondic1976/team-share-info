@@ -21,11 +21,15 @@ import { registerFilesIpc } from './ipc/files'
 import { startFileIndex } from './files'
 import { configureWebRtcSwitches, setupMediaPermissions } from './meetings'
 import { registerMeetingIpc } from './ipc/meetings'
+import { registerPluginIpc } from './ipc/plugins'
+import { linkToRoute, registerPluginScheme, servePlugins } from './plugins'
+import { getMainWindow } from './windows/main-window'
 import { restoreTransfers, stopWatches } from './transfer'
 import { onServerStatus, stopServer } from './server-host'
 
 setupPaths()
 configureWebRtcSwitches()
+registerPluginScheme()
 log.initialize()
 log.transports.file.resolvePathFn = () => userDataPath('logs', 'main.log')
 Object.assign(console, log.functions)
@@ -39,7 +43,16 @@ process.on('warning', (w) => {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => showMainWindow())
+  // teamhub:// links (download site "TeamHub에서 설치") arrive as arguments.
+  const openLink = (argv: string[]): void => {
+    const route = linkToRoute(argv)
+    if (route) getMainWindow()?.webContents.send('app:navigate', { path: route })
+  }
+  app.on('second-instance', (_e, argv) => {
+    showMainWindow()
+    openLink(argv)
+  })
+  // The teamhub:// scheme is registered by the installer (electron-builder protocols), not at run time.
 
   app.whenReady().then(() => {
     openLocalDb(userDataPath('local.db'))
@@ -53,6 +66,8 @@ if (!app.requestSingleInstanceLock()) {
     registerLauncherIpc()
     registerFilesIpc()
     registerMeetingIpc()
+    registerPluginIpc()
+    servePlugins()
     setupMediaPermissions()
     startScheduler()
     restoreTransfers()
@@ -67,6 +82,7 @@ if (!app.requestSingleInstanceLock()) {
     startFileIndex()
     localDb().notes.purgeOld()
     void autoStartServer()
+    getMainWindow()?.webContents.once('did-finish-load', () => setTimeout(() => openLink(process.argv), 1500))
     log.info(`TeamHub ${app.getVersion()} started (userData=${app.getPath('userData')})`)
   })
 

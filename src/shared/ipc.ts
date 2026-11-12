@@ -14,6 +14,7 @@ import type { FmEntry, FmPlace, FmResult, IndexRoot, SearchHit, SearchQuery } fr
 import type { BookmarkDto, BookmarkInput, CollectionDto, SmartFolderDto, SmartQuery, TagDto, TaggedItem } from './organize'
 import type { CellValue, DbProps, NoteDto, NoteKind, NoteRow, NoteTreeItem } from './notes'
 import type { MeetingInvitePayload } from './schemas/meetings'
+import type { CatalogPlugin, InstalledPlugin, PluginManifest } from './schemas/plugins'
 import type { AlarmDto, AlarmFirePayload, AlarmInput, AlarmPopupPayload, ClipboardItemDto, ClipboardSettings, FavoriteDto, FocusState, MemoDto, MemoInput, SnippetDto, UpcomingReminder } from './schemas/tools'
 
 export interface AppInfo {
@@ -278,6 +279,14 @@ export interface IpcMap {
   'meeting:invite': { req: MeetingInvitePayload; res: void }
   'meeting:inviteGet': { req: { id: string }; res: MeetingInvitePayload | null }
   'meeting:inviteClose': { req: { id: string; accept: boolean }; res: void }
+  'plugins:list': { req: void; res: InstalledPlugin[] }
+  'plugins:catalog': { req: void; res: { ok: boolean; error?: string; data?: CatalogPlugin[] } }
+  'plugins:installCatalog': { req: { id: string }; res: { ok: boolean; error?: string; data?: PluginManifest } }
+  'plugins:pickFile': { req: void; res: { ok: boolean; path?: string; manifest?: PluginManifest; error?: string } }
+  'plugins:inspectFile': { req: { path: string }; res: { ok: boolean; path?: string; manifest?: PluginManifest; error?: string } }
+  'plugins:installFile': { req: { path: string }; res: { ok: boolean; error?: string; data?: PluginManifest } }
+  'plugins:uninstall': { req: { id: string }; res: void }
+  'plugins:setEnabled': { req: { id: string; enabled: boolean }; res: void }
 }
 
 export interface UpdateState {
@@ -488,7 +497,15 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'meeting:border',
   'meeting:invite',
   'meeting:inviteGet',
-  'meeting:inviteClose'
+  'meeting:inviteClose',
+  'plugins:list',
+  'plugins:catalog',
+  'plugins:installCatalog',
+  'plugins:pickFile',
+  'plugins:inspectFile',
+  'plugins:installFile',
+  'plugins:uninstall',
+  'plugins:setEnabled'
 ]
 
 /** main -> renderer push events */
@@ -510,9 +527,10 @@ export interface MainEventMap {
   'launcher:changed': { count: number }
   'fsindex:changed': { scanning: boolean; count: number }
   'meeting:closed': { id: string }
+  'plugins:changed': { count: number }
 }
 export type MainEvent = keyof MainEventMap
-export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed']
+export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed']
 
 export interface TeamhubBridge {
   /** Absolute path of a dropped/selected File (Electron webUtils). */

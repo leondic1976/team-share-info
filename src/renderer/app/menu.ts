@@ -19,6 +19,7 @@ import {
   CircleHelp,
   FolderSearch,
   Library,
+  Puzzle,
   type LucideIcon
 } from 'lucide-react'
 import type { FeatureKey } from '@shared/constants'
@@ -50,7 +51,8 @@ export const MENU: MenuItem[] = [
   { key: 'notes', label: '지식 노트', path: '/notes', icon: Library, personal: true },
   { key: 'myfiles', label: '내 파일', path: '/myfiles', icon: FolderSearch, personal: true },
   { key: 'launcher', label: '런처', path: '/launcher', icon: Rocket, personal: true },
-  { key: 'utilities', label: '유틸리티', path: '/utilities', icon: Gauge, personal: true }
+  { key: 'utilities', label: '유틸리티', path: '/utilities', icon: Gauge, personal: true },
+  { key: 'plugins', label: '확장 기능', path: '/plugins', icon: Puzzle, personal: true }
 ]
 
 export const BOTTOM_MENU: MenuItem[] = [

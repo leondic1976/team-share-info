@@ -41,6 +41,9 @@ import { UtilitiesPage } from '@renderer/features/utilities/UtilitiesPage'
 import { LauncherPage } from '@renderer/features/launcher/LauncherPage'
 import { MyFilesPage } from '@renderer/features/myfiles/MyFilesPage'
 import { NotesPage } from '@renderer/features/notes/NotesPage'
+import { PluginsPage } from '@renderer/features/plugins/PluginsPage'
+import { PluginHost } from '@renderer/features/plugins/PluginHost'
+import { usePluginInvites } from '@renderer/features/plugins/usePluginInvites'
 import { MeetingsPage, useLiveMeetings, useMeetingAlerts } from '@renderer/features/meetings/MeetingsPage'
 
 const CHECK_UPDATE_MS = 30 * 60 * 1000
@@ -61,6 +64,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   useTeamAlarms()
   useMorningSummary()
   useMeetingAlerts()
+  usePluginInvites()
   const liveMeetings = useLiveMeetings()
 
   useEffect(() => {
@@ -137,8 +141,10 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/myfiles/:tab" element={<MyFilesPage />} />
             <Route path="/notes" element={<NotesPage />} />
             <Route path="/meetings" element={<MeetingsPage />} />
+            <Route path="/plugins" element={<PluginsPage />} />
+            <Route path="/plugins/:id" element={<PluginHost />} />
             <Route path="/notes/:id" element={<NotesPage />} />
-            {MENU.filter((m) => !['home', 'notices', 'calendar', 'diary', 'files', 'chat', 'tasks', 'boards', 'directory', 'docs', 'memos', 'alarms', 'utilities', 'launcher', 'myfiles', 'notes', 'meetings'].includes(m.key)).map((m) => (
+            {MENU.filter((m) => !['home', 'notices', 'calendar', 'diary', 'files', 'chat', 'tasks', 'boards', 'directory', 'docs', 'memos', 'alarms', 'utilities', 'launcher', 'myfiles', 'notes', 'meetings', 'plugins'].includes(m.key)).map((m) => (
               <Route key={m.key} path={`${m.path}/*`} element={<ComingSoon title={m.label} />} />
             ))}
             <Route path="/settings" element={<SettingsPage extra={<ConnectionCard onReset={onReset} />} />} />

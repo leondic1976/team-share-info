@@ -19,6 +19,10 @@ win:
       arch: [x64]
   icon: resources/icon.ico
   executableName: TeamHub
+# teamhub:// links from the download site open the app (registered by the installer).
+protocols:
+  - name: TeamHub
+    schemes: [teamhub]
 nsis:
   oneClick: true
   perMachine: false

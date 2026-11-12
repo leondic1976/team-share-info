@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TeamHub 확장 기능</title>
+    <meta name="description" content="TeamHub에 기능을 더하는 확장 기능 모음" />
+    <style>
+      :root {
+        --bg: #f8fafc;
+        --card: #ffffff;
+        --fg: #0f172a;
+        --muted: #64748b;
+        --line: #e2e8f0;
+        --primary: #2563eb;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b1220;
+          --card: #111a2e;
+          --fg: #e2e8f0;
+          --muted: #94a3b8;
+          --line: #1e293b;
+          --primary: #3b82f6;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.6 'Pretendard', 'Malgun Gothic', system-ui, sans-serif;
+      }
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 40px 16px 64px;
+      }
+      a {
+        color: var(--primary);
+      }
+      h1 {
+        font-size: 26px;
+        margin: 0 0 4px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 16px;
+        margin-top: 24px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .icon {
+        font-size: 40px;
+        line-height: 1;
+      }
+      .card h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+      .card ul {
+        margin: 0;
+        padding-left: 18px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .perms {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .btn {
+        display: inline-block;
+        background: var(--primary);
+        color: #fff;
+        padding: 10px 16px;
+        border-radius: 8px;
+        font-weight: 700;
+        text-decoration: none;
+        text-align: center;
+      }
+      .links {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: auto;
+      }
+      .note {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin-top: 24px;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p><a href="./">← TeamHub 다운로드</a></p>
+      <h1>🧩 확장 기능</h1>
+      <p class="muted">TeamHub에 기능을 더합니다. 이 페이지에서는 고르기만 하고, <b>설치는 TeamHub 프로그램 안에서</b> 권한을 확인한 뒤 진행됩니다.</p>
+      <div class="grid" id="cards"><p class="muted">불러오는 중…</p></div>
+      <div class="note">
+        <b>설치 방법</b>
+        <ol>
+          <li><b>TeamHub에서 설치</b>를 누르면 TeamHub가 열리고 설치 확인 창이 나옵니다(TeamHub가 설치되어 있어야 합니다).</li>
+          <li>또는 TeamHub의 <b>확장 기능</b> 메뉴 → 확장 기능 모음에서 <b>설치</b>를 누릅니다.</li>
+          <li>폐쇄망: <b>파일 받기</b>로 .thplugin 파일을 받아 옮긴 뒤, TeamHub <b>확장 기능 → 파일에서 설치</b>.</li>
+        </ol>
+        <p class="muted">확장 기능은 격리된 화면에서 실행되어 인터넷·파일·다른 프로그램에 직접 접근하지 못하고, 설치할 때 보여 주는 권한 안에서만 동작합니다.</p>
+      </div>
+    </main>
+    <script>
+      const PERM = { members: '팀원 이름 보기', storage: '이 PC에 데이터 저장', rooms: '팀원과 함께하는 방', notify: '알림', clipboard: '클립보드 복사' }
+      const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+      fetch('plugins/catalog.json', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((list) => {
+          const box = document.getElementById('cards')
+          box.innerHTML = list.length
+            ? list
+                .map(
+                  (p) => `<article class="card" data-plugin="${esc(p.id)}">
+                    <div class="icon">${esc(p.icon)}</div>
+                    <h2>${esc(p.name)} <span class="muted" style="font-size:13px;font-weight:400">v${esc(p.version)}</span></h2>
+                    <p>${esc(p.description)}</p>
+                    ${p.features && p.features.length ? `<ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+                    <p class="perms">권한: ${p.permissions.map((x) => esc(PERM[x] || x)).join(', ') || '없음'}</p>
+                    <div class="links">
+                      <a class="btn" href="teamhub://plugins/install?id=${encodeURIComponent(p.id)}">TeamHub에서 설치</a>
+                      <a href="plugins/${encodeURIComponent(p.file)}" download>파일 받기 (${(p.size / 1024).toFixed(0)} KB)</a>
+                    </div>
+                  </article>`
+                )
+                .join('')
+            : '<p class="muted">아직 확장 기능이 없습니다.</p>'
+        })
+    </script>
+  </body>
+</html>

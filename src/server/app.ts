@@ -25,6 +25,7 @@ import { registerToolRoutes, runAlarmJobs } from './routes/tools'
 import { registerLauncherRoutes } from './routes/launcher'
 import { leaveAllMeetings, registerMeetingRoutes } from './routes/meetings'
 import { registerBackupRoutes } from './routes/backup'
+import { registerPluginRoutes } from './routes/plugins'
 import { runBackupJob } from './backup'
 
 export interface BuildOptions {
@@ -101,6 +102,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   registerLauncherRoutes(app, ctx, { requireAuth, requireAdmin })
   registerMeetingRoutes(app, ctx, { requireAuth })
   registerBackupRoutes(app, ctx, { requireAuth, requireAdmin })
+  registerPluginRoutes(app, ctx, { requireAuth })
   hub.onMemberOffline = (memberId) => leaveAllMeetings(ctx, memberId)
 
   const timers: NodeJS.Timeout[] = []

@@ -15,6 +15,11 @@ export default tseslint.config(
     }
   },
   {
+    // Plugins are plain browser scripts running in a sandboxed frame.
+    files: ['plugins/**/*.js'],
+    languageOptions: { sourceType: 'script', globals: { ...globals.browser } }
+  },
+  {
     files: ['src/renderer/**/*.{ts,tsx}'],
     languageOptions: { globals: { ...globals.browser } },
     plugins: { 'react-hooks': reactHooks },

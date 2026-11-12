@@ -1,0 +1,59 @@
+# TeamHub 확장 기능 만들기
+
+확장 기능은 `plugins/<id>/` 폴더 하나입니다. `main`에 올리면 GitHub Actions(`site.yml`)가
+`.thplugin` 파일과 `plugins/catalog.json`을 만들어 다운로드 사이트의 확장 기능 페이지에 카드로 올립니다.
+설치는 TeamHub 프로그램 안에서만 합니다.
+
+```
+plugins/<id>/
+  manifest.json   이름·버전·권한
+  index.html      시작 화면 (manifest.entry)
+  *.js *.css …    html, js, css, json, 이미지, 글꼴, 소리만 허용
+```
+
+## manifest.json
+```json
+{
+  "id": "ladder",
+  "name": "사다리타기",
+  "version": "1.0.0",             // 바꾸면 설치한 PC에 '업데이트'가 표시됨
+  "description": "…",
+  "author": "TeamHub",
+  "icon": "🪜",                   // 이모지
+  "entry": "index.html",
+  "permissions": ["members", "storage", "rooms", "notify", "clipboard"],
+  "minAppVersion": "0.1.0",
+  "features": ["사이트 카드에 보일 기능 소개"]
+}
+```
+
+## 실행 환경
+- 격리된 iframe(`sandbox="allow-scripts allow-forms allow-modals"`), 주소 `teamhub-plugin://<id>/`.
+- CSP: 외부 연결 금지(`connect-src 'none'`), 자기 파일만 불러옴. 외부 CDN·글꼴을 쓰지 말고 파일을 함께 넣으세요.
+- `<script src="__sdk.js"></script>`를 넣으면 `window.TeamHub`를 씁니다.
+- `TeamHub.theme`(`light`/`dark`), `TeamHub.room`(초대 알림으로 열렸을 때의 방 ID).
+
+## API (`await TeamHub.call(이름, 값)`)
+| 이름 | 권한 | 설명 |
+|---|---|---|
+| `me` | — | `{ id, name, deptName }` |
+| `members` | members | 활동 중인 팀원 `[{ id, name, deptName, title, presence }]` |
+| `storage.get` / `storage.set` / `storage.keys` | storage | 이 PC에만 저장(`{ key }`, `{ key, value }`), 값 512KB까지 |
+| `rooms.list` / `rooms.get` | rooms | 내가 볼 수 있는 이 확장 기능의 방 |
+| `rooms.create` | rooms | `{ title, scope, shared }` — scope는 `{ type: 'team'|'group'|'members', groupIds, memberIds }`. 지정한 사람에게 초대 알림 |
+| `rooms.setShared` | rooms | 방을 만든 사람만: `{ roomId, shared, version?, close? }` (version이 다르면 실패 → 새로 읽고 다시) |
+| `rooms.setEntry` | rooms | 각자 자기 값만: `{ roomId, value }` (null이면 지움) |
+| `rooms.delete` | rooms | 만든 사람·관리자 |
+| `notify` | notify | `{ title, body }` Windows 알림 |
+| `clipboard.write` | clipboard | `{ text }` |
+| `openRoute` | — | `{ room }` 이 확장 기능의 다른 방 열기 |
+
+이벤트: `TeamHub.on('room.changed', ({ roomId, deleted }) => …)` — 다른 팀원이 방을 바꾸면 옵니다.
+
+방 데이터는 서버에 저장되고(공유 데이터·참여 데이터 각 64KB까지) 공개 범위 밖의 팀원은 볼 수 없습니다.
+규칙(누가 이기는지 등)은 확장 기능 화면에서 계산합니다. 서버는 내용을 해석하지 않습니다.
+
+## 시험
+- 묶기: `pnpm plugins:pack` → `release/plugins/<id>-<버전>.thplugin`
+- TeamHub **확장 기능 → 파일에서 설치**로 넣어 봅니다.
+- 순수 로직은 `tests/plugins/`에 단위 테스트를 둡니다(예: `ladder.test.ts`).

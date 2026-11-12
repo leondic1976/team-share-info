@@ -625,5 +625,31 @@ CREATE TABLE meeting_participants (
   PRIMARY KEY (meeting_id, member_id)
 );
 `
+  },
+  {
+    id: 11,
+    name: 'plugin-rooms',
+    sql: `
+CREATE TABLE plugin_rooms (
+  id TEXT PRIMARY KEY,
+  plugin_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  scope_type TEXT NOT NULL CHECK (scope_type IN ('team','group','members')),
+  shared TEXT NOT NULL DEFAULT '{}',
+  closed INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_by TEXT NOT NULL REFERENCES members(id),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX idx_plugin_rooms ON plugin_rooms(plugin_id, updated_at);
+CREATE TABLE plugin_entries (
+  room_id TEXT NOT NULL REFERENCES plugin_rooms(id) ON DELETE CASCADE,
+  member_id TEXT NOT NULL REFERENCES members(id),
+  value TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (room_id, member_id)
+);
+`
   }
 ]
