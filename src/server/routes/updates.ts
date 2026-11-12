@@ -90,6 +90,27 @@ export function writeLatestYml(ctx: ServerContext): ReleaseRow | undefined {
   return latest
 }
 
+/**
+ * Only the newest version is kept (user decision): after a new release is registered,
+ * every other release record and its installer file are removed.
+ */
+export function pruneOtherReleases(ctx: ServerContext, keepId: string): string[] {
+  const keep = ctx.db.get<ReleaseRow>('SELECT * FROM app_releases WHERE id = ?', [keepId])
+  const old = ctx.db.all<ReleaseRow>('SELECT * FROM app_releases WHERE id <> ?', [keepId])
+  const dir = updatesDir(ctx)
+  for (const r of old) {
+    if (!keep || r.file_name !== keep.file_name) rmSync(join(dir, r.file_name), { force: true })
+    ctx.db.run('DELETE FROM app_releases WHERE id = ?', [r.id])
+  }
+  return old.map((r) => r.version)
+}
+
+/** A version lower than (or equal to) the one already offered cannot be registered. */
+function assertNewer(ctx: ServerContext, version: string): void {
+  const cur = latestRelease(ctx) ?? ctx.db.all<ReleaseRow>('SELECT * FROM app_releases').sort((a, b) => compareVersions(b.version, a.version))[0]
+  if (cur && compareVersions(version, cur.version) < 0) throw badRequest(`지금 등록된 v${cur.version}보다 낮은 버전은 올릴 수 없습니다(최신 버전만 보관).`)
+}
+
 function safeFileName(name: string): string {
   const base = name.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '-').trim()
   if (!/\.exe$/i.test(base)) throw badRequest('설치 파일(.exe)만 올릴 수 있습니다.')
@@ -142,6 +163,7 @@ export function registerUpdateRoutes(
         req.query
       )
       if (ctx.db.get('SELECT id FROM app_releases WHERE version = ?', [q.version])) throw conflict('같은 버전이 이미 등록되어 있습니다.')
+      assertNewer(ctx, q.version)
       const fileName = safeFileName(q.fileName)
       const dir = updatesDir(ctx)
       const tmp = join(dir, `${fileName}.${newId()}.part`)
@@ -174,6 +196,7 @@ export function registerUpdateRoutes(
          VALUES (?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, ?, ?)`,
         [id, q.version, q.notes, fileName, hash.digest('base64'), size, q.mandatory === '1' || q.mandatory === 'true' ? 1 : 0, t, req.member.id, t, t]
       )
+      pruneOtherReleases(ctx, id)
       const latest = writeLatestYml(ctx)
       logActivity(ctx, req, 'release.publish', { type: 'release', id }, { version: q.version, size })
       if (latest) ctx.hub.broadcast('update.available', { version: latest.version, mandatory: !!latest.mandatory })
@@ -201,6 +224,7 @@ export function registerUpdateRoutes(
     const sha512 = field('sha512')
     if (!SEMVER_RE.test(version) || !fileName || !sha512) throw badRequest('다운로드 사이트의 버전 정보가 올바르지 않습니다.')
     if (ctx.db.get('SELECT id FROM app_releases WHERE version = ?', [version])) return ok({ version, imported: false, message: '이미 등록된 버전입니다.' })
+    assertNewer(ctx, version)
     let notes = ''
     try {
       const list = (await (await fetch(`${base}releases.json`, { signal: AbortSignal.timeout(10000) })).json()) as { version: string; notes?: string }[]
@@ -242,6 +266,7 @@ export function registerUpdateRoutes(
        VALUES (?, ?, ?, ?, ?, ?, 0, 'published', ?, ?, ?, ?)`,
       [id, version, notes, fileName, digest, size, t, req.member.id, t, t]
     )
+    pruneOtherReleases(ctx, id)
     const latest = writeLatestYml(ctx)
     logActivity(ctx, req, 'release.import', { type: 'release', id }, { version, size })
     if (latest) ctx.hub.broadcast('update.available', { version: latest.version, mandatory: !!latest.mandatory })

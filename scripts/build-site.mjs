@@ -3,7 +3,7 @@
 //   _site/releases.json       version history (previous history + this release)
 //   _site/updates/latest.yml  electron-updater feed (generic provider)
 //   _site/updates/TeamHub-Setup-x.y.z.exe(.blockmap)
-// Only the newest installer is hosted; older versions stay in the GitHub Releases of the repo.
+// Only the newest installer is hosted (older versions are not kept anywhere; releases.json keeps the notes).
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'

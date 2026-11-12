@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { createTestServer, type TestServer } from './helpers'
@@ -199,7 +199,7 @@ describe('update distribution (M1-6)', () => {
     expect(dup.statusCode).toBe(409)
   })
 
-  it('keeps latest.yml on the highest published version and supports withdraw', async () => {
+  it('keeps only the newest version: older files and records are removed, lower versions are refused, withdraw empties the feed', async () => {
     s = await createTestServer()
     const body = Buffer.alloc(1024 * 1024 + 10, 1)
     const up = (v: string) =>
@@ -209,16 +209,18 @@ describe('update distribution (M1-6)', () => {
         headers: { 'content-type': 'application/octet-stream' },
         payload: body
       })
-    await up('0.10.0')
-    const r2 = await up('0.9.0')
-    let yml = readFileSync(join(s.dataDir, 'updates', 'latest.yml'), 'utf8')
-    expect(yml).toContain('version: 0.10.0')
+    expect((await up('0.9.0')).statusCode).toBe(200)
+    expect((await up('0.10.0')).statusCode).toBe(200)
+    expect(existsSync(join(s.dataDir, 'updates', 'TeamHub-Setup-0.9.0.exe'))).toBe(false)
+    expect(existsSync(join(s.dataDir, 'updates', 'TeamHub-Setup-0.10.0.exe'))).toBe(true)
     const list = (await s.req(s.admin, { method: 'GET', url: '/api/admin/releases' })).json().data
-    const v10 = list.find((x: { version: string }) => x.version === '0.10.0')
-    await s.req(s.admin, { method: 'PATCH', url: `/api/admin/releases/${v10.id}`, payload: { state: 'withdrawn' } })
-    yml = readFileSync(join(s.dataDir, 'updates', 'latest.yml'), 'utf8')
-    expect(yml).toContain('version: 0.9.0')
-    expect(r2.statusCode).toBe(200)
+    expect(list.map((x: { version: string }) => x.version)).toEqual(['0.10.0'])
+    const lower = await up('0.9.5')
+    expect(lower.statusCode).toBe(400)
+    expect(existsSync(join(s.dataDir, 'updates', 'TeamHub-Setup-0.9.5.exe'))).toBe(false)
+    expect(readFileSync(join(s.dataDir, 'updates', 'latest.yml'), 'utf8')).toContain('version: 0.10.0')
+    await s.req(s.admin, { method: 'PATCH', url: `/api/admin/releases/${list[0].id}`, payload: { state: 'withdrawn' } })
+    expect(existsSync(join(s.dataDir, 'updates', 'latest.yml'))).toBe(false)
   })
 
   it('rejects non-exe uploads and non-admins', async () => {
