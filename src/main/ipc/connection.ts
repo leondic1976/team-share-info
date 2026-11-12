@@ -29,7 +29,7 @@ import { initializeServer } from '../../server/setup'
 import { registerFirewallRules } from '../firewall'
 import { setAutostart } from '../autostart'
 import { discoverServers } from '../discovery'
-import { checkForUpdates, getUpdateState, installUpdate } from '../updater'
+import { checkForUpdates, downloadUpdate, getUpdateState, installUpdate, setUpdateSettings, updateSettings } from '../updater'
 
 export function registerConnectionIpc(): void {
   handle('conn:get', null, () => {
@@ -162,7 +162,10 @@ export function registerConnectionIpc(): void {
 
   handle('discovery:scan', null, () => discoverServers())
 
-  handle('update:check', z.object({ serverUrl: z.string().url() }), ({ serverUrl }) => checkForUpdates(serverUrl))
+  handle('update:check', z.object({ serverUrl: z.string().url().nullable(), manual: z.boolean().optional() }), ({ serverUrl, manual }) => checkForUpdates(serverUrl, manual))
+  handle('update:download', null, () => downloadUpdate())
+  handle('update:getSettings', null, () => updateSettings())
+  handle('update:setSettings', z.object({ auto: z.boolean(), source: z.enum(['auto', 'web', 'lan']) }), (s) => setUpdateSettings(s))
   handle('update:getState', null, () => getUpdateState())
   handle('update:install', null, () => installUpdate())
 }

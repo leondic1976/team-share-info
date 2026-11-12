@@ -82,14 +82,16 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
     return () => realtime.stop()
   }, [])
 
-  // Check the LAN update feed on connect, on update.available, and every 30 minutes (M1-6).
+  // Check for updates (web site first, then the server PC) at start, on connect,
+  // on update.available, and every 30 minutes (M1-6).
   useEffect(() => {
-    if (!serverUrl) return
-    const check = (): void => void invoke('update:check', { serverUrl }).catch(() => undefined)
+    const check = (): void => void invoke('update:check', { serverUrl: serverUrl ?? null }).catch(() => undefined)
+    const first = window.setTimeout(check, 20_000)
     const offEvt = realtime.on('update.available', check)
     const offRe = realtime.onReconnect(check)
     const t = window.setInterval(check, CHECK_UPDATE_MS)
     return () => {
+      window.clearTimeout(first)
       offEvt()
       offRe()
       window.clearInterval(t)

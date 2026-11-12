@@ -29,7 +29,8 @@ nsis:
   createDesktopShortcut: always
   createStartMenuShortcut: true
   deleteAppDataOnUninstall: false
-# The feed URL is replaced at runtime with the server PC address (8.2).
+# Default feed: the public download site. At runtime the app may switch to the
+# server PC feed (closed networks), see src/main/updater.ts.
 publish:
   - provider: generic
-    url: http://127.0.0.1:47800/updates/
+    url: https://leondic1976.github.io/team-share-info/updates/

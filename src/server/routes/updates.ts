@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { Transform, type Readable } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
 import { z } from 'zod'
 import { newId } from '../../node/sqlite'
 import { compareVersions, SEMVER_RE } from '../../shared/semver'
@@ -13,6 +13,7 @@ import { badRequest, conflict, notFound } from '../errors'
 import { parse, ok } from '../validate'
 import { logActivity } from '../activity'
 import { getSection } from '../settings'
+import { DOWNLOAD_SITE } from '../../shared/constants'
 
 export interface ReleaseRow {
   id: string
@@ -178,6 +179,73 @@ export function registerUpdateRoutes(
       if (latest) ctx.hub.broadcast('update.available', { version: latest.version, mandatory: !!latest.mandatory })
       return ok(toDto(ctx.db.get<ReleaseRow>('SELECT * FROM app_releases WHERE id = ?', [id])!))
     })
+  })
+
+  /**
+   * Closed networks: the server PC (if it has internet) fetches the newest release from
+   * the public download site and offers it to members over the LAN.
+   */
+  app.post('/api/admin/releases/import-web', pre, async (req) => {
+    const base = (parse(z.object({ site: z.string().url().optional() }), req.body ?? {}).site ?? DOWNLOAD_SITE).replace(/\/?$/, '/')
+    let yml: string
+    try {
+      const r = await fetch(`${base}updates/latest.yml`, { signal: AbortSignal.timeout(15000), cache: 'no-store' })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      yml = await r.text()
+    } catch (e) {
+      throw badRequest(`다운로드 사이트에 연결하지 못했습니다(${(e as Error).message}). 이 PC의 인터넷 연결을 확인하세요.`)
+    }
+    const field = (k: string): string => (new RegExp(String.raw`^${k}:\s*'?([^'\n]+)'?\s*$`, 'm').exec(yml)?.[1] ?? '').trim()
+    const version = field('version')
+    const fileName = safeFileName(field('path'))
+    const sha512 = field('sha512')
+    if (!SEMVER_RE.test(version) || !fileName || !sha512) throw badRequest('다운로드 사이트의 버전 정보가 올바르지 않습니다.')
+    if (ctx.db.get('SELECT id FROM app_releases WHERE version = ?', [version])) return ok({ version, imported: false, message: '이미 등록된 버전입니다.' })
+    let notes = ''
+    try {
+      const list = (await (await fetch(`${base}releases.json`, { signal: AbortSignal.timeout(10000) })).json()) as { version: string; notes?: string }[]
+      notes = (list.find((x) => x.version === version)?.notes ?? '').slice(0, 4000)
+    } catch {
+      // notes are optional
+    }
+    const dir = updatesDir(ctx)
+    const tmp = join(dir, `${fileName}.${newId()}.part`)
+    const hash = createHash('sha512')
+    let size = 0
+    const counter = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        hash.update(chunk)
+        size += chunk.length
+        cb(null, chunk)
+      }
+    })
+    try {
+      const r = await fetch(`${base}updates/${encodeURIComponent(fileName)}`, { signal: AbortSignal.timeout(30 * 60_000) })
+      if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`)
+      await pipeline(Readable.fromWeb(r.body as never), counter, createWriteStream(tmp))
+    } catch (e) {
+      rmSync(tmp, { force: true })
+      throw badRequest(`설치 파일을 받지 못했습니다(${(e as Error).message}).`)
+    }
+    const digest = hash.digest('base64')
+    if (digest !== sha512) {
+      rmSync(tmp, { force: true })
+      throw badRequest('받은 설치 파일이 손상되었습니다(해시 불일치). 다시 시도하세요.')
+    }
+    const target = join(dir, fileName)
+    if (existsSync(target)) rmSync(target, { force: true })
+    renameSync(tmp, target)
+    const id = newId()
+    const t = Date.now()
+    ctx.db.run(
+      `INSERT INTO app_releases (id, version, notes, file_name, sha512, size, mandatory, state, published_at, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, 'published', ?, ?, ?, ?)`,
+      [id, version, notes, fileName, digest, size, t, req.member.id, t, t]
+    )
+    const latest = writeLatestYml(ctx)
+    logActivity(ctx, req, 'release.import', { type: 'release', id }, { version, size })
+    if (latest) ctx.hub.broadcast('update.available', { version: latest.version, mandatory: !!latest.mandatory })
+    return ok({ version, imported: true })
   })
 
   app.patch('/api/admin/releases/:id', pre, async (req) => {

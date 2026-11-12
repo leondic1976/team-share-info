@@ -121,7 +121,10 @@ export interface IpcMap {
   'server:inspectBackup': { req: { dir: string }; res: { ok: boolean; error?: string; orgName?: string; teamName?: string; createdAt?: number; admins?: { id: string; name: string }[] } }
   'server:importBackup': { req: { dir: string; dataDir: string; adminId: string }; res: SetupResult }
   'discovery:scan': { req: void; res: DiscoveredServer[] }
-  'update:check': { req: { serverUrl: string }; res: UpdateState }
+  'update:check': { req: { serverUrl: string | null; manual?: boolean }; res: UpdateState }
+  'update:download': { req: void; res: UpdateState }
+  'update:getSettings': { req: void; res: UpdateSettings }
+  'update:setSettings': { req: UpdateSettings; res: void }
   'update:getState': { req: void; res: UpdateState }
   'update:install': { req: void; res: void }
   'notify:urgent': { req: UrgentPayload; res: void }
@@ -282,6 +285,15 @@ export interface UpdateState {
   version?: string
   percent?: number
   message?: string
+  /** where the update comes from: the public download site or the TeamHub server PC */
+  source?: 'web' | 'lan'
+  checkedAt?: number
+}
+
+/** auto: web site first, then the server PC (closed networks). */
+export interface UpdateSettings {
+  auto: boolean
+  source: 'auto' | 'web' | 'lan'
 }
 
 export type IpcChannel = keyof IpcMap
@@ -321,6 +333,9 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'server:importBackup',
   'discovery:scan',
   'update:check',
+  'update:download',
+  'update:getSettings',
+  'update:setSettings',
   'update:getState',
   'update:install',
   'notify:urgent',

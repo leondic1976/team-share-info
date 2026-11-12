@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TeamHub 다운로드</title>
+    <meta name="description" content="TeamHub — 사내망 팀 정보 공유 프로그램 다운로드와 버전 기록" />
+    <style>
+      :root {
+        --bg: #f8fafc;
+        --card: #ffffff;
+        --fg: #0f172a;
+        --muted: #64748b;
+        --line: #e2e8f0;
+        --primary: #2563eb;
+        --primary-fg: #ffffff;
+        --notice-bg: #fef3c7;
+        --notice-fg: #78350f;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b1220;
+          --card: #111a2e;
+          --fg: #e2e8f0;
+          --muted: #94a3b8;
+          --line: #1e293b;
+          --primary: #3b82f6;
+          --notice-bg: #3b2f0b;
+          --notice-fg: #fde68a;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.6 'Pretendard', 'Malgun Gothic', system-ui, sans-serif;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 40px 16px 64px;
+      }
+      h1 {
+        font-size: 28px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 18px;
+        margin: 32px 0 12px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 20px;
+      }
+      .dl {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 16px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--primary);
+        color: var(--primary-fg);
+        padding: 12px 20px;
+        border-radius: 8px;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      .btn[aria-disabled='true'] {
+        opacity: 0.5;
+        pointer-events: none;
+      }
+      ol {
+        padding-left: 20px;
+      }
+      li + li {
+        margin-top: 4px;
+      }
+      code {
+        background: var(--line);
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 13px;
+        word-break: break-all;
+      }
+      .release {
+        border-top: 1px solid var(--line);
+        padding: 12px 0;
+      }
+      .release:first-child {
+        border-top: 0;
+        padding-top: 0;
+      }
+      .release h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .notes {
+        white-space: pre-wrap;
+        margin: 6px 0 0;
+      }
+      .notice {
+        background: var(--notice-bg);
+        color: var(--notice-fg);
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-top: 24px;
+        font-size: 14px;
+      }
+      footer {
+        margin-top: 40px;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>TeamHub</h1>
+      <p class="muted">한 대의 PC가 서버가 되어 팀원끼리 공지·일정·자료·메신저·회의를 나누는 Windows 업무 프로그램입니다.</p>
+
+      <div class="card dl">
+        <a id="dl" class="btn" href="#" aria-disabled="true">⬇ 내려받는 중…</a>
+        <div>
+          <div id="ver"><b>최신 버전</b> 확인 중</div>
+          <div class="muted" id="meta">Windows 10·11 (64비트) · 관리자 권한 없이 설치</div>
+        </div>
+      </div>
+
+      <h2>설치</h2>
+      <div class="card">
+        <ol>
+          <li>위 단추로 <b>TeamHub-Setup-버전.exe</b>를 내려받아 실행합니다. 설치는 자동으로 끝나고 TeamHub가 열립니다.</li>
+          <li>Windows가 "PC 보호" 창을 띄우면 <b>추가 정보 → 실행</b>을 누릅니다(서명되지 않은 사내 배포 프로그램이라 나오는 안내입니다).</li>
+          <li>팀에서 처음 쓰는 경우: 한 사람이 <b>이 PC를 서버로 사용</b>을 고르고 설정을 마칩니다.</li>
+          <li>다른 팀원: <b>서버에 접속</b>을 고르고 서버 PC 주소(예: <code>192.168.0.10:47800</code>)를 넣어 사용 신청 → 관리자가 승인하면 바로 씁니다.</li>
+        </ol>
+        <p class="muted">폐쇄망(인터넷이 안 되는 업무망)에서는 이 파일을 USB 등으로 옮겨 설치하거나, 서버 PC 주소 뒤에 <code>/download</code>를 붙인 사내 다운로드 페이지에서 받습니다.</p>
+      </div>
+
+      <h2>업데이트</h2>
+      <div class="card">
+        <ul>
+          <li><b>자동 업데이트</b>: 설치된 TeamHub가 이 사이트(인터넷) 또는 서버 PC(폐쇄망)에서 새 버전을 확인해 내려받고, 다음에 켤 때 설치합니다.</li>
+          <li><b>수동 업데이트</b>: TeamHub <b>설정 → 업데이트 → 지금 확인</b>. 자동 업데이트를 끄면 직접 내려받기·설치를 누릅니다.</li>
+          <li>폐쇄망: 관리자가 <b>관리 → 업데이트 배포 → 다운로드 사이트에서 가져오기</b>(서버 PC에 인터넷 필요) 또는 이 사이트에서 받은 설치 파일을 직접 올립니다.</li>
+        </ul>
+      </div>
+
+      <h2>버전 기록</h2>
+      <div class="card" id="releases"><p class="muted">불러오는 중…</p></div>
+
+      <p class="notice">⚠ TeamHub는 가벼운 업무 정보 공유용입니다. 중요 보안 내용, 개인정보, 비공개 정보는 공유할 수 없습니다.</p>
+      <footer class="muted">TeamHub · 설치 파일 무결성: 받은 파일의 SHA-512가 <code>updates/latest.yml</code>의 값과 같아야 합니다.</footer>
+    </main>
+    <script>
+      const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+      const mb = (n) => (n / 1024 / 1024).toFixed(1) + ' MB'
+      fetch('releases.json', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((list) => {
+          const box = document.getElementById('releases')
+          if (!list.length) {
+            box.innerHTML = '<p class="muted">아직 배포된 버전이 없습니다.</p>'
+            document.getElementById('dl').textContent = '준비 중'
+            return
+          }
+          const cur = list[0]
+          const a = document.getElementById('dl')
+          a.href = 'updates/' + encodeURIComponent(cur.file)
+          a.textContent = '⬇ TeamHub ' + cur.version + ' 내려받기'
+          a.removeAttribute('aria-disabled')
+          document.getElementById('ver').innerHTML = '<b>최신 버전 v' + esc(cur.version) + '</b> · ' + esc(cur.date)
+          document.getElementById('meta').textContent = 'Windows 10·11 (64비트) · ' + mb(cur.size) + ' · 관리자 권한 없이 설치'
+          box.innerHTML = list
+            .map(
+              (r, i) =>
+                '<div class="release"><h3>v' + esc(r.version) + (i === 0 ? ' (최신)' : '') + ' <span class="muted">· ' + esc(r.date) + '</span></h3>' +
+                (r.notes ? '<p class="notes">' + esc(r.notes) + '</p>' : '') +
+                '</div>'
+            )
+            .join('')
+        })
+        .catch(() => {
+          document.getElementById('releases').innerHTML = '<p class="muted">버전 기록을 불러오지 못했습니다.</p>'
+        })
+    </script>
+  </body>
+</html>

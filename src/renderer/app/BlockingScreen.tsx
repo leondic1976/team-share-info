@@ -13,7 +13,7 @@ export function BlockingScreen({ onReset }: { onReset: () => void }): React.JSX.
 
   useEffect(() => {
     if (state !== 'update-required' || !serverUrl) return
-    void invoke('update:check', { serverUrl }).then(setUpd)
+    void invoke('update:check', { serverUrl, manual: true }).then(setUpd)
     return onMain('update:state', setUpd)
   }, [state, serverUrl])
 

@@ -64,3 +64,7 @@ export const FEATURES = [
   'notes'
 ] as const
 export type FeatureKey = (typeof FEATURES)[number]
+
+/** Public download site (GitHub Pages) and its update feed (electron-updater generic provider). */
+export const DOWNLOAD_SITE = 'https://leondic1976.github.io/team-share-info/'
+export const WEB_UPDATE_FEED = `${DOWNLOAD_SITE}updates/`

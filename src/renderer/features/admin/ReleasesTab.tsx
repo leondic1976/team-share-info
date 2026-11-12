@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/u
 import { Field } from '@renderer/features/setup/SetupFrame'
 import { useSession } from '@renderer/app/session-store'
 import type { DeviceDto } from '@shared/schemas/auth'
+import { DOWNLOAD_SITE } from '@shared/constants'
 import { compareVersions } from '@shared/semver'
 
 interface ReleaseDto {
@@ -93,8 +94,28 @@ export function ReleasesTab(): React.JSX.Element {
   const versionCount = new Map<string, number>()
   for (const d of devices.data ?? []) if (!d.revokedAt) versionCount.set(d.appVersion ?? '알 수 없음', (versionCount.get(d.appVersion ?? '알 수 없음') ?? 0) + 1)
 
+  const importWeb = useMutation({
+    mutationFn: () => api.post<{ version: string; imported: boolean; message?: string }>('/api/admin/releases/import-web', {}),
+    onSuccess: (r) => {
+      setMsg({ ok: true, text: r.imported ? `다운로드 사이트에서 v${r.version}을(를) 가져와 팀원에게 배포했습니다.` : `v${r.version}: ${r.message ?? ''}` })
+      void qc.invalidateQueries({ queryKey: ['admin', 'releases'] })
+    },
+    onError: (e) => setMsg({ ok: false, text: errorMessage(e) })
+  })
+
   return (
     <div className="max-w-3xl space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>다운로드 사이트에서 가져오기</CardTitle>
+          <Button size="sm" variant="outline" disabled={importWeb.isPending} onClick={() => importWeb.mutate()}>
+            {importWeb.isPending ? '가져오는 중…' : '최신 버전 가져오기'}
+          </Button>
+        </CardHeader>
+        <CardContent className="text-xs text-muted-foreground">
+          인터넷이 되는 PC는 다운로드 사이트({DOWNLOAD_SITE})에서 직접 업데이트됩니다. 팀원 PC가 폐쇄망이면 이 서버 PC가 최신 버전을 가져와 사내에 배포합니다(서버 PC에 인터넷 연결 필요). 인터넷이 없으면 다운로드 사이트에서 받은 설치 파일을 아래에서 직접 올리세요.
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>새 버전 배포</CardTitle>

@@ -1,0 +1,76 @@
+# Release: push a tag vX.Y.Z (pnpm release ...) -> build the Windows installer,
+# publish the download site + update feed on GitHub Pages, keep a GitHub Release record.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git fetch --tags --force
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Check tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          v=$(node -p "require('./package.json').version")
+          [ "v$v" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} != package.json v$v"; exit 1; }
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm exec electron-builder --win --publish never
+      - name: Release notes from the tag message
+        shell: bash
+        run: |
+          {
+            echo 'RELEASE_NOTES<<__EOF__'
+            git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" | sed '/-----BEGIN/,$d'
+            echo '__EOF__'
+          } >> "$GITHUB_ENV"
+      - run: node scripts/build-site.mjs
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: GitHub Release (version record)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          printf '%s' "$RELEASE_NOTES" > notes.txt
+          gh release create "${GITHUB_REF_NAME}" "release/TeamHub-Setup-$v.exe" release/latest.yml --title "TeamHub ${GITHUB_REF_NAME}" --notes-file notes.txt ||           gh release upload "${GITHUB_REF_NAME}" "release/TeamHub-Setup-$v.exe" release/latest.yml --clobber
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

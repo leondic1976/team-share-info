@@ -10,6 +10,8 @@ and work only on the next unchecked step in 13.12. Record progress in 13.14.
 - `pnpm typecheck && pnpm lint && pnpm test` — must pass before a step is done
 - `pnpm e2e` — build + Playwright-driven Electron E2E (`e2e/*.e2e.ts`)
 - `pnpm dist` — NSIS installer into `release/` (only when a step asks for it)
+- `pnpm release <patch|minor|major> "notes"` — bump, tag, push → GitHub Actions builds and publishes
+  the download site + update feed (GitHub Pages: https://leondic1976.github.io/team-share-info/)
 
 ## Layout
 - `src/main` main process (windows, tray, IPC, local DB, launcher, utilities)
