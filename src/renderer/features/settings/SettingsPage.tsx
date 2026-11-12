@@ -10,6 +10,7 @@ import { useSession } from '@renderer/app/session-store'
 import { invoke } from '@renderer/lib/bridge'
 import { cn } from '@renderer/lib/utils'
 import { UpdateCard } from './UpdateCard'
+import { MenuCard } from './MenuCard'
 import type { ReactNode } from 'react'
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }): React.JSX.Element {
@@ -155,6 +156,8 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
         </Card>
 
         {extra}
+
+        <MenuCard />
 
         <UpdateCard />
 

@@ -4,6 +4,7 @@ import { useSession } from './app/session-store'
 import { useConn } from './app/conn-store'
 import { invoke, localKv } from './lib/bridge'
 import { queryClient } from './lib/query-client'
+import { startQueryPersist } from './lib/query-persist'
 import type { Hello, MeDto } from '@shared/schemas/auth'
 import { Loading } from './components/EmptyState'
 import { FirstRun } from './features/setup/FirstRun'
@@ -35,6 +36,8 @@ export function App(): React.JSX.Element {
     const [hello, me] = await Promise.all([localKv.get<Hello>('lastHello'), localKv.get<MeDto>('lastMe')])
     if (hello && info.serverUrl) queryClient.setQueryData(['hello', info.serverUrl], hello)
     if (me && info.memberId === me.id) useConn.getState().setMe(me)
+    // Last results seen are shown at once, also while the server is unreachable (13.11).
+    if (info.deviceId && info.memberId) await startQueryPersist(info.memberId)
     if (info.deviceId) setScreen('main')
     else if (info.pending) setScreen('pending')
     else setScreen('first-run')

@@ -278,7 +278,9 @@ export function registerUpdateRoutes(
 <style>body{font-family:'Malgun Gothic',system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;color:#0f172a;line-height:1.6}
 h1{font-size:24px}.btn{display:inline-block;background:#2563eb;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600}
 .muted{color:#64748b;font-size:13px;word-break:break-all}.box{background:#f1f5f9;border-radius:8px;padding:12px 16px}
-.warn{background:#fef3c7;color:#92400e;border-radius:8px;padding:10px 14px;font-weight:600}</style></head><body>
+.warn{background:#fef3c7;color:#92400e;border-radius:8px;padding:10px 14px;font-weight:600}
+table.form{border-collapse:collapse;width:100%;font-size:14px}table.form th,table.form td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left;vertical-align:top}table.form th{background:#f1f5f9;width:30%}code{word-break:break-all}
+@media print{.btn,button{display:none}}</style></head><body>
 <h1>TeamHub 설치 안내</h1>
 <p>${escapeHtml([org.orgName, org.teamName].filter(Boolean).join(' '))} 팀 정보공유 프로그램입니다.</p>
 ${link}
@@ -289,8 +291,22 @@ ${link}
 <li>이름·부서를 입력해 사용 신청을 하면, 관리자가 승인한 뒤 바로 사용할 수 있습니다.</li></ol>
 <div class="box">서버 주소: <b id="addr"></b></div>
 <p class="warn">⚠ ${escapeHtml(org.noticeText)}</p>
-<p class="muted">보안 프로그램이 설치를 막는 경우, 관리자에게 예외 등록을 요청하세요(프로그램 이름: TeamHub, 사용 포트: TCP ${getSection(ctx.db, 'network').port}, UDP 47801).</p>
-<script>document.getElementById('addr').textContent=location.host</script>
+<h2>보안 프로그램이 막을 때 — 예외 등록 요청서</h2>
+<p class="muted">백신·PC 보안 프로그램이 설치나 실행을 막으면 아래 내용을 전산(보안) 담당자에게 보내 예외 등록을 요청하세요. <button onclick="window.print()">인쇄·PDF</button></p>
+<table class="form"><tbody>
+<tr><th>요청 부서·요청자</th><td>${escapeHtml(org.teamName || '')} / (이름·연락처)</td></tr>
+<tr><th>프로그램 이름</th><td>TeamHub (팀 정보 공유 업무 보조 프로그램)</td></tr>
+<tr><th>버전 · 설치 파일</th><td>${r ? `${escapeHtml(r.version)} · ${escapeHtml(r.file_name)}` : '(관리자 확인)'}</td></tr>
+<tr><th>설치 파일 해시(SHA-512, base64)</th><td><code>${r ? escapeHtml(r.sha512) : ''}</code></td></tr>
+<tr><th>실행 파일 위치</th><td><code>%LOCALAPPDATA%&#92;Programs&#92;TeamHub&#92;TeamHub.exe</code> (사용자별 설치, 관리자 권한 불필요)</td></tr>
+<tr><th>데이터 위치</th><td><code>%APPDATA%&#92;TeamHub</code> (개인 데이터), 서버 PC는 설정한 데이터 폴더</td></tr>
+<tr><th>사용 통신</th><td>서버 PC ↔ 팀원 PC: <b>TCP ${getSection(ctx.db, 'network').port}</b>(HTTP·WebSocket, 사내망) · 서버 찾기: <b>UDP 47801</b>(같은 네트워크 방송) · 화상회의: PC끼리 직접 <b>UDP</b>(WebRTC, 사내망 안, 외부 서버 없음)</td></tr>
+<tr><th>서버 PC</th><td>${'<span id="addr2"></span>'} — 받는 방향 TCP ${getSection(ctx.db, 'network').port}, UDP 47801 허용 필요</td></tr>
+<tr><th>인터넷 사용(선택)</th><td>업데이트·확장 기능 목록 확인: https://leondic1976.github.io/team-share-info/ (폐쇄망은 사용 안 함)</td></tr>
+<tr><th>코드 서명</th><td>없음(사내 배포용). 위 해시로 파일이 같은지 확인할 수 있습니다.</td></tr>
+<tr><th>개인정보 처리</th><td>개인 메모·다이어리·보안 점검 결과는 각자 PC에만 저장, 서버로 보내지 않음. 중요 보안 내용·개인정보·비공개 정보는 공유 금지 안내를 상시 표시.</td></tr>
+</tbody></table>
+<script>document.getElementById('addr').textContent=location.host;document.getElementById('addr2').textContent=location.hostname</script>
 </body></html>`
     return reply.type('text/html; charset=utf-8').header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'").send(html)
   })

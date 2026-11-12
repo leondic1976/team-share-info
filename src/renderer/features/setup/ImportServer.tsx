@@ -40,7 +40,7 @@ export function ImportServer({ onBack, onDone }: { onBack: () => void; onDone: (
     return (
       <SetupFrame title="서버를 옮겨 왔습니다" subtitle="이 PC가 새 서버가 되었습니다.">
         <div className="space-y-3 text-sm" data-testid="import-done">
-          <p>팀원들의 TeamHub는 같은 네트워크에서 새 서버를 자동으로 찾습니다. 찾지 못하면 팀원에게 아래 주소를 알려 주세요(설정 → 연결 → 서버 주소 변경).</p>
+          <p>팀원들의 TeamHub는 같은 네트워크에서 새 서버를 자동으로 찾습니다. 찾지 못하면 팀원에게 아래 주소를 알려 주세요(설정 → 서버 연결 → 서버 주소 고치고 적용).</p>
           {result.addresses?.map((a) => (
             <p key={a} className="font-mono font-semibold" data-testid="server-address">
               {a}

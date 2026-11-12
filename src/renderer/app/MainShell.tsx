@@ -1,8 +1,11 @@
-import { useEffect } from 'react'
+import { Loading } from '@renderer/components/EmptyState'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { OrgBadge } from './OrgBadge'
+import { SearchPalette } from './SearchPalette'
+import { Search } from 'lucide-react'
 import { StatusBar } from './StatusBar'
 import { MENU } from './menu'
 import { useConn } from './conn-store'
@@ -10,41 +13,43 @@ import { realtime } from '@renderer/lib/realtime'
 import { useMe } from '@renderer/lib/queries'
 import { invoke } from '@renderer/lib/bridge'
 import { ComingSoon } from '@renderer/features/placeholder/ComingSoon'
-import { SettingsPage } from '@renderer/features/settings/SettingsPage'
 import { ConnectionCard } from '@renderer/features/settings/ConnectionCard'
-import { AdminPage } from '@renderer/features/admin/AdminPage'
 import { HomePage } from '@renderer/features/home/HomePage'
 import { BlockingScreen } from './BlockingScreen'
-import { HelpPage } from '@renderer/features/help/HelpPage'
 import { NoticesPage } from '@renderer/features/notices/NoticesPage'
-import { GroupsPage } from '@renderer/features/groups/GroupsPage'
 import { useNoticeAlerts, useUnreadNotices } from '@renderer/features/notices/useNoticeAlerts'
 import { useSpace } from './space-store'
-import { CalendarPage } from '@renderer/features/calendar/CalendarPage'
 import { useEventReminders } from '@renderer/features/calendar/useEventReminders'
-import { DiaryPage } from '@renderer/features/diary/DiaryPage'
-import { FilesPage } from '@renderer/features/files/FilesPage'
 import { TransferPanel } from '@renderer/features/files/TransferPanel'
-import { ChatPage } from '@renderer/features/chat/ChatPage'
 import { useChatAlerts, useChatUnread } from '@renderer/features/chat/useChatAlerts'
-import { TasksPage } from '@renderer/features/tasks/TasksPage'
 import { useTaskAlerts } from '@renderer/features/tasks/useTaskAlerts'
-import { BoardsPage } from '@renderer/features/boards/BoardsPage'
-import { DirectoryPage } from '@renderer/features/directory/DirectoryPage'
-import { DocsPage } from '@renderer/features/docs/DocsPage'
 import { useDocAlerts } from '@renderer/features/docs/useDocAlerts'
-import { MemosPage } from '@renderer/features/memos/MemosPage'
 import { CaptureDialog } from '@renderer/features/memos/CaptureDialog'
-import { AlarmsPage } from '@renderer/features/alarms/AlarmsPage'
 import { useMorningSummary, useTeamAlarms } from '@renderer/features/alarms/useTeamAlarms'
-import { UtilitiesPage } from '@renderer/features/utilities/UtilitiesPage'
-import { LauncherPage } from '@renderer/features/launcher/LauncherPage'
-import { MyFilesPage } from '@renderer/features/myfiles/MyFilesPage'
-import { NotesPage } from '@renderer/features/notes/NotesPage'
-import { PluginsPage } from '@renderer/features/plugins/PluginsPage'
-import { PluginHost } from '@renderer/features/plugins/PluginHost'
 import { usePluginInvites } from '@renderer/features/plugins/usePluginInvites'
 import { MeetingsPage, useLiveMeetings, useMeetingAlerts } from '@renderer/features/meetings/MeetingsPage'
+
+// Pages load when first opened: a smaller start-up bundle and less idle memory (11장).
+const SettingsPage = lazy(() => import('@renderer/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
+const AdminPage = lazy(() => import('@renderer/features/admin/AdminPage').then((m) => ({ default: m.AdminPage })))
+const HelpPage = lazy(() => import('@renderer/features/help/HelpPage').then((m) => ({ default: m.HelpPage })))
+const GroupsPage = lazy(() => import('@renderer/features/groups/GroupsPage').then((m) => ({ default: m.GroupsPage })))
+const CalendarPage = lazy(() => import('@renderer/features/calendar/CalendarPage').then((m) => ({ default: m.CalendarPage })))
+const DiaryPage = lazy(() => import('@renderer/features/diary/DiaryPage').then((m) => ({ default: m.DiaryPage })))
+const FilesPage = lazy(() => import('@renderer/features/files/FilesPage').then((m) => ({ default: m.FilesPage })))
+const ChatPage = lazy(() => import('@renderer/features/chat/ChatPage').then((m) => ({ default: m.ChatPage })))
+const TasksPage = lazy(() => import('@renderer/features/tasks/TasksPage').then((m) => ({ default: m.TasksPage })))
+const BoardsPage = lazy(() => import('@renderer/features/boards/BoardsPage').then((m) => ({ default: m.BoardsPage })))
+const DirectoryPage = lazy(() => import('@renderer/features/directory/DirectoryPage').then((m) => ({ default: m.DirectoryPage })))
+const DocsPage = lazy(() => import('@renderer/features/docs/DocsPage').then((m) => ({ default: m.DocsPage })))
+const MemosPage = lazy(() => import('@renderer/features/memos/MemosPage').then((m) => ({ default: m.MemosPage })))
+const AlarmsPage = lazy(() => import('@renderer/features/alarms/AlarmsPage').then((m) => ({ default: m.AlarmsPage })))
+const UtilitiesPage = lazy(() => import('@renderer/features/utilities/UtilitiesPage').then((m) => ({ default: m.UtilitiesPage })))
+const LauncherPage = lazy(() => import('@renderer/features/launcher/LauncherPage').then((m) => ({ default: m.LauncherPage })))
+const MyFilesPage = lazy(() => import('@renderer/features/myfiles/MyFilesPage').then((m) => ({ default: m.MyFilesPage })))
+const NotesPage = lazy(() => import('@renderer/features/notes/NotesPage').then((m) => ({ default: m.NotesPage })))
+const PluginsPage = lazy(() => import('@renderer/features/plugins/PluginsPage').then((m) => ({ default: m.PluginsPage })))
+const PluginHost = lazy(() => import('@renderer/features/plugins/PluginHost').then((m) => ({ default: m.PluginHost })))
 
 const CHECK_UPDATE_MS = 30 * 60 * 1000
 
@@ -66,6 +71,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   useMeetingAlerts()
   usePluginInvites()
   const liveMeetings = useLiveMeetings()
+  const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => {
     void loadSpace()
@@ -76,6 +82,10 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
       if (e.key === 'F1') {
         e.preventDefault()
         navigate('/help')
+      }
+      if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchOpen(true)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -109,10 +119,20 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   const disabled = me?.disabledFeatures ?? []
   return (
     <div className="flex h-full flex-col">
-      <TopBar left={<OrgBadge />} />
+      <TopBar
+        left={<OrgBadge />}
+        center={
+          <button className="no-drag flex h-8 w-full max-w-md cursor-pointer items-center gap-2 rounded-md border border-border bg-muted/60 px-2.5 text-sm text-muted-foreground hover:bg-muted" onClick={() => setSearchOpen(true)} data-testid="open-search">
+            <Search className="size-4" aria-hidden />
+            <span>검색 (Ctrl+K)</span>
+          </button>
+        }
+      />
+      <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
       <div className="flex min-h-0 flex-1">
         <Sidebar isAdmin={isAdmin} disabledFeatures={disabled} badges={{ notices: unread, chat: chatUnread.messages + chatUnread.notes, meetings: liveMeetings.data?.length ?? 0 }} />
         <main className="min-w-0 flex-1 overflow-hidden">
+          <Suspense fallback={<Loading />}>
           <Routes>
             <Route path="/" element={<Navigate to="/home" replace />} />
             <Route path="/home" element={<HomePage />} />
@@ -152,6 +172,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/admin/*" element={isAdmin ? <AdminPage /> : <Navigate to="/home" replace />} />
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>
+          </Suspense>
         </main>
       </div>
       <StatusBar />

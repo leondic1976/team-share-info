@@ -2,6 +2,7 @@ import { app, dialog, BrowserWindow } from 'electron'
 import { z } from 'zod'
 import log from 'electron-log/main'
 import { handle } from './registry'
+import { localDb } from '../localdb'
 import { serverSetupSchema } from '../../shared/schemas/settings'
 import {
   clearCredential,
@@ -73,6 +74,8 @@ export function registerConnectionIpc(): void {
     clearCredential()
     setPendingJoin(null)
     setMode(null)
+    // cached server data belongs to the old connection
+    localDb().db.run('DELETE FROM query_cache')
   })
 
   handle('server:networkInfo', null, () => ({

@@ -108,6 +108,9 @@ export interface IpcMap {
   'local:kv.all': { req: void; res: Record<string, unknown> }
   'local:export': { req: void; res: ExportResult }
   'local:import': { req: void; res: ExportResult }
+  'local:cache.save': { req: { entries: { key: string; value: string }[] }; res: void }
+  'local:cache.load': { req: { prefix: string }; res: { key: string; value: string; updatedAt: number }[] }
+  'local:cache.clear': { req: void; res: void }
   'conn:get': { req: void; res: ConnInfo }
   'conn:saveDevice': { req: { serverUrl: string; deviceId: string; deviceKey: string; memberId: string }; res: void }
   'conn:setPending': { req: { serverUrl: string; requestId: string; pollToken: string; name: string } | null; res: void }
@@ -327,6 +330,9 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'local:kv.all',
   'local:export',
   'local:import',
+  'local:cache.save',
+  'local:cache.load',
+  'local:cache.clear',
   'conn:get',
   'conn:saveDevice',
   'conn:setPending',

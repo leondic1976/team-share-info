@@ -69,4 +69,20 @@ export function registerLocalIpc(): void {
       return { ok: false, error: String(err) }
     }
   })
+
+  // ---------- read cache of server data (13.11, M8-3): shown while the server is unreachable ----------
+  handle('local:cache.save', z.object({ entries: z.array(z.object({ key: z.string().max(500), value: z.string().max(2_000_000) })).max(200) }), ({ entries }) => {
+    const db = localDb().db
+    const t = Date.now()
+    db.tx(() => {
+      for (const e of entries) db.run('INSERT INTO query_cache (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at', [e.key, e.value, t])
+      db.run('DELETE FROM query_cache WHERE key NOT IN (SELECT key FROM query_cache ORDER BY updated_at DESC LIMIT 400)')
+    })
+  })
+  handle('local:cache.load', z.object({ prefix: z.string().max(200) }), ({ prefix }) =>
+    localDb().db.all<{ key: string; value: string; updated_at: number }>('SELECT key, value, updated_at FROM query_cache WHERE key LIKE ? ORDER BY updated_at DESC', [`${prefix.replace(/[%_]/g, '')}%`]).map((r) => ({ key: r.key, value: r.value, updatedAt: r.updated_at }))
+  )
+  handle('local:cache.clear', null, () => {
+    localDb().db.run('DELETE FROM query_cache')
+  })
 }
