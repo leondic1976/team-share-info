@@ -6,7 +6,6 @@ import log from 'electron-log/main'
 import type { IndexRoot, SearchHit, SearchQuery } from '../../shared/fm'
 import { localDb } from '../localdb'
 import { FsIndexRepo } from '../localdb/fsindex'
-import { userDataPath } from '../paths'
 import { getMainWindow, showMainWindow } from '../windows/main-window'
 
 /** Fast file search (6.18 ②): manages the indexer worker; searches run on main's DB connection. */
@@ -23,7 +22,7 @@ const send = (event: 'fsindex:changed', payload: { scanning: boolean; count: num
 function ensureWorker(): Worker {
   if (worker) return worker
   worker = new Worker(join(import.meta.dirname, 'fsindexer.js'))
-  worker.postMessage({ op: 'init', dbPath: userDataPath('local.db') })
+  worker.postMessage({ op: 'init', dbPath: localDb().db.path })
   worker.on('message', (m: { type: 'scan'; root: string; state: string; count?: number; error?: string } | { type: 'changed'; count: number }) => {
     if (m.type === 'scan') {
       if (m.state === 'start' || m.state === 'progress') scanning.set(m.root, m.count ?? 0)

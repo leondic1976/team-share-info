@@ -107,12 +107,16 @@ export async function stopServer(): Promise<void> {
   const proc = child
   if (!proc) return
   await new Promise<void>((resolve) => {
+    // after a forced kill, still wait (up to 5 s) for the process to be gone, so its
+    // database files are closed before anyone (data-folder move, restore) touches them
+    let hard: NodeJS.Timeout | null = null
     const timer = setTimeout(() => {
       proc.kill()
-      resolve()
+      hard = setTimeout(resolve, 5000)
     }, 3000)
     proc.once('exit', () => {
       clearTimeout(timer)
+      if (hard) clearTimeout(hard)
       resolve()
     })
     const msg: HostToServer = { type: 'stop' }

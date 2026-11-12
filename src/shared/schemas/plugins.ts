@@ -12,7 +12,8 @@ export const PLUGIN_PERMISSIONS = {
   storage: '이 PC에 확장 기능 데이터 저장',
   rooms: '팀원과 함께하는 방 만들기·참여(서버에 저장)',
   notify: 'Windows 알림 보내기',
-  clipboard: '클립보드에 글자 복사'
+  clipboard: '클립보드에 글자 복사',
+  files: '내가 고른 파일로 저장·내가 고른 파일 열기'
 } as const
 export type PluginPermission = keyof typeof PLUGIN_PERMISSIONS
 

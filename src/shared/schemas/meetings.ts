@@ -59,6 +59,8 @@ export type RtcData =
   | { kind: 'state'; mic: boolean; cam: boolean; screen: boolean; hand: boolean }
   | { kind: 'chat'; text: string; at: number }
   | { kind: 'pointer'; x: number; y: number }
+  /** the sender rebuilt its connection to you (it never connected); rebuild yours too */
+  | { kind: 'reset' }
 
 /**
  * Mesh rule: for each pair, the member whose id sorts lower makes the offer.

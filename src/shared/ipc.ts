@@ -29,6 +29,28 @@ export interface AppInfo {
   osRelease: string
 }
 
+/** 저장 위치 (6.20) */
+export interface StorageInfo {
+  local: { dir: string; isDefault: boolean; defaultDir: string; bytes: number }
+  /** only on the server PC */
+  server: { dir: string; bytes: number; running: boolean } | null
+  /** result of the last change (shown once after the restart) */
+  last: { ok: boolean; message: string; at: number } | null
+}
+export interface StorageCheck {
+  ok: boolean
+  error?: string
+  hasData: boolean
+  needBytes: number
+  freeBytes: number | null
+}
+export interface StorageProgress {
+  phase: 'stop' | 'copy' | 'verify' | 'start' | 'cleanup'
+  doneBytes: number
+  totalBytes: number
+  file?: string
+}
+
 export interface ConnInfo {
   mode: 'server' | 'client' | null
   serverUrl: string | null
@@ -290,6 +312,15 @@ export interface IpcMap {
   'plugins:installFile': { req: { path: string }; res: { ok: boolean; error?: string; data?: PluginManifest } }
   'plugins:uninstall': { req: { id: string }; res: void }
   'plugins:setEnabled': { req: { id: string; enabled: boolean }; res: void }
+  'plugins:saveFile': { req: { id: string; name: string; text: string }; res: { ok: boolean; path?: string; error?: string } }
+  'plugins:openFile': { req: { id: string; exts: string[] }; res: { ok: boolean; name?: string; text?: string; error?: string } }
+  'storage:info': { req: void; res: StorageInfo }
+  'storage:clearLast': { req: void; res: void }
+  'storage:pick': { req: { kind: 'local' | 'server' }; res: string | null }
+  'storage:checkLocal': { req: { to: string }; res: StorageCheck }
+  'storage:changeLocal': { req: { to: string; mode: 'move' | 'use' }; res: { ok: boolean; error?: string } }
+  'storage:checkServer': { req: { to: string }; res: StorageCheck }
+  'storage:moveServer': { req: { to: string }; res: { ok: boolean; error?: string; warning?: string } }
 }
 
 export interface UpdateState {
@@ -511,7 +542,16 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'plugins:inspectFile',
   'plugins:installFile',
   'plugins:uninstall',
-  'plugins:setEnabled'
+  'plugins:setEnabled',
+  'plugins:saveFile',
+  'plugins:openFile',
+  'storage:info',
+  'storage:clearLast',
+  'storage:pick',
+  'storage:checkLocal',
+  'storage:changeLocal',
+  'storage:checkServer',
+  'storage:moveServer'
 ]
 
 /** main -> renderer push events */
@@ -534,9 +574,10 @@ export interface MainEventMap {
   'fsindex:changed': { scanning: boolean; count: number }
   'meeting:closed': { id: string }
   'plugins:changed': { count: number }
+  'storage:progress': StorageProgress
 }
 export type MainEvent = keyof MainEventMap
-export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed']
+export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed', 'storage:progress']
 
 export interface TeamhubBridge {
   /** Absolute path of a dropped/selected File (Electron webUtils). */

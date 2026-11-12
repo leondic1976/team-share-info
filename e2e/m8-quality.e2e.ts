@@ -91,6 +91,22 @@ describe('M8 quality: start time, idle cost, search, offline cache, menus, priva
     expect(cpu).toBeLessThan(process.env.CI ? 10 : 3)
   }, 60000)
 
+  it('idle after a fresh start: private memory ≤ 300 MB, CPU ≤ 1% (11장)', async () => {
+    const userData = b.userData
+    await b.close({ keepData: true })
+    b = await launch({ userData, profile: 'e2e-m8qb' })
+    await b.page.getByTestId('conn-state').filter({ hasText: '서버 연결됨' }).waitFor({ timeout: 20000 })
+    await b.page.waitForTimeout(15000)
+    const sample = () => b.app.evaluate(({ app }) => app.getAppMetrics().map((m) => ({ type: m.type, cpu: m.cpu.percentCPUUsage, mem: m.memory.privateBytes ?? m.memory.workingSetSize })))
+    await sample()
+    await b.page.waitForTimeout(10000)
+    const m = await sample()
+    const memMB = m.reduce((x, y) => x + y.mem, 0) / 1024
+    const cpu = m.reduce((x, y) => x + y.cpu, 0)
+    console.log(`[e2e] fresh idle: ${memMB.toFixed(0)} MB, CPU ${cpu.toFixed(2)}%`, m.map((x) => `${x.type}:${(x.mem / 1024).toFixed(0)}MB`).join(' '))
+    expect(memMB).toBeLessThan(300)
+    expect(cpu).toBeLessThan(process.env.CI ? 10 : 1)
+  }, 60000)
   it('first screen within 3 s, and cached data shows with the server off', async () => {
     await go(b.page, '/notices')
     await expect.poll(() => b.page.getByText('캐시 확인 공지E2E').count(), { timeout: 10000 }).toBeGreaterThanOrEqual(1)
@@ -109,17 +125,4 @@ describe('M8 quality: start time, idle cost, search, offline cache, menus, priva
     await expect.poll(() => b.page.getByText('캐시 확인 공지E2E').count(), { timeout: 10000 }).toBeGreaterThanOrEqual(1)
   }, 90000)
 
-  it('idle after a fresh start: private memory ≤ 300 MB, CPU ≤ 1% (11장)', async () => {
-    await go(b.page, '/home')
-    await b.page.waitForTimeout(15000)
-    const sample = () => b.app.evaluate(({ app }) => app.getAppMetrics().map((m) => ({ type: m.type, cpu: m.cpu.percentCPUUsage, mem: m.memory.privateBytes ?? m.memory.workingSetSize })))
-    await sample()
-    await b.page.waitForTimeout(10000)
-    const m = await sample()
-    const memMB = m.reduce((x, y) => x + y.mem, 0) / 1024
-    const cpu = m.reduce((x, y) => x + y.cpu, 0)
-    console.log(`[e2e] fresh idle: ${memMB.toFixed(0)} MB, CPU ${cpu.toFixed(2)}%`, m.map((x) => `${x.type}:${(x.mem / 1024).toFixed(0)}MB`).join(' '))
-    expect(memMB).toBeLessThan(300)
-    expect(cpu).toBeLessThan(process.env.CI ? 10 : 1)
-  }, 60000)
 })

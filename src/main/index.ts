@@ -26,6 +26,8 @@ import { linkToRoute, registerPluginScheme, servePlugins } from './plugins'
 import { getMainWindow } from './windows/main-window'
 import { restoreTransfers, stopWatches } from './transfer'
 import { onServerStatus, stopServer } from './server-host'
+import { applyPendingLocalChange, localDataPath, resolveLocalDir } from './storage'
+import { registerStorageIpc } from './ipc/storage'
 
 setupPaths()
 configureWebRtcSwitches()
@@ -54,9 +56,13 @@ if (!app.requestSingleInstanceLock()) {
   })
   // The teamhub:// scheme is registered by the installer (electron-builder protocols), not at run time.
 
-  app.whenReady().then(() => {
-    openLocalDb(userDataPath('local.db'))
+  app.whenReady().then(async () => {
+    // a staged change of the personal data folder is carried out before the local DB opens (6.20)
+    await applyPendingLocalChange()
+    resolveLocalDir()
+    openLocalDb(localDataPath('local.db'))
     registerAppIpc()
+    registerStorageIpc()
     registerLocalIpc()
     registerConnectionIpc()
     registerNotifyIpc()

@@ -8,7 +8,7 @@ import { DOWNLOAD_SITE } from '../shared/constants'
 import { compareVersions } from '../shared/semver'
 import { pluginBundleSchema, PLUGIN_ID_RE, type CatalogPlugin, type InstalledPlugin, type PluginBundle, type PluginManifest } from '../shared/schemas/plugins'
 import { localDb } from './localdb'
-import { userDataPath } from './paths'
+import { localDataPath } from './storage'
 import { PLUGIN_SDK } from './plugin-sdk'
 
 /**
@@ -39,7 +39,7 @@ const MIME: Record<string, string> = {
 }
 const CSP = `default-src ${PLUGIN_SCHEME}:; script-src ${PLUGIN_SCHEME}: 'unsafe-inline'; style-src ${PLUGIN_SCHEME}: 'unsafe-inline'; img-src ${PLUGIN_SCHEME}: data: blob:; media-src ${PLUGIN_SCHEME}: data: blob:; font-src ${PLUGIN_SCHEME}: data:; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'`
 
-const root = (): string => userDataPath('plugins')
+const root = (): string => localDataPath('plugins')
 const KV = 'plugins'
 
 function registry(): Record<string, InstalledPlugin> {
@@ -133,6 +133,52 @@ export function inspectFile(path: string): { ok: boolean; path?: string; manifes
 }
 export function installFromFile(path: string): PluginManifest {
   return install(checkBundle(JSON.parse(readFileSync(path, 'utf8'))), 'file')
+}
+
+// ---------- files (permission 'files'): only through a dialog the user answers ----------
+const FILE_EXT = ['csv', 'tsv', 'txt', 'json', 'md', 'html']
+const MAX_FILE = 5 * 1024 * 1024
+const hasFilesPermission = (id: string): boolean => !!registry()[id]?.enabled && !!registry()[id]?.manifest.permissions.includes('files')
+const extOfName = (n: string): string => (/\.([a-z0-9]{1,5})$/i.exec(n)?.[1] ?? '').toLowerCase()
+
+/** Save text a plugin made (e.g. CSV) where the user chooses. */
+export async function pluginSaveFile(id: string, name: string, text: string): Promise<{ ok: boolean; path?: string; error?: string }> {
+  if (!hasFilesPermission(id)) return { ok: false, error: '파일 권한이 없습니다.' }
+  const safe = name.replace(/[\\/:*?"<>|\r\n]/g, '_').slice(0, 120) || 'export.txt'
+  const ext = extOfName(safe)
+  if (!FILE_EXT.includes(ext)) return { ok: false, error: `저장할 수 없는 파일 형식입니다(.${ext || '?'}).` }
+  if (text.length > MAX_FILE) return { ok: false, error: '파일이 너무 큽니다(5MB).' }
+  const win = BrowserWindow.getFocusedWindow() ?? undefined
+  const opts = { title: '파일로 저장', defaultPath: join(app.getPath('documents'), safe), filters: [{ name: ext.toUpperCase(), extensions: [ext] }] }
+  const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+  if (r.canceled || !r.filePath) return { ok: false }
+  const path = extOfName(r.filePath) === ext ? r.filePath : `${r.filePath}.${ext}`
+  writeFileSync(path, text, 'utf8')
+  log.info(`plugin ${id} saved a file: ${path}`)
+  return { ok: true, path }
+}
+
+/** Open a text file the user chooses and give its content to the plugin. */
+export async function pluginOpenFile(id: string, exts: string[]): Promise<{ ok: boolean; name?: string; text?: string; error?: string }> {
+  if (!hasFilesPermission(id)) return { ok: false, error: '파일 권한이 없습니다.' }
+  const allowed = exts.map((e) => e.toLowerCase()).filter((e) => FILE_EXT.includes(e))
+  const win = BrowserWindow.getFocusedWindow() ?? undefined
+  const opts = { title: '파일 열기', filters: [{ name: allowed.map((e) => e.toUpperCase()).join(', ') || '텍스트', extensions: allowed.length ? allowed : FILE_EXT }], properties: ['openFile' as const] }
+  const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+  const p = r.canceled ? undefined : r.filePaths[0]
+  if (!p) return { ok: false }
+  if (!FILE_EXT.includes(extOfName(p))) return { ok: false, error: '열 수 없는 파일 형식입니다.' }
+  const buf = readFileSync(p)
+  if (buf.length > MAX_FILE) return { ok: false, error: '파일이 너무 큽니다(5MB).' }
+  return { ok: true, name: p.split(/[\\/]/).pop(), text: decodeText(buf) }
+}
+/** UTF-8 (with or without BOM); Excel's Korean CSV (CP949/EUC-KR) when UTF-8 does not fit. */
+function decodeText(buf: Buffer): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^\uFEFF/, '')
+  } catch {
+    return new TextDecoder('euc-kr').decode(buf)
+  }
 }
 
 export function uninstallPlugin(id: string): void {

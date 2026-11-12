@@ -33,6 +33,26 @@ export interface ChatLine {
 
 type StateMsg = Extract<RtcData, { kind: 'state' }> & { screenId?: string | null }
 
+/** E2E only (`?fakecam=1`, set by main under TEAMHUB_FAKE_MEDIA): an animated canvas as the camera. */
+const FAKE_CAMERA = typeof location !== 'undefined' && location.hash.includes('fakecam=1')
+function canvasCamera(): MediaStream {
+  const c = document.createElement('canvas')
+  c.width = 640
+  c.height = 360
+  const g = c.getContext('2d')!
+  let n = 0
+  const timer = window.setInterval(() => {
+    if (s.getVideoTracks()[0]?.readyState !== 'live') return window.clearInterval(timer)
+    n++
+    g.fillStyle = `hsl(${(n * 3) % 360} 60% 40%)`
+    g.fillRect(0, 0, 640, 360)
+    g.fillStyle = '#fff'
+    g.fillRect((n * 8) % 640, 150, 60, 60)
+  }, 1000 / 24)
+  const s = c.captureStream(24)
+  return s
+}
+
 /**
  * Mesh of RTCPeerConnections, one per other participant (6.17). Uses the "perfect
  * negotiation" pattern so both sides may add tracks at any time (camera, screen).
@@ -56,6 +76,11 @@ export class Room {
   private closed = false
   private lastOpts: { audio: boolean; video: boolean; audioId?: string; videoId?: string } = { audio: true, video: true }
   private queue: Promise<void> = Promise.resolve()
+  /** Signal counters, read by diagnostics (E2E). */
+  readonly stats: Record<string, number> = {}
+  private count(k: string): void {
+    this.stats[k] = (this.stats[k] ?? 0) + 1
+  }
 
   constructor(
     readonly meetingId: string,
@@ -83,6 +108,7 @@ export class Room {
     this.local = new MediaStream()
     let note: string | null = null
     const tryGet = async (c: MediaStreamConstraints): Promise<MediaStream | null> => {
+      if (c.video && FAKE_CAMERA) return canvasCamera()
       try {
         return await navigator.mediaDevices.getUserMedia(c)
       } catch {
@@ -128,17 +154,24 @@ export class Room {
       window.setTimeout(() => void this.reacquire(t), 800)
     })
   }
-  private async reacquire(old: MediaStreamTrack): Promise<void> {
+  private async reacquire(old: MediaStreamTrack, attempt = 1): Promise<void> {
+    if (this.closed || !this.local.getTracks().includes(old)) return
     const kind = old.kind as 'audio' | 'video'
     const id = kind === 'audio' ? this.lastOpts.audioId : this.lastOpts.videoId
     let track: MediaStreamTrack | undefined
     try {
-      const s = await navigator.mediaDevices.getUserMedia(kind === 'audio' ? { audio: id ? { deviceId: { exact: id } } : true } : { video: id ? { deviceId: { exact: id } } : { width: 640, height: 360 } })
+      const s = kind === 'video' && FAKE_CAMERA ? canvasCamera() : await navigator.mediaDevices.getUserMedia(kind === 'audio' ? { audio: id ? { deviceId: { exact: id } } : true } : { video: id ? { deviceId: { exact: id } } : { width: 640, height: 360 } })
       track = kind === 'audio' ? s.getAudioTracks()[0] : s.getVideoTracks()[0]
     } catch {
+      track = undefined
+    }
+    // The capture service may still be restarting after a crash: try again for a while.
+    if (!track || track.readyState === 'ended') {
+      track?.stop()
+      if (attempt < 8) window.setTimeout(() => void this.reacquire(old, attempt + 1), 1500)
       return
     }
-    if (!track || this.closed) return track?.stop()
+    if (this.closed) return track.stop()
     track.enabled = kind === 'audio' ? this.mic : this.cam
     this.local.removeTrack(old)
     this.local.addTrack(track)
@@ -152,6 +185,7 @@ export class Room {
   }
 
   private send(to: string, data: RtcData | StateMsg): void {
+    this.count(`tx:${data.kind}`)
     if (this.outbox.length || !realtime.send({ type: 'rtc', meetingId: this.meetingId, to, data })) {
       this.outbox.push({ to, data })
       this.flushTimer ??= window.setInterval(() => this.flush(), 300)
@@ -206,13 +240,36 @@ export class Room {
     for (const t of this.local.getTracks()) pc.addTrack(t, this.local)
     if (this.screen) for (const t of this.screen.getTracks()) p.screenSenders.push(pc.addTrack(t, this.screen))
     // Watchdog: if a pair never connects (lost signal, both offering), negotiate again.
+    // Still nothing after 15 s (e.g. ICE gathering stuck after a media service crash):
+    // the impolite side rebuilds the connection and tells the other side to do the same.
+    let rounds = 0
     const watch = window.setInterval(() => {
-      if (!this.peers.has(id) || pc.connectionState === 'closed') return window.clearInterval(watch)
+      if (this.peers.get(id) !== p || pc.connectionState === 'closed') return window.clearInterval(watch)
       if (pc.connectionState === 'connected') return window.clearInterval(watch)
+      rounds++
+      if (rounds >= 3 && !p.polite) {
+        window.clearInterval(watch)
+        this.count('reset')
+        this.send(id, { kind: 'reset' })
+        this.rebuild(id)
+        return
+      }
       if (pc.signalingState === 'have-local-offer' && pc.localDescription) this.send(id, { kind: 'offer', sdp: pc.localDescription.sdp })
       else if (pc.signalingState === 'stable') pc.restartIce()
     }, 5000)
     return p
+  }
+
+  /** Replace the connection to one participant with a fresh one (keeps their UI state). */
+  private rebuild(id: string): void {
+    const old = this.peers.get(id)
+    if (!old) return
+    old.pc.close()
+    this.peers.delete(id)
+    this.analysers.delete(id)
+    const p = this.peer(id)
+    p.state = old.state
+    this.emit()
   }
 
   /** Connect to everyone already in the meeting. */
@@ -231,6 +288,7 @@ export class Room {
   }
 
   private async onSignal(from: string, data: RtcData | StateMsg): Promise<void> {
+    this.count(`rx:${data.kind}`)
     if (data.kind === 'state') {
       const p = this.peer(from)
       p.state = { mic: data.mic, cam: data.cam, screen: data.screen, hand: data.hand, screenId: (data as StateMsg).screenId ?? null }
@@ -247,13 +305,17 @@ export class Room {
       this.emit()
       return
     }
+    if (data.kind === 'reset') {
+      if (this.peers.has(from)) this.rebuild(from)
+      return
+    }
     const p = this.peer(from)
     const pc = p.pc
     try {
       if (data.kind === 'offer' || data.kind === 'answer') {
         const collision = data.kind === 'offer' && (p.makingOffer || pc.signalingState !== 'stable')
         p.ignoreOffer = !p.polite && collision
-        if (p.ignoreOffer) return
+        if (p.ignoreOffer) return this.count('ignored-offer')
         await pc.setRemoteDescription({ type: data.kind, sdp: data.sdp })
         for (const c of p.pendingIce.splice(0)) await pc.addIceCandidate(c).catch(() => undefined)
         if (data.kind === 'offer') {
@@ -263,15 +325,17 @@ export class Room {
       } else if (data.kind === 'ice') {
         if (!pc.remoteDescription) {
           p.pendingIce.push(data.candidate)
-          return
+          return this.count('ice-pending')
         }
         try {
           await pc.addIceCandidate(data.candidate)
+          this.count('ice-added')
         } catch (e) {
           if (!p.ignoreOffer) throw e
         }
       }
     } catch (e) {
+      this.count(`err:${data.kind}`)
       console.warn('[rtc] signal failed', e)
     }
   }

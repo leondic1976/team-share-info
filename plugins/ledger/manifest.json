@@ -1,0 +1,18 @@
+{
+  "id": "ledger",
+  "name": "스마트 대장",
+  "version": "1.0.0",
+  "description": "엑셀처럼 쓰는 가벼운 장부(대장) 관리. 열 종류·계산 열·함수·합계·정렬·필터·엑셀 복사/붙여넣기·CSV, 물품·문서 수발신·예산 집행 등 서식 제공.",
+  "author": "TeamHub",
+  "icon": "📒",
+  "entry": "index.html",
+  "permissions": ["members", "storage", "rooms", "clipboard", "files"],
+  "minAppVersion": "0.1.0",
+  "features": [
+    "엑셀 같은 표: 방향키·Enter·Tab·F2 편집, 여러 칸 선택, 엑셀과 복사·붙여넣기, 실행 취소",
+    "열 종류: 글자·숫자·날짜·목록·체크·팀원·계산(수식) — 계산 열은 =[수량]*[단가] 처럼 열 이름으로",
+    "함수 40여 개: SUM·AVERAGE·IF·ROUND·SUMIF·COUNTIF·VLOOKUP·TEXT·DATEDIF·TODAY 등, A1·A1:B5 주소",
+    "합계 줄(합계·평균·개수·체크 수), 정렬, 찾기, 열 값 필터, 선택한 칸 합계 표시",
+    "서식 8종: 물품 관리·문서 수발신·예산 집행·차량 운행·대여 반납·출장·교육 이수, CSV 가져오기/내보내기·백업 파일·인쇄·팀원에게 보기 공유"
+  ]
+}

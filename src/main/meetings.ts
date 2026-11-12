@@ -104,7 +104,8 @@ export function openMeetingWindow(id: string): void {
   })
   win.setMenu(null)
   secureWebContents(win)
-  loadRenderer(win, `/popup/meeting/${id}`)
+  // E2E: the camera comes from a canvas, because Chromium's fake capture service crashes now and then.
+  loadRenderer(win, `/popup/meeting/${id}${process.env.TEAMHUB_FAKE_MEDIA ? '?fakecam=1' : ''}`)
   win.once('ready-to-show', () => win.show())
   win.on('closed', () => {
     rooms.delete(id)

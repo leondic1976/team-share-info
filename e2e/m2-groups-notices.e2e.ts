@@ -86,7 +86,9 @@ describe('M2 groups, notices, urgent alerts', () => {
     await expect.poll(() => a.page.getByTestId('receipt-팀원B').textContent(), { timeout: 10000 }).toContain('팀원B')
 
     b = await launch({ profile: 'e2e-m2b', userData: b.userData })
-    const popup = await b.app.waitForEvent('window', { predicate: (w) => w.url().includes('/popup/urgent/'), timeout: 30000 })
+    // the pop-up may already be open when launch() returns
+    await expect.poll(() => b.app.windows().some((w) => w.url().includes('/popup/urgent/')), { timeout: 30000, interval: 300 }).toBe(true)
+    const popup = b.app.windows().find((w) => w.url().includes('/popup/urgent/'))!
     await popup.getByTestId('urgent-popup').waitFor()
     expect(await popup.getByRole('heading', { name: '긴급훈련' }).isVisible()).toBe(true)
     await popup.getByRole('button', { name: '참석' }).click()

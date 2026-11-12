@@ -28,7 +28,13 @@ export async function launch(opts: { userData?: string; profile?: string; env?: 
       ...opts.env
     } as Record<string, string>
   })
-  const page = await app.firstWindow()
+  // The main window, not a pop-up (urgent notice, sticky memo...) that may open first.
+  let page = await app.firstWindow()
+  for (let i = 0; i < 50 && page.url().includes('/popup/'); i++) {
+    const main = app.windows().find((w) => !w.url().includes('/popup/'))
+    if (main) page = main
+    else await new Promise((r) => setTimeout(r, 200))
+  }
   await page.waitForLoadState('domcontentloaded')
   return {
     app,

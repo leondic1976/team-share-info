@@ -29,6 +29,8 @@ const NEEDS: Record<string, PluginPermission | null> = {
   'rooms.delete': 'rooms',
   notify: 'notify',
   'clipboard.write': 'clipboard',
+  'file.save': 'files',
+  'file.open': 'files',
   openRoute: null
 }
 
@@ -101,6 +103,10 @@ export function PluginHost(): React.JSX.Element {
           return invoke('notify:toast', { title: `${plugin.manifest.icon} ${str('title', 100)}`, body: str('body', 300), route: `/plugins/${id}` })
         case 'clipboard.write':
           return invoke('clipboard:write', { text: str('text', 100_000) })
+        case 'file.save':
+          return invoke('plugins:saveFile', { id, name: str('name', 200), text: str('text', 6_000_000) })
+        case 'file.open':
+          return invoke('plugins:openFile', { id, exts: Array.isArray(p.exts) ? p.exts.filter((x): x is string => typeof x === 'string').slice(0, 6) : [] })
         case 'openRoute':
           // only routes of this plugin (e.g. another room)
           navigate(`/plugins/${id}${typeof p.room === 'string' && /^[\w-]{1,40}$/.test(p.room) ? `?room=${p.room}` : ''}`)

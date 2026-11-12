@@ -7,6 +7,7 @@ import { invoke } from '@renderer/lib/bridge'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { fmtSize } from '@renderer/features/myfiles/common'
+import { StorageCard } from '@renderer/features/settings/StorageCard'
 
 interface BackupList {
   root: string
@@ -89,6 +90,8 @@ export function BackupTab(): React.JSX.Element {
           ))}
         </CardContent>
       </Card>
+      {/* only on the server PC itself */}
+      <StorageCard kind="server" />
       <Card>
         <CardHeader>
           <CardTitle>서버 PC 바꾸기 (서버 이전)</CardTitle>
