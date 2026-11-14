@@ -48,9 +48,12 @@ jobs:
       - name: Release notes from the tag message
         shell: bash
         run: |
+          t="${GITHUB_REF_NAME}"
+          # run by hand on a branch: use the newest tag's notes
+          git rev-parse -q --verify "refs/tags/$t" >/dev/null || t=$(git describe --tags --abbrev=0)
           {
             echo 'RELEASE_NOTES<<__EOF__'
-            git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" | sed '/-----BEGIN/,$d'
+            git tag -l --format='%(contents)' "$t" | sed '/-----BEGIN/,$d'
             echo '__EOF__'
           } >> "$GITHUB_ENV"
       - name: GitHub Release (version record)
