@@ -1,5 +1,6 @@
 import { Server, MonitorSmartphone } from 'lucide-react'
 import { SetupFrame } from './SetupFrame'
+import { SavedConnections } from '@renderer/features/settings/SavedConnections'
 
 export function FirstRun({ onChoose }: { onChoose: (m: 'server' | 'client' | 'import') => void }): React.JSX.Element {
   return (
@@ -29,9 +30,22 @@ export function FirstRun({ onChoose }: { onChoose: (m: 'server' | 'client' | 'im
       <button className="mt-4 cursor-pointer text-sm text-primary hover:underline" onClick={() => onChoose('import')}>
         서버 PC를 바꾸나요? 기존 서버의 백업으로 이 PC를 서버로 만들기 →
       </button>
+      <div className="mt-5 space-y-1.5 empty:hidden">
+        <SavedConnectionsBlock />
+      </div>
       <p className="mt-6 rounded-md bg-[var(--notice-bg)] px-3 py-2 text-sm text-[var(--notice-fg)]">
         ⚠ TeamHub는 가벼운 업무 정보 공유용입니다. 중요 보안 내용, 개인정보, 비공개 정보는 공유할 수 없습니다.
       </p>
     </SetupFrame>
+  )
+}
+
+/** Connections used before on this PC: go back to one without asking for approval again. */
+function SavedConnectionsBlock(): React.JSX.Element {
+  return (
+    <div className="[&:not(:has([data-testid=saved-connections]))]:hidden">
+      <div className="mb-1.5 text-sm font-medium">이전에 쓰던 연결로 다시 접속</div>
+      <SavedConnections activateLabel="다시 접속" />
+    </div>
   )
 }

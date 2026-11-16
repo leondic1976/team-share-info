@@ -14,6 +14,12 @@ export interface Prefs {
   dndEnd: string
   homeWidgets: string[]
   hiddenWidgets: string[]
+  /** wallpaper id: a built-in one, `custom:<id>` for the user's own picture, '' for none */
+  wallpaper: string
+  /** how strongly the wallpaper shows, 0–100 (capped by the readability guard) */
+  wallpaperStrength: number
+  /** blur of the user's own picture, px */
+  wallpaperBlur: number
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -26,7 +32,10 @@ const DEFAULT_PREFS: Prefs = {
   dndStart: '18:00',
   dndEnd: '09:00',
   homeWidgets: [],
-  hiddenWidgets: []
+  hiddenWidgets: [],
+  wallpaper: '',
+  wallpaperStrength: 60,
+  wallpaperBlur: 0
 }
 const KEY = 'prefs'
 
@@ -68,7 +77,10 @@ export const usePrefs = create<PrefsState>((set, get) => ({
       dndStart: patch.dndStart ?? cur.dndStart,
       dndEnd: patch.dndEnd ?? cur.dndEnd,
       homeWidgets: patch.homeWidgets ?? cur.homeWidgets,
-      hiddenWidgets: patch.hiddenWidgets ?? cur.hiddenWidgets
+      hiddenWidgets: patch.hiddenWidgets ?? cur.hiddenWidgets,
+      wallpaper: patch.wallpaper ?? cur.wallpaper,
+      wallpaperStrength: Math.min(100, Math.max(0, patch.wallpaperStrength ?? cur.wallpaperStrength)),
+      wallpaperBlur: Math.min(20, Math.max(0, patch.wallpaperBlur ?? cur.wallpaperBlur))
     }
     if (patch.theme) {
       applyTheme(next.theme)
@@ -84,6 +96,11 @@ if (typeof window !== 'undefined') {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     applyTheme(usePrefs.getState().theme)
   })
+}
+
+/** Whether the dark theme is the one on screen (follows the system when the theme says so). */
+export function isDarkNow(theme: Theme): boolean {
+  return theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
 }
 
 /** Do-not-disturb applies to important/normal alerts only; urgent always shows (6.3). */

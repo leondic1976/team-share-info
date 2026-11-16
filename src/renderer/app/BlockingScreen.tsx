@@ -11,11 +11,23 @@ export function BlockingScreen({ onReset }: { onReset: () => void }): React.JSX.
   const { state, message, serverUrl } = useConn()
   const [upd, setUpd] = useState<UpdateState | null>(null)
 
+  // A required update is fetched whatever the update settings say, and retried until it is ready.
   useEffect(() => {
     if (state !== 'update-required' || !serverUrl) return
-    void invoke('update:check', { serverUrl, manual: true }).then(setUpd)
-    return onMain('update:state', setUpd)
+    const check = (): void => void invoke('update:check', { serverUrl, manual: true, force: true }).then(setUpd).catch(() => undefined)
+    check()
+    const t = window.setInterval(check, 60_000)
+    const off = onMain('update:state', setUpd)
+    return () => {
+      window.clearInterval(t)
+      off()
+    }
   }, [state, serverUrl])
+
+  // a check that was already running without "force" only reports the version: start the download
+  useEffect(() => {
+    if (state === 'update-required' && upd?.status === 'available') void invoke('update:download').then(setUpd).catch(() => undefined)
+  }, [state, upd?.status])
 
   return (
     <div className="flex h-full flex-col">
@@ -30,7 +42,7 @@ export function BlockingScreen({ onReset }: { onReset: () => void }): React.JSX.
               <Button onClick={() => void invoke('update:install')}>지금 설치하고 다시 시작</Button>
             ) : upd?.status === 'downloading' || upd?.status === 'checking' || upd?.status === 'available' ? (
               <p className="flex items-center gap-2 text-sm">
-                <Loader2 className="size-4 animate-spin" /> 새 버전을 받는 중… {upd.percent ? `${upd.percent}%` : ''}
+                <Loader2 className="size-4 animate-spin" /> {upd.status === 'checking' ? '새 버전을 확인하는 중…' : `새 버전을 받는 중… ${upd.percent ? `${upd.percent}%` : ''}`}
               </p>
             ) : (
               <p className="text-sm text-muted-foreground">

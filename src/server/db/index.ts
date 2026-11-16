@@ -21,7 +21,9 @@ export function openServerDb(dataDir: string, version = 'dev'): Db {
       const dir = join(dataDir, 'backups')
       mkdirSync(dir, { recursive: true })
       db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
-      copyFileSync(path, join(dir, `pre-migrate-${version}-${Date.now()}.db`))
+      // one copy per version: a migration that keeps failing must not fill the disk with copies
+      const copy = join(dir, `pre-migrate-${version}.db`)
+      if (!existsSync(copy)) copyFileSync(path, copy)
     }
     db.migrate(SERVER_MIGRATIONS)
   } catch (e) {

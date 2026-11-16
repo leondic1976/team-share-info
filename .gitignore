@@ -9,4 +9,6 @@ release/
 coverage/
 *.tsbuildinfo
 _site/
+# packed from plugins/ by scripts/build-plugins.mjs at build time
+resources/plugins/
 notes.txt

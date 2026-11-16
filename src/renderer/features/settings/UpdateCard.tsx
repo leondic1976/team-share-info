@@ -62,7 +62,7 @@ export function UpdateCard(): React.JSX.Element {
           <Button size="sm" variant="outline" disabled={busy} onClick={check}>
             {st?.status === 'checking' ? <Loader2 className="animate-spin" /> : <RefreshCw />} 지금 확인
           </Button>
-          {st?.status === 'available' && !cfg?.auto && (
+          {st?.status === 'available' && (
             <Button size="sm" onClick={() => void invoke('update:download').then(setSt)}>
               <Download /> 내려받기
             </Button>

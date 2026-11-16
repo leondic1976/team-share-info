@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { createTestServer, type TestServer } from './helpers'
+import { writeLatestYml } from '../../src/server/routes/updates'
 
 let s: TestServer | null = null
 afterEach(async () => {
@@ -221,6 +222,53 @@ describe('update distribution (M1-6)', () => {
     expect(readFileSync(join(s.dataDir, 'updates', 'latest.yml'), 'utf8')).toContain('version: 0.10.0')
     await s.req(s.admin, { method: 'PATCH', url: `/api/admin/releases/${list[0].id}`, payload: { state: 'withdrawn' } })
     expect(existsSync(join(s.dataDir, 'updates', 'latest.yml'))).toBe(false)
+  })
+
+  it('refuses an installer whose own version differs from the version typed in', async () => {
+    s = await createTestServer()
+    // version resource as electron-builder writes it: UTF-16 "ProductVersion", padding, value
+    const res = Buffer.concat([Buffer.from('ProductVersion\0', 'utf16le'), Buffer.from('1.2.3\0', 'utf16le')])
+    const body = Buffer.concat([Buffer.alloc(70_000, 3), res, Buffer.alloc(1024 * 1024, 4)])
+    const up = (v: string) =>
+      s!.req(s!.admin, {
+        method: 'POST',
+        url: `/api/admin/releases?version=${v}&fileName=TeamHub-Setup-${v}.exe`,
+        headers: { 'content-type': 'application/octet-stream' },
+        payload: body
+      })
+    const wrong = await up('1.2.4')
+    expect(wrong.statusCode).toBe(400)
+    expect(wrong.json().error.message).toContain('v1.2.3')
+    expect(readdirSync(join(s.dataDir, 'updates'))).toEqual([])
+    expect((await up('1.2.3')).statusCode).toBe(200)
+  })
+
+  it('stores the installer under a name that is safe in latest.yml and in a URL', async () => {
+    s = await createTestServer()
+    const r = await s.req(s.admin, {
+      method: 'POST',
+      url: `/api/admin/releases?version=2.0.0&fileName=${encodeURIComponent("Team Hub #1 & 'new' 100% (2).exe")}`,
+      headers: { 'content-type': 'application/octet-stream' },
+      payload: Buffer.alloc(1024 * 1024 + 1, 5)
+    })
+    expect(r.statusCode).toBe(200)
+    const name = r.json().data.fileName as string
+    expect(name).toBe('Team-Hub-1-new-100-(2).exe')
+    expect(readFileSync(join(s.dataDir, 'updates', 'latest.yml'), 'utf8')).toContain(`path: ${name}\n`)
+    expect((await s.req(null, { method: 'GET', url: `/updates/${name}` })).statusCode).toBe(200)
+  })
+
+  it('offers nothing when the installer file of the registered release is missing', async () => {
+    s = await createTestServer()
+    await s.req(s.admin, {
+      method: 'POST',
+      url: '/api/admin/releases?version=3.0.0&fileName=TeamHub-Setup-3.0.0.exe',
+      headers: { 'content-type': 'application/octet-stream' },
+      payload: Buffer.alloc(1024 * 1024 + 1, 6)
+    })
+    rmSync(join(s.dataDir, 'updates', 'TeamHub-Setup-3.0.0.exe'))
+    expect(writeLatestYml(s.ctx)).toBeUndefined()
+    expect((await s.req(null, { method: 'GET', url: '/updates/latest.yml' })).statusCode).toBe(404)
   })
 
   it('rejects non-exe uploads and non-admins', async () => {

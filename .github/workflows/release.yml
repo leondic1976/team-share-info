@@ -1,5 +1,8 @@
 # Release: push a tag vX.Y.Z (pnpm release ...) -> build the Windows installer,
 # publish the download site + update feed on GitHub Pages, keep a GitHub Release record.
+# The github-pages environment accepts deployments from main only, so this runs twice:
+#   tag run  : checks, build, GitHub Release record, then starts the run on main
+#   main run : checks, build, download site + update feed (Pages)
 # Only the newest version is kept: older GitHub Releases (and their installers) are deleted,
 # the Pages artifact expires after a day (artifact storage quota).
 name: release
@@ -13,6 +16,7 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  actions: write
 
 concurrency:
   group: release
@@ -77,14 +81,23 @@ jobs:
             gh release delete "$t" --yes
           done
       # the site last: if the Pages artifact cannot be stored (quota), the release record above is still made
-      - run: node scripts/build-site.mjs
-      - uses: actions/upload-pages-artifact@v3
+      - name: Publish the download site from main (tag runs may not deploy to Pages)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yml --ref main
+      - if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: node scripts/build-site.mjs
+      - if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-pages-artifact@v3
         with:
           path: _site
           retention-days: 1
 
   deploy:
     needs: build
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages

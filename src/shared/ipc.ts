@@ -63,6 +63,18 @@ export interface ConnInfo {
   appVersion: string
 }
 
+/** A connection this PC used before and can use again (settings: 서버·팀원 PC 전환). No keys. */
+export interface SavedConnInfo {
+  id: string
+  mode: 'server' | 'client'
+  label: string
+  savedAt: number
+  /** member PC: the server address */
+  serverUrl: string | null
+  /** server PC: its data folder */
+  dataDir: string | null
+}
+
 export interface NetIfaceInfo {
   name: string
   address: string
@@ -138,6 +150,10 @@ export interface IpcMap {
   'conn:setPending': { req: { serverUrl: string; requestId: string; pollToken: string; name: string } | null; res: void }
   'conn:updateServerUrl': { req: { serverUrl: string }; res: void }
   'conn:reset': { req: void; res: void }
+  'conn:saved': { req: void; res: SavedConnInfo[] }
+  'conn:switchOut': { req: void; res: { ok: boolean; error?: string } }
+  'conn:activateSaved': { req: { id: string }; res: { ok: boolean; error?: string } }
+  'conn:forgetSaved': { req: { id: string }; res: void }
   'server:networkInfo': { req: void; res: { interfaces: NetIfaceInfo[]; suggestedDataDir: string; pcName: string; winUser: string } }
   'server:pickFolder': { req: { title: string }; res: string | null }
   'server:setup': { req: ServerSetupInput; res: SetupResult }
@@ -147,7 +163,7 @@ export interface IpcMap {
   'server:inspectBackup': { req: { dir: string }; res: { ok: boolean; error?: string; orgName?: string; teamName?: string; createdAt?: number; admins?: { id: string; name: string }[] } }
   'server:importBackup': { req: { dir: string; dataDir: string; adminId: string }; res: SetupResult }
   'discovery:scan': { req: void; res: DiscoveredServer[] }
-  'update:check': { req: { serverUrl: string | null; manual?: boolean }; res: UpdateState }
+  'update:check': { req: { serverUrl: string | null; manual?: boolean; force?: boolean }; res: UpdateState }
   'update:download': { req: void; res: UpdateState }
   'update:getSettings': { req: void; res: UpdateSettings }
   'update:setSettings': { req: UpdateSettings; res: void }
@@ -306,7 +322,7 @@ export interface IpcMap {
   'meeting:inviteClose': { req: { id: string; accept: boolean }; res: void }
   'plugins:list': { req: void; res: InstalledPlugin[] }
   'plugins:catalog': { req: void; res: { ok: boolean; error?: string; data?: CatalogPlugin[] } }
-  'plugins:installCatalog': { req: { id: string }; res: { ok: boolean; error?: string; data?: PluginManifest } }
+  'plugins:installCatalog': { req: { id: string; builtin?: boolean }; res: { ok: boolean; error?: string; data?: PluginManifest } }
   'plugins:pickFile': { req: void; res: { ok: boolean; path?: string; manifest?: PluginManifest; error?: string } }
   'plugins:inspectFile': { req: { path: string }; res: { ok: boolean; path?: string; manifest?: PluginManifest; error?: string } }
   'plugins:installFile': { req: { path: string }; res: { ok: boolean; error?: string; data?: PluginManifest } }
@@ -369,6 +385,10 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'conn:setPending',
   'conn:updateServerUrl',
   'conn:reset',
+  'conn:saved',
+  'conn:switchOut',
+  'conn:activateSaved',
+  'conn:forgetSaved',
   'server:networkInfo',
   'server:pickFolder',
   'server:setup',

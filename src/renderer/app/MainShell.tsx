@@ -12,6 +12,8 @@ import { useConn } from './conn-store'
 import { realtime } from '@renderer/lib/realtime'
 import { useMe } from '@renderer/lib/queries'
 import { invoke } from '@renderer/lib/bridge'
+import { api } from '@renderer/lib/api'
+import { WallpaperLayer } from './WallpaperLayer'
 import { ComingSoon } from '@renderer/features/placeholder/ComingSoon'
 import { ConnectionCard } from '@renderer/features/settings/ConnectionCard'
 import { HomePage } from '@renderer/features/home/HomePage'
@@ -50,8 +52,6 @@ const MyFilesPage = lazy(() => import('@renderer/features/myfiles/MyFilesPage').
 const NotesPage = lazy(() => import('@renderer/features/notes/NotesPage').then((m) => ({ default: m.NotesPage })))
 const PluginsPage = lazy(() => import('@renderer/features/plugins/PluginsPage').then((m) => ({ default: m.PluginsPage })))
 const PluginHost = lazy(() => import('@renderer/features/plugins/PluginHost').then((m) => ({ default: m.PluginHost })))
-
-const CHECK_UPDATE_MS = 30 * 60 * 1000
 
 export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Element {
   const state = useConn((s) => s.state)
@@ -97,19 +97,24 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
     return () => realtime.stop()
   }, [])
 
-  // Check for updates (web site first, then the server PC) at start, on connect,
-  // on update.available, and every 30 minutes (M1-6).
+  // Check for updates shortly after start, on (re)connect and on update.available (M1-6);
+  // the main process repeats the check every 30 minutes. A release the admin marked
+  // mandatory is downloaded even when automatic update is turned off.
   useEffect(() => {
-    const check = (): void => void invoke('update:check', { serverUrl: serverUrl ?? null }).catch(() => undefined)
+    const check = (): void => {
+      void api
+        .get<{ mandatory: boolean } | null>('/api/updates/latest')
+        .catch(() => null)
+        .then((r) => invoke('update:check', { serverUrl: serverUrl ?? null, force: !!r?.mandatory }))
+        .catch(() => undefined)
+    }
     const first = window.setTimeout(check, 20_000)
     const offEvt = realtime.on('update.available', check)
     const offRe = realtime.onReconnect(check)
-    const t = window.setInterval(check, CHECK_UPDATE_MS)
     return () => {
       window.clearTimeout(first)
       offEvt()
       offRe()
-      window.clearInterval(t)
     }
   }, [serverUrl])
 
@@ -118,7 +123,8 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   const isAdmin = me?.role === 'admin'
   const disabled = me?.disabledFeatures ?? []
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative isolate flex h-full flex-col">
+      <WallpaperLayer />
       <TopBar
         left={<OrgBadge />}
         center={

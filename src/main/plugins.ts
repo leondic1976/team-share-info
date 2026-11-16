@@ -101,17 +101,52 @@ function install(b: PluginBundle, source: InstalledPlugin['source']): PluginMani
   return b.manifest
 }
 
-export async function fetchCatalog(): Promise<CatalogPlugin[]> {
-  const res = await fetch(`${DOWNLOAD_SITE}plugins/catalog.json`, { signal: AbortSignal.timeout(10000), cache: 'no-store' })
+/** Plugins shipped inside the app (resources/plugins, packed by scripts/build-plugins.mjs): installable without a network. */
+const builtinDir = (): string => join(app.isPackaged ? process.resourcesPath : app.getAppPath(), 'resources', 'plugins')
+function builtinCatalog(): CatalogPlugin[] {
+  try {
+    return (JSON.parse(readFileSync(join(builtinDir(), 'catalog.json'), 'utf8')) as CatalogPlugin[]).map((p) => ({ ...p, builtin: true }))
+  } catch {
+    return []
+  }
+}
+
+async function fetchSiteCatalog(): Promise<CatalogPlugin[]> {
+  // Chromium's network stack: follows the PC's proxy settings like the updater does
+  const res = await net.fetch(`${DOWNLOAD_SITE}plugins/catalog.json`, { signal: AbortSignal.timeout(10000), cache: 'no-store' })
   if (!res.ok) throw new Error(`확장 기능 목록을 받지 못했습니다(${res.status}).`)
   return (await res.json()) as CatalogPlugin[]
+}
+
+/** What can be installed: the plugins shipped with the app, plus newer or additional ones on the download site. */
+export async function fetchCatalog(): Promise<CatalogPlugin[]> {
+  const byId = new Map(builtinCatalog().map((p) => [p.id, p]))
+  try {
+    for (const p of await fetchSiteCatalog()) {
+      const have = byId.get(p.id)
+      if (!have || compareVersions(p.version, have.version) > 0) byId.set(p.id, p)
+    }
+  } catch (e) {
+    if (byId.size === 0) throw e
+  }
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+}
+
+/** Install a plugin shipped with the app: no network, checked against its catalog hash. */
+export function installBuiltin(id: string): PluginManifest {
+  const entry = builtinCatalog().find((p) => p.id === id)
+  if (!entry) throw new Error('기본 제공 확장 기능 목록에 없습니다.')
+  const buf = readFileSync(join(builtinDir(), entry.file))
+  if (createHash('sha256').update(buf).digest('hex') !== entry.sha256) throw new Error('확장 기능 파일이 손상되었습니다. TeamHub를 다시 설치하세요.')
+  return install(checkBundle(JSON.parse(buf.toString('utf8'))), 'builtin')
 }
 
 /** Install from the download site; the file must match the catalog's SHA-256. */
 export async function installFromCatalog(id: string): Promise<PluginManifest> {
   const entry = (await fetchCatalog()).find((p) => p.id === id)
   if (!entry) throw new Error('확장 기능 목록에 없습니다.')
-  const res = await fetch(`${DOWNLOAD_SITE}plugins/${encodeURIComponent(entry.file)}`, { signal: AbortSignal.timeout(60000) })
+  if (entry.builtin) return installBuiltin(id)
+  const res = await net.fetch(`${DOWNLOAD_SITE}plugins/${encodeURIComponent(entry.file)}`, { signal: AbortSignal.timeout(60000) })
   if (!res.ok) throw new Error(`확장 기능을 받지 못했습니다(${res.status}).`)
   const buf = Buffer.from(await res.arrayBuffer())
   if (createHash('sha256').update(buf).digest('hex') !== entry.sha256) throw new Error('받은 파일이 목록과 다릅니다(해시 불일치). 설치하지 않았습니다.')

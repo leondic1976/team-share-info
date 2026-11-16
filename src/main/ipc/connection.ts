@@ -5,6 +5,10 @@ import { handle } from './registry'
 import { localDb } from '../localdb'
 import { serverSetupSchema } from '../../shared/schemas/settings'
 import {
+  archiveCurrent,
+  forgetSaved,
+  listSaved,
+  restoreSaved,
   clearCredential,
   getMode,
   getPendingJoin,
@@ -77,6 +81,49 @@ export function registerConnectionIpc(): void {
     // cached server data belongs to the old connection
     localDb().db.run('DELETE FROM query_cache')
   })
+
+  // ---------- switch between server / member PC, remembering the connections (settings) ----------
+  handle('conn:saved', null, () => listSaved())
+
+  /** Put the current connection away and return to the first screen; it can be used again later. */
+  const putAway = async (): Promise<void> => {
+    if (getMode() === 'server') await stopServer()
+    archiveCurrent()
+    // cached server data belongs to the old connection
+    localDb().db.run('DELETE FROM query_cache')
+  }
+  handle('conn:switchOut', null, async () => {
+    try {
+      await putAway()
+      return { ok: true }
+    } catch (e) {
+      log.error('switch out failed', e)
+      // nothing was cleared: bring the server back if it was stopped
+      await autoStartServer()
+      return { ok: false, error: '지금 연결을 기억해 두지 못했습니다. 연결은 그대로입니다.' }
+    }
+  })
+  handle('conn:activateSaved', z.object({ id: z.string().min(1).max(200) }), async ({ id }) => {
+    try {
+      if (readCredential()) await putAway()
+      else {
+        setPendingJoin(null)
+        localDb().db.run('DELETE FROM query_cache')
+      }
+      const entry = restoreSaved(id)
+      if (!entry) return { ok: false, error: '기억해 둔 연결을 찾을 수 없습니다.' }
+      if (entry.mode === 'server' && entry.serverConfig) {
+        const st = await startServer(entry.serverConfig.dataDir, { preventSleep: entry.serverConfig.preventSleep, failFast: true })
+        if (st.state !== 'running') return { ok: false, error: `서버를 시작하지 못했습니다: ${st.message ?? ''}` }
+      }
+      return { ok: true }
+    } catch (e) {
+      log.error('activate saved connection failed', e)
+      await autoStartServer()
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
+  })
+  handle('conn:forgetSaved', z.object({ id: z.string().min(1).max(200) }), ({ id }) => forgetSaved(id))
 
   handle('server:networkInfo', null, () => ({
     interfaces: listIpv4(),
@@ -165,7 +212,9 @@ export function registerConnectionIpc(): void {
 
   handle('discovery:scan', null, () => discoverServers())
 
-  handle('update:check', z.object({ serverUrl: z.string().url().nullable(), manual: z.boolean().optional() }), ({ serverUrl, manual }) => checkForUpdates(serverUrl, manual))
+  handle('update:check', z.object({ serverUrl: z.string().url().nullable(), manual: z.boolean().optional(), force: z.boolean().optional() }), ({ serverUrl, manual, force }) =>
+    checkForUpdates(serverUrl, manual, force)
+  )
   handle('update:download', null, () => downloadUpdate())
   handle('update:getSettings', null, () => updateSettings())
   handle('update:setSettings', z.object({ auto: z.boolean(), source: z.enum(['auto', 'web', 'lan']) }), (s) => setUpdateSettings(s))

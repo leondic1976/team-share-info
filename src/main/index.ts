@@ -28,6 +28,8 @@ import { restoreTransfers, stopWatches } from './transfer'
 import { onServerStatus, stopServer } from './server-host'
 import { applyPendingLocalChange, localDataPath, resolveLocalDir } from './storage'
 import { registerStorageIpc } from './ipc/storage'
+import { startUpdater } from './updater'
+import { getPendingJoin, readCredential } from './connection'
 
 setupPaths()
 configureWebRtcSwitches()
@@ -88,6 +90,7 @@ if (!app.requestSingleInstanceLock()) {
     startFileIndex()
     localDb().notes.purgeOld()
     void autoStartServer()
+    startUpdater({ serverUrl: () => readCredential()?.serverUrl ?? getPendingJoin()?.serverUrl ?? null, resumeServer: autoStartServer })
     getMainWindow()?.webContents.once('did-finish-load', () => setTimeout(() => openLink(process.argv), 1500))
     log.info(`TeamHub ${app.getVersion()} started (userData=${app.getPath('userData')})`)
   })

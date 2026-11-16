@@ -4,6 +4,7 @@ import { dpapiProtect, dpapiUnprotect } from './dpapi'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { userDataPath } from './paths'
 import { localDb } from './localdb'
+import type { SavedConnInfo } from '../shared/ipc'
 
 /**
  * Connection identity of this PC. The device key is stored encrypted with
@@ -112,4 +113,78 @@ export function setPendingJoin(p: PendingJoin | null): void {
 export function updateServerUrl(serverUrl: string): void {
   const c = readCredential()
   if (c) writeCredential({ ...c, serverUrl })
+}
+
+// ---------- remembered connections (settings: switch between server / member PC) ----------
+
+/** A connection this PC used before; kept so it can be used again without a new approval. */
+export interface SavedConnection {
+  id: string
+  mode: AppMode
+  label: string
+  savedAt: number
+  credential: DeviceCredential
+  serverConfig?: ServerLocalConfig
+}
+
+const SAVED_FILE = (): string => userDataPath('connections.dpapi')
+let savedCache: SavedConnection[] | undefined
+
+function readSaved(): SavedConnection[] {
+  if (savedCache) return savedCache
+  savedCache = []
+  try {
+    if (existsSync(SAVED_FILE())) savedCache = JSON.parse(dpapiUnprotect(readFileSync(SAVED_FILE())).toString('utf8')) as SavedConnection[]
+  } catch (e) {
+    log.error('[connection] cannot read connections.dpapi', e)
+  }
+  return savedCache
+}
+
+/** Device keys are secrets: the list is stored DPAPI-encrypted like device.dpapi. Throws when it cannot be written. */
+function writeSaved(list: SavedConnection[]): void {
+  if (list.length === 0) rmSync(SAVED_FILE(), { force: true })
+  else writeFileSync(SAVED_FILE(), dpapiProtect(Buffer.from(JSON.stringify(list), 'utf8')))
+  savedCache = list
+}
+
+export function listSaved(): SavedConnInfo[] {
+  return readSaved()
+    .map((s) => ({ id: s.id, mode: s.mode, label: s.label, savedAt: s.savedAt, serverUrl: s.mode === 'client' ? s.credential.serverUrl : null, dataDir: s.serverConfig?.dataDir ?? null }))
+    .sort((a, b) => b.savedAt - a.savedAt)
+}
+
+/**
+ * Put the connection in use away (remembered) and leave this PC unconfigured.
+ * Returns false when there is nothing to remember. The caller stops the embedded server first.
+ */
+export function archiveCurrent(): boolean {
+  const credential = readCredential()
+  const mode = getMode()
+  if (!credential || !mode) return false
+  const hello = localDb().kv.get<{ orgName?: string; teamName?: string }>('lastHello')
+  const label = [hello?.orgName, hello?.teamName].filter(Boolean).join(' ') || (mode === 'server' ? '이 PC의 서버' : credential.serverUrl.replace(/^https?:\/\//, ''))
+  const entry: SavedConnection = { id: `${mode}:${credential.deviceId}`, mode, label, savedAt: Date.now(), credential, serverConfig: mode === 'server' ? (getServerConfig() ?? undefined) : undefined }
+  // written before anything is cleared: a failure here must leave the current connection intact
+  writeSaved([entry, ...readSaved().filter((s) => s.id !== entry.id)])
+  clearCredential()
+  setPendingJoin(null)
+  setMode(null)
+  return true
+}
+
+/** Make a remembered connection the one in use (it leaves the remembered list). */
+export function restoreSaved(id: string): SavedConnection | null {
+  const entry = readSaved().find((s) => s.id === id)
+  if (!entry) return null
+  writeCredential(entry.credential)
+  setPendingJoin(null)
+  setMode(entry.mode)
+  if (entry.mode === 'server' && entry.serverConfig) setServerConfig(entry.serverConfig)
+  writeSaved(readSaved().filter((s) => s.id !== id))
+  return entry
+}
+
+export function forgetSaved(id: string): void {
+  writeSaved(readSaved().filter((s) => s.id !== id))
 }

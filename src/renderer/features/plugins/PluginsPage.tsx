@@ -45,6 +45,20 @@ export function PluginsPage(): React.JSX.Element {
   useEffect(() => onMain('plugins:changed', () => void qc.invalidateQueries({ queryKey: ['local', 'plugins'] })), [qc])
   const have = new Map((installed.data ?? []).map((p) => [p.manifest.id, p]))
   const askCatalog = (c: CatalogPlugin): void => setPending({ manifest: c, from: { kind: 'catalog', id: c.id } })
+  /** Plugins shipped with TeamHub install with one click: no download, no questions. */
+  const installNow = async (list: CatalogPlugin[]): Promise<void> => {
+    setBusy(true)
+    const done: string[] = []
+    let error = ''
+    for (const c of list) {
+      const r = await invoke('plugins:installCatalog', { id: c.id, builtin: true })
+      if (r.ok) done.push(c.name)
+      else error = r.error ?? '설치하지 못했습니다.'
+    }
+    setBusy(false)
+    void qc.invalidateQueries({ queryKey: ['local', 'plugins'] })
+    setMsg(error || `${done.join(', ')}을(를) 설치했습니다. 왼쪽 메뉴 "확장 기능" 아래에 나타납니다.`)
+  }
 
   // teamhub://plugins/install?id=… from the download site opens this confirmation.
   const installParam = params.get('install')
@@ -108,7 +122,7 @@ export function PluginsPage(): React.JSX.Element {
                     <span className="text-3xl">{p.manifest.icon}</span>
                     <div className="min-w-0 flex-1 space-y-1">
                       <p className="font-semibold">
-                        {p.manifest.name} <span className="text-xs font-normal text-muted-foreground">v{p.manifest.version} · {p.source === 'catalog' ? '사이트' : '파일'} · {format(p.installedAt, 'yyyy-MM-dd')}</span>
+                        {p.manifest.name} <span className="text-xs font-normal text-muted-foreground">v{p.manifest.version} · {p.source === 'catalog' ? '사이트' : p.source === 'builtin' ? '기본 제공' : '파일'} · {format(p.installedAt, 'yyyy-MM-dd')}</span>
                       </p>
                       <p className="text-sm text-muted-foreground">{p.manifest.description}</p>
                       <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -116,7 +130,7 @@ export function PluginsPage(): React.JSX.Element {
                           <Play /> 열기
                         </Button>
                         {update && (
-                          <Button size="sm" variant="outline" onClick={() => askCatalog(latest)}>
+                          <Button size="sm" variant="outline" disabled={busy} onClick={() => (latest.builtin ? void installNow([latest]) : askCatalog(latest))}>
                             <Download /> v{latest.version}로 업데이트
                           </Button>
                         )}
@@ -138,7 +152,18 @@ export function PluginsPage(): React.JSX.Element {
           </div>
         </section>
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-muted-foreground">확장 기능 모음 (다운로드 사이트)</h2>
+          <div className="mb-2 flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-muted-foreground">확장 기능 모음</h2>
+            <span className="text-xs text-muted-foreground">기본 제공은 인터넷 없이 바로 설치됩니다.</span>
+            {(() => {
+              const rest = (catalog.data?.data ?? []).filter((c) => c.builtin && !have.has(c.id))
+              return rest.length > 1 ? (
+                <Button size="sm" variant="outline" className="ml-auto" disabled={busy} onClick={() => void installNow(rest)}>
+                  <Download /> 기본 제공 모두 설치
+                </Button>
+              ) : null
+            })()}
+          </div>
           {catalog.isLoading && <Loader2 className="animate-spin" />}
           {catalog.data && !catalog.data.ok && <p className="text-sm text-muted-foreground">목록을 불러오지 못했습니다(인터넷 연결 필요). 폐쇄망에서는 받은 .thplugin 파일로 설치하세요. {catalog.data.error}</p>}
           <div className="grid gap-3 lg:grid-cols-2" data-testid="plugin-catalog">
@@ -150,7 +175,7 @@ export function PluginsPage(): React.JSX.Element {
                     <span className="text-3xl">{c.icon}</span>
                     <div className="min-w-0 flex-1 space-y-1">
                       <p className="font-semibold">
-                        {c.name} <span className="text-xs font-normal text-muted-foreground">v{c.version} · {c.author}</span>
+                        {c.name} <span className="text-xs font-normal text-muted-foreground">v{c.version} · {c.author} · {c.builtin ? '기본 제공' : '다운로드 사이트'}</span>
                       </p>
                       <p className="text-sm text-muted-foreground">{c.description}</p>
                       {c.features && (
@@ -164,8 +189,8 @@ export function PluginsPage(): React.JSX.Element {
                         {ins ? (
                           <span className="text-xs text-muted-foreground">설치됨 v{ins.manifest.version}</span>
                         ) : (
-                          <Button size="sm" onClick={() => askCatalog(c)}>
-                            <Download /> 설치
+                          <Button size="sm" disabled={busy} onClick={() => (c.builtin ? void installNow([c]) : askCatalog(c))}>
+                            <Download /> {c.builtin ? '바로 설치' : '설치'}
                           </Button>
                         )}
                       </div>

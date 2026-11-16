@@ -1,7 +1,7 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from 'fastify'
 import fastifyStatic from '@fastify/static'
 import { createHash } from 'node:crypto'
-import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { Readable, Transform } from 'node:stream'
@@ -82,7 +82,9 @@ export function writeLatestYml(ctx: ServerContext): ReleaseRow | undefined {
   const dir = updatesDir(ctx)
   const latest = latestRelease(ctx)
   const file = join(dir, 'latest.yml')
-  if (!latest) {
+  // no release, or its installer is gone (restored backup, moved data folder): offer nothing
+  // rather than a feed whose download fails on every member PC
+  if (!latest || !existsSync(join(dir, latest.file_name))) {
     rmSync(file, { force: true })
     return undefined
   }
@@ -111,10 +113,49 @@ function assertNewer(ctx: ServerContext, version: string): void {
   if (cur && compareVersions(version, cur.version) < 0) throw badRequest(`지금 등록된 v${cur.version}보다 낮은 버전은 올릴 수 없습니다(최신 버전만 보관).`)
 }
 
-function safeFileName(name: string): string {
-  const base = name.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '-').trim()
-  if (!/\.exe$/i.test(base)) throw badRequest('설치 파일(.exe)만 올릴 수 있습니다.')
+/**
+ * File name used on disk, in latest.yml and in the download URL. Only letters, digits and
+ * `._()-` are kept, so the name never needs quoting in YAML or escaping in a URL path.
+ */
+export function safeFileName(name: string): string {
+  const base = name
+    .trim()
+    .replace(/[^\p{L}\p{N}._()-]+/gu, '-')
+    .replace(/^[-.]+/, '')
+  if (!/^.+\.exe$/i.test(base)) throw badRequest('설치 파일(.exe)만 올릴 수 있습니다.')
   return base
+}
+
+/**
+ * ProductVersion in the installer's version resource (electron-builder NSIS), or null when
+ * the file has none. Registering an installer under another version number would make every
+ * PC install it again and again, because the installed version never reaches the offered one.
+ */
+export function installerVersion(file: string): string | null {
+  const fd = openSync(file, 'r')
+  try {
+    const buf = Buffer.alloc(2 * 1024 * 1024)
+    const head = buf.subarray(0, readSync(fd, buf, 0, buf.length, 0))
+    const key = Buffer.from('ProductVersion\0', 'utf16le')
+    const at = head.indexOf(key)
+    if (at < 0) return null
+    let p = at + key.length
+    while (p + 1 < head.length && head.readUInt16LE(p) === 0) p += 2
+    let end = p
+    while (end + 1 < head.length && end - p < 128 && head.readUInt16LE(end) !== 0) end += 2
+    const v = head.subarray(p, end).toString('utf16le').trim()
+    return SEMVER_RE.test(v) ? v : null
+  } finally {
+    closeSync(fd)
+  }
+}
+
+function assertInstallerVersion(file: string, version: string): void {
+  const actual = installerVersion(file)
+  if (actual && compareVersions(actual, version) !== 0) {
+    rmSync(file, { force: true })
+    throw badRequest(`설치 파일은 v${actual}인데 버전을 v${version}(으)로 입력했습니다. 설치 파일과 같은 버전을 입력하세요.`)
+  }
 }
 
 function escapeHtml(s: string): string {
@@ -186,6 +227,7 @@ export function registerUpdateRoutes(
         rmSync(tmp, { force: true })
         throw badRequest('설치 파일이 너무 작습니다. 올바른 파일인지 확인하세요.')
       }
+      assertInstallerVersion(tmp, q.version)
       const target = join(dir, fileName)
       if (existsSync(target)) rmSync(target, { force: true })
       renameSync(tmp, target)
@@ -256,6 +298,7 @@ export function registerUpdateRoutes(
       rmSync(tmp, { force: true })
       throw badRequest('받은 설치 파일이 손상되었습니다(해시 불일치). 다시 시도하세요.')
     }
+    assertInstallerVersion(tmp, version)
     const target = join(dir, fileName)
     if (existsSync(target)) rmSync(target, { force: true })
     renameSync(tmp, target)

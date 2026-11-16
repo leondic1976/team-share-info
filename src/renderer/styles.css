@@ -58,6 +58,19 @@
   color-scheme: dark;
 }
 
+/*
+ * A personal wallpaper is on (settings → 배경화면). The wallpaper sits behind a veil of the
+ * background colour whose strength is computed from these text colours (src/shared/wallpapers.ts
+ * WALLPAPER_TEXT — keep the two in step): secondary text is strengthened, panels stay opaque.
+ */
+.has-wallpaper {
+  --muted-foreground: #475569;
+  --sidebar: transparent;
+}
+.dark.has-wallpaper {
+  --muted-foreground: #cbd5e1;
+}
+
 html {
   font-size: var(--app-font-size);
 }

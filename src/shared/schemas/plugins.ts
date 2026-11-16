@@ -53,12 +53,14 @@ export interface CatalogPlugin {
   sha256: string
   size: number
   features?: string[]
+  /** shipped inside the app: installs without a network (set by the app, not by the site) */
+  builtin?: boolean
 }
 
 export interface InstalledPlugin {
   manifest: PluginManifest
   installedAt: number
-  source: 'catalog' | 'file'
+  source: 'catalog' | 'file' | 'builtin'
   enabled: boolean
 }
 
