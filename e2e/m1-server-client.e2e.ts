@@ -32,13 +32,21 @@ describe('M1 server + member', () => {
     await expect.poll(() => p.getByTestId('pending').isVisible(), { timeout: 10000 }).toBe(true)
   })
 
+  it('the server PC is told about the request (notification, menu badge, tray)', async () => {
+    const toasts = (): Promise<string> =>
+      a.app.evaluate(() => ((globalThis as unknown as { __teamhubToasts?: { title: string; route?: string }[] }).__teamhubToasts ?? []).map((t) => `${t.title}>${t.route}`).join('|'))
+    await expect.poll(toasts, { timeout: 10000 }).toContain('사용 신청 · 팀원B · 검증팀>/admin/approvals')
+    await expect.poll(() => a.page.getByRole('link', { name: '관리 (1)', exact: true }).isVisible(), { timeout: 10000 }).toBe(true)
+  })
+
   it('admin approves and the member enters the app', async () => {
     const p = a.page
-    await p.getByRole('link', { name: '관리', exact: true }).click()
+    await p.getByRole('link', { name: '관리 (1)', exact: true }).click()
     await expect.poll(() => p.getByTestId('join-request').count(), { timeout: 10000 }).toBe(1)
     await p.getByRole('button', { name: '승인' }).click()
     await expect.poll(() => b.page.getByTestId('conn-state').textContent(), { timeout: 15000 }).toContain('서버 연결됨')
     expect(await b.page.getByTestId('org-text').textContent()).toBe('E2E기관 검증팀')
+    await expect.poll(() => p.getByRole('link', { name: '관리', exact: true }).isVisible(), { timeout: 10000 }).toBe(true)
     await p.getByRole('link', { name: '홈', exact: true }).click()
     await expect.poll(() => p.getByTestId('presence-팀원B').getAttribute('data-presence'), { timeout: 10000 }).toBe('online')
   })

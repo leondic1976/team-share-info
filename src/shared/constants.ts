@@ -62,6 +62,7 @@ export const FEATURES = [
   'utilities',
   'myfiles',
   'notes',
+  'ledger',
   'plugins'
 ] as const
 export type FeatureKey = (typeof FEATURES)[number]

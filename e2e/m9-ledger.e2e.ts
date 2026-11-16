@@ -1,15 +1,13 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright-core'
 import { go, joinAndApprove, launch, runWizard, type Launched } from './helpers'
+import { PROTOCOL_VERSION } from '../src/shared/constants'
 
 const PORT = '47910'
-const ROOT = resolve(import.meta.dirname, '..')
-const BUNDLE = join(ROOT, 'release', 'plugins', 'ledger-1.0.0.thplugin')
-const frame = (p: Page) => p.frameLocator('[data-testid="plugin-frame"]')
+const frame = (p: Page) => p.frameLocator('[data-testid="ledger-frame"]')
 const cell = (p: Page, v: number, c: number) => frame(p).locator(`#grid td[data-v="${v}"][data-c="${c}"]`)
 
 const answerSave = (app: ElectronApplication, path: string): Promise<void> =>
@@ -22,11 +20,11 @@ const answerOpen = (app: ElectronApplication, path: string): Promise<void> =>
   }, path)
 
 async function openLedger(p: Page): Promise<void> {
-  await p.getByRole('navigation', { name: '주 메뉴' }).getByRole('link', { name: '스마트 대장' }).click()
+  await p.getByRole('navigation', { name: '주 메뉴' }).getByRole('link', { name: '관리대장' }).click()
   await frame(p).locator('#side').waitFor()
 }
 
-describe('plugin: 스마트 대장 (spreadsheet-style ledger)', () => {
+describe('관리대장 (built-in ledger: personal, team and designated-people ledgers)', () => {
   let a: Launched
   let b: Launched
   const tmp = mkdtempSync(join(tmpdir(), 'teamhub-e2e-ledger-'))
@@ -36,18 +34,16 @@ describe('plugin: 스마트 대장 (spreadsheet-style ledger)', () => {
     rmSync(tmp, { recursive: true, force: true })
   })
 
-  it('setup: install from the .thplugin file on A (server) and B', async () => {
-    execFileSync(process.execPath, [join(ROOT, 'scripts', 'build-plugins.mjs'), join(ROOT, 'release', 'plugins')])
+  it('setup: the ledger is in the main menu of A (server) and B without installing anything', async () => {
     a = await launch({ profile: 'e2e-ldga' })
     await runWizard(a.page, PORT)
     b = await launch({ profile: 'e2e-ldgb' })
     await joinAndApprove(a.page, b.page, PORT, '팀원B')
-    for (const x of [a, b]) {
-      const info = await x.page.evaluate((path) => window.teamhub.invoke('plugins:inspectFile', { path }), BUNDLE)
-      expect(info.manifest?.permissions).toContain('files')
-      expect((await x.page.evaluate((path) => window.teamhub.invoke('plugins:installFile', { path }), BUNDLE)).ok).toBe(true)
-    }
+    expect(await a.page.evaluate(() => window.teamhub.invoke('plugins:list', undefined))).toEqual([])
     await openLedger(a.page)
+    expect(await frame(a.page).locator('#side h1').textContent()).toContain('관리대장')
+    expect(await frame(a.page).locator('#teamBooks').textContent()).toContain('팀용 대장이 없습니다')
+    expect(await frame(a.page).locator('#pickBooks').textContent()).toContain('지정자용 대장이 없습니다')
   }, 90000)
 
   it('new ledger from a template; typing with the keyboard; calculated column and totals', async () => {
@@ -169,4 +165,185 @@ describe('plugin: 스마트 대장 (spreadsheet-style ledger)', () => {
     await expect.poll(() => g.locator('#bookName').inputValue()).toContain('비품 대장E2E')
     expect(await g.locator('#grid tbody').textContent()).toContain('복사 용지')
   }, 60000)
+
+  const more = async (p: Page, act: string): Promise<void> => {
+    await frame(p).locator('#moreBtn').click()
+    await frame(p).locator(`#moreMenu button[data-act="${act}"]`).click()
+  }
+  // the input box always sits on the current cell (IME), so a plain click on that cell is intercepted
+  const pick = (p: Page, v: number, c: number): Promise<void> => cell(p, v, c).click({ force: true })
+  const bar = (p: Page): Promise<string | null> => frame(p).locator('#teamBar').textContent()
+
+  it('team ledger: A moves the personal ledger to the team; B opens the same ledger from the server', async () => {
+    const f = frame(a.page)
+    await more(a.page, 'toTeam')
+    await expect.poll(() => f.locator('#teamTitle').textContent()).toContain('올리기')
+    await f.locator('#teamGo').click()
+    await expect.poll(() => f.locator('#toast').textContent()).toContain('팀용 대장으로 올렸습니다')
+    await expect.poll(() => f.locator('#teamBooks li.on').textContent()).toContain('비품 대장E2E')
+    expect(await f.locator('#books').textContent()).not.toContain('비품 대장E2E') // moved, not copied
+    expect(await bar(a.page)).toContain('팀용 대장')
+    expect(await bar(a.page)).toContain('팀 전체')
+    // the read-only share is for personal ledgers only
+    await f.locator('#moreBtn').click()
+    expect(await f.locator('#moreMenu button[data-act="share"]').isVisible()).toBe(false)
+    expect(await f.locator('#moreMenu button[data-act="teamScope"]').isVisible()).toBe(true)
+    await f.locator('#moreBtn').click()
+
+    const g = frame(b.page)
+    await expect.poll(() => g.locator('#teamBooks li', { hasText: '비품 대장E2E' }).count(), { timeout: 10000 }).toBe(1) // arrives live
+    await g.locator('#teamBooks li', { hasText: '비품 대장E2E' }).click()
+    await expect.poll(() => bar(b.page)).toContain('만든 사람 서버관리자')
+    expect(await cell(b.page, 0, 1).textContent()).toBe('가위')
+    expect(await cell(b.page, 0, 5).textContent()).toBe('3,000원') // formulas work on B too
+  }, 60000)
+
+  it('one editor at a time: A types (saved automatically), B sees it live and cannot edit until A is done', async () => {
+    const f = frame(a.page)
+    const g = frame(b.page)
+    await pick(a.page, 0, 2)
+    await a.page.keyboard.type('대형')
+    await a.page.keyboard.press('Enter')
+    await expect.poll(() => bar(a.page)).toContain('내가 편집 중')
+    await expect.poll(() => f.locator('#saveState').textContent(), { timeout: 10000 }).toContain('서버에 저장됨')
+    await expect.poll(() => cell(b.page, 0, 2).textContent(), { timeout: 10000 }).toBe('대형')
+    await expect.poll(() => bar(b.page)).toContain('서버관리자님이 편집 중')
+    expect(await g.locator('#teamBooks li.on').textContent()).toContain('서버관리자님이 편집 중')
+    // B is stopped before typing anything
+    await pick(b.page, 1, 2)
+    await b.page.keyboard.type('x')
+    await expect.poll(() => g.locator('#toast').textContent()).toContain('서버관리자님이 편집 중입니다')
+    expect(await g.locator('#editor').inputValue()).toBe('')
+    await b.page.keyboard.press('Delete')
+    expect(await cell(b.page, 0, 2).textContent()).toBe('대형')
+
+    // A finishes; B edits and A sees it
+    await f.locator('#teamDone').click()
+    await expect.poll(() => bar(b.page), { timeout: 10000 }).toContain('입력을 시작하면')
+    await pick(b.page, 0, 2)
+    await b.page.keyboard.type('소형')
+    await b.page.keyboard.press('Enter')
+    await expect.poll(() => bar(b.page)).toContain('내가 편집 중')
+    await expect.poll(() => cell(a.page, 0, 2).textContent(), { timeout: 10000 }).toBe('소형')
+    await expect.poll(() => bar(a.page)).toContain('팀원B님이 편집 중')
+    // undo by B travels too
+    await b.page.keyboard.press('Control+z')
+    await expect.poll(() => cell(a.page, 0, 2).textContent(), { timeout: 10000 }).toBe('대형')
+    // leaving the screen frees the ledger at once
+    await go(b.page, '/home')
+    await expect.poll(() => bar(a.page), { timeout: 10000 }).toContain('입력을 시작하면')
+  }, 90000)
+
+  it('conflict detection: a save made on an old version is refused, the typed content is kept as a personal copy', async () => {
+    const f = frame(a.page)
+    await pick(a.page, 1, 2)
+    await a.page.keyboard.type('첫 입력')
+    await a.page.keyboard.press('Enter')
+    await expect.poll(() => f.locator('#saveState').textContent(), { timeout: 10000 }).toContain('서버에 저장됨')
+    const id = await f.locator('body').evaluate(() => (window as unknown as { __ledger: { team: { id: string } } }).__ledger.team.id)
+    // the same ledger is saved from somewhere else behind this screen's back (a second window of the
+    // same person, or anyone after this screen was cut off long enough to lose its edit lock)
+    const status = await a.page.evaluate(
+      async ({ ledgerId, protocol }) => {
+        const c = await window.teamhub.invoke('conn:get', undefined)
+        const headers = { authorization: `Bearer ${c.deviceId}.${c.deviceKey}`, 'x-win-user': encodeURIComponent(c.winUser), 'x-protocol': String(protocol), 'content-type': 'application/json' }
+        const url = `${c.serverUrl}/api/ledgers/${ledgerId}`
+        const cur = (await (await fetch(url, { headers })).json()).data
+        cur.doc.note = '다른 곳에서 먼저 저장'
+        const stale = (await fetch(url, { method: 'PUT', headers, body: JSON.stringify({ doc: cur.doc, version: cur.version - 1 }) })).status
+        const ok = (await fetch(url, { method: 'PUT', headers, body: JSON.stringify({ doc: cur.doc, version: cur.version }) })).status
+        return { stale, ok }
+      },
+      { ledgerId: id, protocol: PROTOCOL_VERSION }
+    )
+    expect(status).toEqual({ stale: 409, ok: 200 })
+    await pick(a.page, 2, 2)
+    await a.page.keyboard.type('충돌할 입력')
+    await a.page.keyboard.press('Enter')
+    await expect.poll(() => f.locator('#toast').textContent(), { timeout: 10000 }).toContain('사본으로 남겼습니다')
+    await expect.poll(() => f.locator('#books').textContent()).toContain('비품 대장E2E (저장 못 한 내 변경)')
+    // the screen went back to the server's version; nothing of the other save was overwritten
+    await expect.poll(() => f.locator('#note').inputValue(), { timeout: 10000 }).toBe('다른 곳에서 먼저 저장')
+    expect(await cell(a.page, 2, 2).textContent()).not.toBe('충돌할 입력')
+    expect(await cell(a.page, 1, 2).textContent()).toBe('첫 입력')
+    // and the copy holds what was typed
+    await f.locator('#books li', { hasText: '저장 못 한 내 변경' }).click()
+    await expect.poll(() => cell(a.page, 2, 2).textContent()).toBe('충돌할 입력')
+    await f.locator('#teamBooks li', { hasText: '비품 대장E2E' }).click()
+    await expect.poll(() => bar(a.page)).toContain('팀용 대장')
+  }, 90000)
+
+  it('edit mode "owner" makes it read-only for B; B keeps a personal copy; deleting removes it everywhere', async () => {
+    const f = frame(a.page)
+    await more(a.page, 'teamScope')
+    await f.locator('#teamEdit').selectOption('owner')
+    await f.locator('#teamGo').click()
+    await expect.poll(() => f.locator('#toast').textContent()).toContain('편집 권한을 바꿨습니다')
+
+    await openLedger(b.page)
+    const g = frame(b.page)
+    await expect.poll(() => bar(b.page), { timeout: 10000 }).toContain('보기 전용') // reopened where B left off
+    expect(await g.locator('#teamBooks li.on').textContent()).toContain('보기')
+    await pick(b.page, 0, 2)
+    await b.page.keyboard.type('x')
+    await expect.poll(() => g.locator('#toast').textContent()).toContain('보기 전용 대장입니다')
+    await g.locator('#moreBtn').click()
+    expect(await g.locator('#moreMenu button[data-act="delete"]').isVisible()).toBe(false)
+    await g.locator('#moreMenu button[data-act="dup"]').click()
+    await expect.poll(() => g.locator('#toast').textContent()).toContain('개인용 대장으로 사본을 받았습니다')
+    await expect.poll(() => g.locator('#books li.on').textContent()).toContain('비품 대장E2E (사본)')
+    expect(await g.locator('#teamBar').isVisible()).toBe(false)
+    // the copy is B's own: editable, and A never sees it
+    await pick(b.page, 0, 2)
+    await b.page.keyboard.type('내 것')
+    await b.page.keyboard.press('Enter')
+    await expect.poll(() => cell(b.page, 0, 2).textContent()).toBe('내 것')
+    await expect.poll(() => g.locator('#saveState').textContent()).toContain('저장됨')
+    expect(await cell(a.page, 0, 2).textContent()).toBe('대형')
+
+    await g.locator('#teamBooks li', { hasText: '비품 대장E2E' }).click()
+    await expect.poll(() => bar(b.page)).toContain('보기 전용')
+    a.page.once('dialog', (d) => void d.accept())
+    await more(a.page, 'delete')
+    await expect.poll(() => f.locator('#toast').textContent()).toContain('삭제했습니다')
+    await expect.poll(() => g.locator('#toast').textContent(), { timeout: 10000 }).toContain('삭제되었습니다')
+    await expect.poll(() => g.locator('#teamBooks').textContent()).toContain('팀용 대장이 없습니다')
+    expect(await g.locator('#sheet').isVisible()).toBe(false)
+  }, 90000)
+
+  it('designated-people ledger; the old "스마트 대장" plugin is retired and its ledgers stay', async () => {
+    const f = frame(a.page)
+    await f.locator('#newBook').click()
+    await f.locator('#newName').fill('차량 일지E2E')
+    await f.locator('input[name="newWhere"][value="members"]').check()
+    await f.locator('#templates button[data-t="vehicle"]').click()
+    await expect.poll(() => f.locator('#teamTitle').textContent()).toBe('새 지정자용 대장')
+    expect(await f.locator('input[name="teamTo"][value="members"]').isChecked()).toBe(true)
+    await f.locator('#teamGo').click()
+    await expect.poll(() => f.locator('#teamStateMsg').textContent()).toContain('지정하세요')
+    await f.locator('#teamMembers label', { hasText: '팀원B' }).locator('input').check()
+    await f.locator('#teamGo').click()
+    await expect.poll(() => f.locator('#pickBooks li.on').textContent()).toContain('차량 일지E2E')
+    expect(await f.locator('#teamBooks').textContent()).not.toContain('차량 일지E2E')
+    expect(await bar(a.page)).toContain('지정자용 대장')
+    expect(await bar(a.page)).toContain('팀원B')
+    await expect.poll(() => frame(b.page).locator('#pickBooks li', { hasText: '차량 일지E2E' }).count(), { timeout: 10000 }).toBe(1)
+
+    // a PC that had the plugin installed: after the update it is gone from the plugin list, the ledgers are still there
+    await a.page.evaluate(() =>
+      window.teamhub.invoke('local:kv.set', {
+        key: 'plugins',
+        value: { ledger: { manifest: { id: 'ledger', name: '스마트 대장', version: '1.0.0', entry: 'index.html', permissions: ['storage'], icon: '📒' }, installedAt: 1, source: 'builtin', enabled: true } }
+      })
+    )
+    await a.close({ keepData: true })
+    a = await launch({ profile: 'e2e-ldga', userData: a.userData })
+    await a.page.getByTestId('conn-state').filter({ hasText: '서버 연결됨' }).waitFor({ timeout: 30000 })
+    expect(await a.page.evaluate(() => window.teamhub.invoke('plugins:list', undefined))).toEqual([])
+    await go(a.page, '/plugins/ledger') // an old link
+    await frame(a.page).locator('#side').waitFor()
+    expect(a.page.url()).toContain('#/ledger')
+    await expect.poll(() => frame(a.page).locator('#books').textContent()).toContain('수발신') // personal ledgers kept
+    await expect.poll(() => frame(a.page).locator('#pickBooks li.on').textContent(), { timeout: 10000 }).toContain('차량 일지E2E') // reopens the last one
+  }, 120000)
 })

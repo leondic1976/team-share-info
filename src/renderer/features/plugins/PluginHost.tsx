@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import type { InstalledPlugin, PluginPermission, PluginRoomDto } from '@shared/schemas/plugins'
 import type { MemberDto } from '@shared/schemas/auth'
@@ -138,6 +138,8 @@ export function PluginHost(): React.JSX.Element {
     }
   }, [plugin, id, me, navigate])
 
+  // 관리대장 used to be the plugin "ledger": old links and invitations land on the built-in screen
+  if (id === 'ledger') return <Navigate to={`/ledger${room ? `?room=${room}` : ''}`} replace />
   if (list.isFetched && !plugin)
     return <EmptyState icon={Puzzle} title="설치되지 않은 확장 기능입니다" action={<Button onClick={() => navigate(`/plugins?install=${id}`)}>확장 기능 화면으로</Button>} />
   if (plugin && !plugin.enabled) return <EmptyState icon={Puzzle} title={`${plugin.manifest.name}이(가) 꺼져 있습니다`} description="확장 기능 화면에서 켤 수 있습니다." />

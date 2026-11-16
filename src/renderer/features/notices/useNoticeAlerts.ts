@@ -7,6 +7,7 @@ import { api } from '@renderer/lib/api'
 import { invoke, onMain } from '@renderer/lib/bridge'
 import { inDoNotDisturb } from '@renderer/app/prefs-store'
 import { useConn } from '@renderer/app/conn-store'
+import { useMe } from '@renderer/lib/queries'
 
 interface ChangedPayload {
   id: string
@@ -41,9 +42,11 @@ export function useNoticeAlerts(): void {
   const memberId = useConn((s) => s.memberId)
   const { unread } = useUnreadNotices()
   const chat = useQuery({ queryKey: ['chat', 'unread'], queryFn: () => api.get<{ messages: number; notes: number }>('/api/chat/unread'), enabled: useConn((s) => s.state === 'online') })
-  const total = unread + (chat.data?.messages ?? 0) + (chat.data?.notes ?? 0)
+  const pendingJoins = useMe().data?.pendingJoins ?? 0
+  const total = unread + (chat.data?.messages ?? 0) + (chat.data?.notes ?? 0) + pendingJoins
 
-  // Tray icon shows a red dot while anything is unread (notices, messages, notes).
+  // Tray icon shows a red dot while anything is unread (notices, messages, notes)
+  // or, for admins, while join requests wait for approval.
   useEffect(() => {
     void invoke('app:setBadge', { count: total })
   }, [total])

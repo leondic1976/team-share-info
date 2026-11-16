@@ -10,7 +10,7 @@ import { api } from '@renderer/lib/api'
 import { invoke } from '@renderer/lib/bridge'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
-import type { TaskDto, TaskState } from '@shared/schemas/work'
+import { assigneeLabel, type TaskDto, type TaskState } from '@shared/schemas/work'
 import type { PersonalTaskDto } from '@shared/schemas/personal'
 import { NewTaskDialog, PersonalTaskDialog, TaskDetailDialog, stateBadge } from './TaskDialogs'
 import { cn } from '@renderer/lib/utils'
@@ -73,7 +73,7 @@ export function TasksPage(): React.JSX.Element {
         <span className="truncate font-medium">{i.title}</span>
       </div>
       <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-        {i.origin === 'server' && <span>{filter === 'requested' ? `→ ${i.assigneeName}` : i.requesterName}</span>}
+        {i.origin === 'server' && <span>{filter === 'requested' ? `→ ${assigneeLabel(i)}` : i.requesterName}</span>}
         {dueText(i)}
         {i.origin === 'server' && i.commentCount > 0 && (
           <span className="flex items-center gap-0.5">
@@ -161,7 +161,7 @@ export function TasksPage(): React.JSX.Element {
                 {i.priority === 'high' && <Badge variant="urgent">높음</Badge>}
                 {i.origin === 'server' && (
                   <span className="text-xs text-muted-foreground">
-                    {i.requesterName} → {i.assigneeName}
+                    {i.requesterName} → <span title={i.assigneeName}>{assigneeLabel(i)}</span>
                   </span>
                 )}
                 <span className="ml-auto flex items-center gap-3">

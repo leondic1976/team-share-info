@@ -130,33 +130,106 @@ kbd {
   font-size: 16px;
   margin: 0 0 4px;
 }
-#books {
+[hidden] {
+  display: none !important;
+}
+.lists {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+#side h2.grp {
+  margin: 8px 0 2px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+#side h2.grp small {
+  font-weight: 400;
+}
+.books {
   list-style: none;
   margin: 0;
   padding: 0;
-  overflow-y: auto;
-  flex: 1;
 }
-#books li {
+.books .tag {
+  font-style: normal;
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+.teambar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 5px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--head);
+}
+.teambar .st {
+  margin-left: auto;
+  color: var(--muted);
+}
+.teambar.me .st {
+  color: var(--primary);
+  font-weight: 600;
+}
+.teambar.busy .st,
+.teambar.ro .st {
+  color: var(--warn);
+  font-weight: 600;
+}
+.teambar button {
+  padding: 1px 8px;
+  font-size: 12px;
+}
+.where {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+.where label {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.where small {
+  display: block;
+}
+@media print {
+  .teambar {
+    display: none !important;
+  }
+}
+.books li {
   display: flex;
   flex-direction: column;
   padding: 6px 8px;
   border-radius: 6px;
   cursor: pointer;
 }
-#books li:hover {
+.books li:hover {
   background: var(--head);
 }
-#books li.on {
+.books li.on {
   background: var(--sel);
 }
-#books li .n {
+.books li .n {
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#books li .m {
+.books li .m {
   font-size: 11px;
   color: var(--muted);
 }

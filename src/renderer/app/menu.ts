@@ -20,6 +20,7 @@ import {
   FolderSearch,
   Library,
   Puzzle,
+  Table2,
   type LucideIcon
 } from 'lucide-react'
 import type { FeatureKey } from '@shared/constants'
@@ -52,6 +53,7 @@ export const MENU: MenuItem[] = [
   { key: 'myfiles', label: '내 파일', path: '/myfiles', icon: FolderSearch, personal: true },
   { key: 'launcher', label: '런처', path: '/launcher', icon: Rocket, personal: true },
   { key: 'utilities', label: '유틸리티', path: '/utilities', icon: Gauge, personal: true },
+  { key: 'ledger', label: '관리대장', path: '/ledger', icon: Table2 },
   { key: 'plugins', label: '확장 기능', path: '/plugins', icon: Puzzle, personal: true }
 ]
 

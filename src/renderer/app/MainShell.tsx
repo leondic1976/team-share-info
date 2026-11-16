@@ -25,6 +25,7 @@ import { useEventReminders } from '@renderer/features/calendar/useEventReminders
 import { TransferPanel } from '@renderer/features/files/TransferPanel'
 import { useChatAlerts, useChatUnread } from '@renderer/features/chat/useChatAlerts'
 import { useTaskAlerts } from '@renderer/features/tasks/useTaskAlerts'
+import { useJoinAlerts } from '@renderer/features/admin/useJoinAlerts'
 import { useDocAlerts } from '@renderer/features/docs/useDocAlerts'
 import { CaptureDialog } from '@renderer/features/memos/CaptureDialog'
 import { useMorningSummary, useTeamAlarms } from '@renderer/features/alarms/useTeamAlarms'
@@ -51,6 +52,7 @@ const LauncherPage = lazy(() => import('@renderer/features/launcher/LauncherPage
 const MyFilesPage = lazy(() => import('@renderer/features/myfiles/MyFilesPage').then((m) => ({ default: m.MyFilesPage })))
 const NotesPage = lazy(() => import('@renderer/features/notes/NotesPage').then((m) => ({ default: m.NotesPage })))
 const PluginsPage = lazy(() => import('@renderer/features/plugins/PluginsPage').then((m) => ({ default: m.PluginsPage })))
+const LedgerPage = lazy(() => import('@renderer/features/ledger/LedgerPage').then((m) => ({ default: m.LedgerPage })))
 const PluginHost = lazy(() => import('@renderer/features/plugins/PluginHost').then((m) => ({ default: m.PluginHost })))
 
 export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Element {
@@ -70,6 +72,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   useMorningSummary()
   useMeetingAlerts()
   usePluginInvites()
+  useJoinAlerts(me?.role === 'admin')
   const liveMeetings = useLiveMeetings()
   const [searchOpen, setSearchOpen] = useState(false)
 
@@ -136,7 +139,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
       />
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
       <div className="flex min-h-0 flex-1">
-        <Sidebar isAdmin={isAdmin} disabledFeatures={disabled} badges={{ notices: unread, chat: chatUnread.messages + chatUnread.notes, meetings: liveMeetings.data?.length ?? 0 }} />
+        <Sidebar isAdmin={isAdmin} disabledFeatures={disabled} badges={{ notices: unread, chat: chatUnread.messages + chatUnread.notes, meetings: liveMeetings.data?.length ?? 0, admin: me?.pendingJoins ?? 0 }} />
         <main className="min-w-0 flex-1 overflow-hidden">
           <Suspense fallback={<Loading />}>
           <Routes>
@@ -167,6 +170,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/myfiles/:tab" element={<MyFilesPage />} />
             <Route path="/notes" element={<NotesPage />} />
             <Route path="/meetings" element={<MeetingsPage />} />
+            <Route path="/ledger" element={<LedgerPage />} />
             <Route path="/plugins" element={<PluginsPage />} />
             <Route path="/plugins/:id" element={<PluginHost />} />
             <Route path="/notes/:id" element={<NotesPage />} />

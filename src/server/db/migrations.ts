@@ -651,5 +651,44 @@ CREATE TABLE plugin_entries (
   PRIMARY KEY (room_id, member_id)
 );
 `
+  },
+  {
+    id: 12,
+    name: 'task-assignees',
+    // A task can have several assignees; tasks.assignee_id stays as the first one.
+    sql: `
+CREATE TABLE task_assignees (
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  member_id TEXT NOT NULL REFERENCES members(id),
+  position INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (task_id, member_id)
+);
+CREATE INDEX idx_task_assignees_member ON task_assignees(member_id);
+INSERT INTO task_assignees (task_id, member_id, position) SELECT id, assignee_id, 0 FROM tasks;
+`
+  },
+  {
+    id: 13,
+    name: 'ledgers',
+    sql: `
+CREATE TABLE ledgers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  icon TEXT NOT NULL DEFAULT '📄',
+  doc TEXT NOT NULL,
+  row_count INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 1,
+  edit_mode TEXT NOT NULL DEFAULT 'all' CHECK (edit_mode IN ('all','owner')),
+  scope_type TEXT NOT NULL CHECK (scope_type IN ('team','group','members')),
+  lock_by TEXT REFERENCES members(id),
+  lock_at INTEGER,
+  created_by TEXT NOT NULL REFERENCES members(id),
+  updated_by TEXT REFERENCES members(id),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE INDEX idx_ledgers_updated ON ledgers(deleted_at, updated_at);
+`
   }
 ]

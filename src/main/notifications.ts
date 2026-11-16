@@ -100,6 +100,10 @@ export function setToastGate(fn: (o: ToastOptions) => boolean): void {
 
 export function showToast(opts: ToastOptions, force = false): void {
   if (!force && !toastGate(opts)) return
+  if (process.env.TEAMHUB_E2E) {
+    const g = globalThis as unknown as { __teamhubToasts?: ToastOptions[] }
+    ;(g.__teamhubToasts ??= []).push(opts)
+  }
   if (!Notification.isSupported()) return
   const n = new Notification({ title: opts.title, body: opts.body, icon: resourcePath('icon.png'), silent: opts.silent ?? false })
   n.on('click', () => {

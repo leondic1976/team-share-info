@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify'
 import { z } from 'zod'
 import { newId } from '../../node/sqlite'
-import { canTransition, taskCreateSchema, taskPatchSchema, type TaskDto, type TaskState } from '../../shared/schemas/work'
+import { assigneeIdsOf, canTransition, taskCreateSchema, taskPatchSchema, type TaskAssignee, type TaskDto, type TaskState } from '../../shared/schemas/work'
 import type { ScopeInput } from '../../shared/schemas/scope'
 import type { ServerContext } from '../context'
 import { badRequest, forbidden, notFound } from '../errors'
@@ -17,7 +17,6 @@ interface TaskRow {
   title: string
   body_html: string
   assignee_id: string
-  assignee_name: string
   due_at: number | null
   priority: TaskDto['priority']
   state: TaskState
@@ -30,10 +29,13 @@ interface TaskRow {
   confirmed_at: number | null
 }
 
-const SELECT = `SELECT t.*, a.name AS assignee_name, r.name AS requester_name FROM tasks t
-  JOIN members a ON a.id = t.assignee_id JOIN members r ON r.id = t.created_by`
+const SELECT = `SELECT t.*, r.name AS requester_name FROM tasks t JOIN members r ON r.id = t.created_by`
+const IS_ASSIGNEE = 'EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.member_id = ?)'
 
-/** Work requests between members (6.8). Requester and assignee always see the task. */
+/**
+ * Work requests between members (6.8). Requester and assignees always see the task.
+ * A task may have several assignees who share one state: any of them can move it.
+ */
 export function registerTaskRoutes(app: FastifyInstance, ctx: ServerContext, guards: { requireAuth: preHandlerAsyncHookHandler }): void {
   const auth = { preHandler: guards.requireAuth }
   const db = ctx.db
@@ -42,25 +44,33 @@ export function registerTaskRoutes(app: FastifyInstance, ctx: ServerContext, gua
   registerAttachmentOwner('task', (d, id, m) => canSee(d, 'tasks', 'task', id, m))
   registerCommentOwner('task', (d, id, m) => !!d.get('SELECT 1 FROM tasks WHERE id = ? AND deleted_at IS NULL', [id]) && canSee(d, 'tasks', 'task', id, m), (id) => notify(id))
 
-  const toDto = (r: TaskRow, withBody = false): TaskDto => ({
-    id: r.id,
-    title: r.title,
-    ...(withBody ? { bodyHtml: r.body_html } : {}),
-    requesterId: r.created_by,
-    requesterName: r.requester_name,
-    assigneeId: r.assignee_id,
-    assigneeName: r.assignee_name,
-    dueAt: r.due_at,
-    priority: r.priority,
-    state: r.state,
-    scope: scopeDto(db, 'task', r.id, r.scope_type),
-    commentCount: commentCount(db, 'task', r.id),
-    attachmentCount: listAttachments(db, 'task', r.id).length,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    doneAt: r.done_at,
-    confirmedAt: r.confirmed_at
-  })
+  const assigneesOf = (id: string): TaskAssignee[] =>
+    db.all<TaskAssignee>('SELECT m.id, m.name FROM task_assignees ta JOIN members m ON m.id = ta.member_id WHERE ta.task_id = ? ORDER BY ta.position', [id])
+  const isAssignee = (id: string, memberId: string): boolean => !!db.get('SELECT 1 FROM task_assignees WHERE task_id = ? AND member_id = ?', [id, memberId])
+
+  const toDto = (r: TaskRow, withBody = false): TaskDto => {
+    const assignees = assigneesOf(r.id)
+    return {
+      id: r.id,
+      title: r.title,
+      ...(withBody ? { bodyHtml: r.body_html } : {}),
+      requesterId: r.created_by,
+      requesterName: r.requester_name,
+      assigneeId: r.assignee_id,
+      assigneeName: assignees.map((a) => a.name).join(', '),
+      assignees,
+      dueAt: r.due_at,
+      priority: r.priority,
+      state: r.state,
+      scope: scopeDto(db, 'task', r.id, r.scope_type),
+      commentCount: commentCount(db, 'task', r.id),
+      attachmentCount: listAttachments(db, 'task', r.id).length,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      doneAt: r.done_at,
+      confirmedAt: r.confirmed_at
+    }
+  }
 
   const load = (req: FastifyRequest, id: string): TaskRow => {
     const r = db.get<TaskRow>(`${SELECT} WHERE t.id = ? AND t.deleted_at IS NULL`, [id])
@@ -68,10 +78,19 @@ export function registerTaskRoutes(app: FastifyInstance, ctx: ServerContext, gua
     return r
   }
 
-  /** The assignee is always a member target so they can see the task whatever the scope. */
-  const applyScope = (id: string, scope: ScopeInput, assigneeId: string, actor: { id: string; role: string }): void => {
-    setScope(db, 'task', id, scope, actor)
-    if (scope.type !== 'team') db.run(`INSERT INTO scope_targets (item_type, item_id, target_type, target_id) VALUES ('task', ?, 'member', ?) ON CONFLICT DO NOTHING`, [id, assigneeId])
+  /** Assignees are always member targets so they can see the task whatever the scope. */
+  const showTo = (id: string, scopeType: string, memberIds: string[]): void => {
+    if (scopeType === 'team') return
+    for (const m of memberIds) db.run(`INSERT INTO scope_targets (item_type, item_id, target_type, target_id) VALUES ('task', ?, 'member', ?) ON CONFLICT DO NOTHING`, [id, m])
+  }
+
+  const checkAssignees = (ids: string[]): void => {
+    for (const m of ids) if (!db.get(`SELECT 1 FROM members WHERE id = ? AND status = 'active'`, [m])) throw badRequest('담당자를 찾을 수 없습니다.')
+  }
+
+  const setAssignees = (id: string, ids: string[]): void => {
+    db.run('DELETE FROM task_assignees WHERE task_id = ?', [id])
+    ids.forEach((m, i) => db.run('INSERT INTO task_assignees (task_id, member_id, position) VALUES (?, ?, ?)', [id, m, i]))
   }
 
   app.get('/api/tasks', auth, async (req) => {
@@ -89,7 +108,7 @@ export function registerTaskRoutes(app: FastifyInstance, ctx: ServerContext, gua
     const where = ['t.deleted_at IS NULL', w.sql]
     const params: (string | number)[] = [...w.params]
     if (q.filter === 'received') {
-      where.push('t.assignee_id = ?')
+      where.push(IS_ASSIGNEE)
       params.push(req.member.id)
     } else if (q.filter === 'requested') {
       where.push('t.created_by = ?')
@@ -123,32 +142,37 @@ export function registerTaskRoutes(app: FastifyInstance, ctx: ServerContext, gua
 
   app.post('/api/tasks', auth, async (req) => {
     const input = parse(taskCreateSchema, req.body)
-    if (!db.get(`SELECT 1 FROM members WHERE id = ? AND status = 'active'`, [input.assigneeId])) throw badRequest('담당자를 찾을 수 없습니다.')
-    const scope: ScopeInput = input.scope ?? { type: 'members', groupIds: [], memberIds: [input.assigneeId] }
+    const assignees = assigneeIdsOf(input)!
+    checkAssignees(assignees)
+    const scope: ScopeInput = input.scope ?? { type: 'members', groupIds: [], memberIds: assignees }
     const id = newId()
     const t = Date.now()
     db.tx(() => {
       db.run(
         `INSERT INTO tasks (id, title, body_html, assignee_id, due_at, priority, state, scope_type, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ?)`,
-        [id, input.title, cleanHtml(input.bodyHtml), input.assigneeId, input.dueAt, input.priority, scope.type, req.member.id, t, t]
+        [id, input.title, cleanHtml(input.bodyHtml), assignees[0], input.dueAt, input.priority, scope.type, req.member.id, t, t]
       )
-      applyScope(id, scope, input.assigneeId, req.member)
+      setAssignees(id, assignees)
+      setScope(db, 'task', id, scope, req.member)
+      showTo(id, scope.type, assignees)
       linkAttachments(ctx, input.attachmentIds, 'task', id, req.member.id)
     })
     logActivity(ctx, req, 'task.create', { type: 'task', id }, { title: input.title })
     notify(id)
-    if (input.assigneeId !== req.member.id) ctx.hub.sendTo([input.assigneeId], 'task.changed', { id, assigned: true, title: input.title, requesterName: req.member.name })
+    ctx.hub.sendTo(assignees.filter((m) => m !== req.member.id), 'task.changed', { id, assigned: true, title: input.title, requesterName: req.member.name })
     return ok(toDto(db.get<TaskRow>(`${SELECT} WHERE t.id = ?`, [id])!))
   })
 
   app.patch('/api/tasks/:id', auth, async (req) => {
     const r = load(req, (req.params as { id: string }).id)
     const p = parse(taskPatchSchema, req.body)
-    const role = { assignee: r.assignee_id === req.member.id, requester: r.created_by === req.member.id }
-    const editsContent = p.title !== undefined || p.bodyHtml !== undefined || p.dueAt !== undefined || p.priority !== undefined || p.assigneeId !== undefined
+    const role = { assignee: isAssignee(r.id, req.member.id), requester: r.created_by === req.member.id }
+    const assignees = assigneeIdsOf(p)
+    const editsContent = p.title !== undefined || p.bodyHtml !== undefined || p.dueAt !== undefined || p.priority !== undefined || assignees !== null
     if (editsContent && !role.requester && req.member.role !== 'admin') throw forbidden('요청한 사람만 내용을 고칠 수 있습니다.')
     const t = Date.now()
     const before = audienceOf(db, 'tasks', 'task', r.id)
+    const added = (assignees ?? []).filter((m) => !isAssignee(r.id, m))
     db.tx(() => {
       if (p.state && p.state !== r.state) {
         if (!canTransition(r.state, p.state, role)) throw forbidden('이 단계로 바꿀 권한이 없습니다.')
@@ -158,19 +182,21 @@ export function registerTaskRoutes(app: FastifyInstance, ctx: ServerContext, gua
         )
       }
       if (editsContent) {
-        if (p.assigneeId && !db.get(`SELECT 1 FROM members WHERE id = ? AND status = 'active'`, [p.assigneeId])) throw badRequest('담당자를 찾을 수 없습니다.')
+        checkAssignees(added)
         db.run(
           `UPDATE tasks SET title = COALESCE(?, title), body_html = COALESCE(?, body_html), due_at = CASE WHEN ? THEN ? ELSE due_at END,
            priority = COALESCE(?, priority), assignee_id = COALESCE(?, assignee_id), updated_at = ? WHERE id = ?`,
-          [p.title ?? null, p.bodyHtml !== undefined ? cleanHtml(p.bodyHtml) : null, p.dueAt !== undefined ? 1 : 0, p.dueAt ?? null, p.priority ?? null, p.assigneeId ?? null, t, r.id]
+          [p.title ?? null, p.bodyHtml !== undefined ? cleanHtml(p.bodyHtml) : null, p.dueAt !== undefined ? 1 : 0, p.dueAt ?? null, p.priority ?? null, assignees?.[0] ?? null, t, r.id]
         )
-        if (p.assigneeId && r.scope_type !== 'team') {
-          db.run(`INSERT INTO scope_targets (item_type, item_id, target_type, target_id) VALUES ('task', ?, 'member', ?) ON CONFLICT DO NOTHING`, [r.id, p.assigneeId])
+        if (assignees) {
+          setAssignees(r.id, assignees)
+          showTo(r.id, r.scope_type, assignees)
         }
       }
     })
     logActivity(ctx, req, 'task.update', { type: 'task', id: r.id }, p)
     notify(r.id, before)
+    ctx.hub.sendTo(added.filter((m) => m !== req.member.id), 'task.changed', { id: r.id, assigned: true, title: p.title ?? r.title, requesterName: req.member.name })
     return ok(toDto(db.get<TaskRow>(`${SELECT} WHERE t.id = ?`, [r.id])!))
   })
 

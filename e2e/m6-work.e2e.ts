@@ -29,7 +29,7 @@ describe('M6 tasks, boards, directory', () => {
     const d = a.page.getByRole('dialog')
     await d.getByRole('radio', { name: /업무 요청/ }).click()
     await d.getByLabel('할 일 제목').fill('예산안 검토')
-    await d.getByLabel('담당자').selectOption({ label: '팀원B' })
+    await d.getByTestId('task-assignees').getByLabel('팀원B', { exact: true }).check()
     await d.getByRole('button', { name: '요청 보내기' }).click()
     await go(b.page, '/tasks')
     await b.page.getByTestId('task-row-예산안 검토').click()
@@ -44,6 +44,31 @@ describe('M6 tasks, boards, directory', () => {
     await a.page.getByTestId('task-actions').getByRole('button', { name: '확인' }).click()
     await expect.poll(() => a.page.getByRole('dialog').textContent()).toContain('확인')
     await a.page.getByRole('dialog').getByRole('button', { name: '닫기' }).click()
+  })
+
+  it('a request with several assignees reaches each of them', async () => {
+    await a.page.getByRole('button', { name: '새 할 일' }).click()
+    const d = a.page.getByRole('dialog')
+    await d.getByRole('radio', { name: /업무 요청/ }).click()
+    await d.getByLabel('할 일 제목').fill('합동 점검')
+    const send = d.getByRole('button', { name: '요청 보내기' })
+    expect(await send.isDisabled()).toBe(true)
+    await d.getByTestId('task-assignees').getByLabel('팀원B', { exact: true }).check()
+    await d.getByTestId('task-assignees').getByLabel('서버관리자', { exact: true }).check()
+    await expect.poll(() => d.getByText('담당자 (2명)').count()).toBe(1)
+    await send.click()
+    // A (requester and assignee) and B both get it under "내가 할 일"
+    await a.page.getByRole('button', { name: '내가 할 일' }).click()
+    await expect.poll(() => a.page.getByTestId('task-row-합동 점검').textContent(), { timeout: 10000 }).toContain('서버관리자 → 팀원B, 서버관리자')
+    await expect.poll(() => b.page.getByTestId('task-row-합동 점검').count(), { timeout: 10000 }).toBe(1)
+    // B starts it, A (the other assignee) finishes it
+    await b.page.getByTestId('task-row-합동 점검').click()
+    await b.page.getByTestId('task-actions').getByRole('button', { name: '시작' }).click()
+    await b.page.getByRole('dialog').getByRole('button', { name: '닫기' }).click()
+    await a.page.getByTestId('task-row-합동 점검').click()
+    await a.page.getByTestId('task-actions').getByRole('button', { name: '완료' }).click()
+    await a.page.getByRole('dialog').getByRole('button', { name: '닫기' }).click()
+    await expect.poll(() => b.page.getByTestId('task-row-합동 점검').textContent(), { timeout: 10000 }).toContain('완료')
   })
 
   it('personal to-do stays local and shows a lock', async () => {

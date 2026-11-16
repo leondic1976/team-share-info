@@ -11,7 +11,7 @@ const INVALIDATE: Partial<Record<EventName, string[][]>> = {
   'presence.changed': [['members']],
   'member.changed': [['members'], ['me'], ['admin']],
   'device.changed': [['admin', 'devices']],
-  'join.requested': [['admin', 'join-requests'], ['admin', 'status']],
+  'join.requested': [['admin', 'join-requests'], ['admin', 'status'], ['me']],
   'settings.changed': [['me'], ['hello'], ['admin', 'settings']],
   'group.changed': [['groups'], ['me']],
   'group.membership': [['groups'], ['me']],

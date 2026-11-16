@@ -9,6 +9,8 @@ export function usePluginInvites(): void {
     () =>
       realtime.on('plugin.invite', (p) => {
         const x = p as PluginInvitePayload
+        // 관리대장 is part of the app (it shares read-only copies through the same rooms)
+        if (x.pluginId === 'ledger') return void invoke('notify:toast', { title: '📒 관리대장 보기 공유', body: `${x.fromName}님: ${x.title}`, route: `/ledger?room=${x.roomId}` })
         void invoke('plugins:list').then((list) => {
           const pl = list.find((i) => i.manifest.id === x.pluginId && i.enabled)
           void invoke('notify:toast', {

@@ -49,7 +49,7 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
       approveJoinRequest(ctx, id, null)
     } else {
       const admins = listMembers(ctx.db).filter((m) => m.role === 'admin').map((m) => m.id)
-      ctx.hub.sendTo(admins, 'join.requested', { id, name: input.name })
+      ctx.hub.sendTo(admins, 'join.requested', { id, name: input.name, deptName: input.deptName || null, pcName: input.pcName, ip })
     }
     return ok({ requestId: id, pollToken: token })
   })
@@ -81,7 +81,9 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
       deviceId: req.device.id,
       groups: myGroups(ctx.db, m.id),
       disabledFeatures: ops.disabledFeatures,
-      adminPinSet: !!readSetting<string>(ctx.db, 'adminPinHash')
+      adminPinSet: !!readSetting<string>(ctx.db, 'adminPinHash'),
+      // Only the count, so the menu badge and alerts work before the admin PIN is entered.
+      pendingJoins: m.role === 'admin' ? (ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM join_requests WHERE state = 'pending'`)?.n ?? 0) : 0
     }
     return ok(me)
   })

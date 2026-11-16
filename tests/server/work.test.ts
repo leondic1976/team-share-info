@@ -53,6 +53,48 @@ describe('tasks (M6-1)', () => {
     expect((await s.req(a, { method: 'DELETE', url: `/api/tasks/${t.id}`, ip: IP })).statusCode).toBe(200)
   })
 
+  it('several assignees share one task: all see it, any of them moves it', async () => {
+    s = await createTestServer()
+    const a = await s.join('A')
+    const b = await s.join('B')
+    const c = await s.join('C')
+    const d = await s.join('D')
+    const post = (payload: object) => s!.req(a, { method: 'POST', url: '/api/tasks', ip: IP, payload })
+    expect((await post({ title: '담당자 없음' })).statusCode).toBe(400)
+    expect((await post({ title: '담당자 없음', assigneeIds: [] })).statusCode).toBe(400)
+    expect((await post({ title: '없는 사람', assigneeIds: [b.memberId, 'nobody'] })).statusCode).toBe(400)
+    const t = (await post({ title: '합동 점검', assigneeIds: [b.memberId, c.memberId, b.memberId] })).json().data
+    expect(t).toMatchObject({ assigneeId: b.memberId, assigneeName: 'B, C' })
+    expect(t.assignees.map((x: { name: string }) => x.name)).toEqual(['B', 'C'])
+    const received = async (who: typeof a): Promise<string[]> => (await s!.req(who, { method: 'GET', url: '/api/tasks?filter=received', ip: IP })).json().data.map((x: { title: string }) => x.title)
+    expect(await received(b)).toEqual(['합동 점검'])
+    expect(await received(c)).toEqual(['합동 점검'])
+    expect(await received(a)).toEqual([])
+    expect((await s.req(d, { method: 'GET', url: `/api/tasks/${t.id}`, ip: IP })).statusCode).toBe(404)
+    const patch = (who: typeof a, body: object) => s!.req(who, { method: 'PATCH', url: `/api/tasks/${t.id}`, ip: IP, payload: body })
+    // one state for everyone: C starts, B finishes
+    expect((await patch(c, { state: 'doing' })).json().data.state).toBe('doing')
+    expect((await patch(b, { state: 'done' })).json().data.state).toBe('done')
+    expect((await patch(d, { state: 'doing' })).statusCode).toBe(404)
+    // only the requester changes the assignees; D joins, B leaves
+    expect((await patch(c, { assigneeIds: [c.memberId] })).statusCode).toBe(403)
+    const changed = (await patch(a, { assigneeIds: [c.memberId, d.memberId] })).json().data
+    expect(changed).toMatchObject({ assigneeId: c.memberId, assigneeName: 'C, D' })
+    expect(await received(d)).toEqual(['합동 점검'])
+    expect(await received(b)).toEqual([])
+    expect((await patch(b, { state: 'doing' })).statusCode).toBe(403)
+    expect((await patch(d, { state: 'doing' })).json().data.state).toBe('doing')
+    // the single-assignee form of older clients still works
+    expect((await patch(a, { assigneeId: b.memberId })).json().data.assigneeName).toBe('B')
+  })
+
+  it('accepts the single-assignee form of older clients', async () => {
+    s = await createTestServer()
+    const b = await s.join('B')
+    const t = (await s.req(s.admin, { method: 'POST', url: '/api/tasks', payload: { title: '옛 형식', assigneeId: b.memberId } })).json().data
+    expect(t.assignees).toEqual([{ id: b.memberId, name: 'B' }])
+  })
+
   it('filters by due date range (calendar)', async () => {
     s = await createTestServer()
     const b = await s.join('B')

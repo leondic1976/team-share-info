@@ -58,6 +58,6 @@ plugins/<id>/
 ## 시험
 - 묶기: `pnpm plugins:pack` → `release/plugins/<id>-<버전>.thplugin`
 - TeamHub **확장 기능 → 파일에서 설치**로 넣어 봅니다.
-- 순수 로직은 `tests/plugins/`에 단위 테스트를 둡니다(예: `ladder.test.ts`, `ledger.test.ts`).
-- 예시: `plugins/ladder`(함께하기 방), `plugins/ledger`(표 편집·수식 엔진·파일 저장/열기).
+- 순수 로직은 `tests/plugins/`에 단위 테스트를 둡니다(예: `ladder.test.ts`).
+- 예시: `plugins/ladder`(함께하기 방). 표 편집·수식 엔진·파일 저장/열기는 같은 방식으로 만든 본 기능 `resources/ledger`(관리대장)를 참고하세요.
 - `sandbox`에서는 `prompt()`가 동작하지 않습니다(Electron). 입력은 `<dialog>`로 받으세요. 붙여넣기는 `paste` 이벤트의 `clipboardData`로 읽습니다(클립보드 읽기 권한 없음).

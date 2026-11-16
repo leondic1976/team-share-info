@@ -10,6 +10,7 @@ import { pluginBundleSchema, PLUGIN_ID_RE, type CatalogPlugin, type InstalledPlu
 import { localDb } from './localdb'
 import { localDataPath } from './storage'
 import { PLUGIN_SDK } from './plugin-sdk'
+import { resourcePath } from './paths'
 
 /**
  * Plugins (확장 기능): install from the download site's catalog or from a .thplugin file,
@@ -39,6 +40,14 @@ const MIME: Record<string, string> = {
 }
 const CSP = `default-src ${PLUGIN_SCHEME}:; script-src ${PLUGIN_SCHEME}: 'unsafe-inline'; style-src ${PLUGIN_SCHEME}: 'unsafe-inline'; img-src ${PLUGIN_SCHEME}: data: blob:; media-src ${PLUGIN_SCHEME}: data: blob:; font-src ${PLUGIN_SCHEME}: data:; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'`
 
+/**
+ * Features of the app itself that run in the same isolated frame as plugins but ship in
+ * resources/<folder> (no install, cannot be removed). 관리대장 used to be the "스마트 대장"
+ * plugin with this id, so it keeps that id and its local data (kv keys plugin:ledger:*).
+ */
+export const BUILTIN_APPS: Record<string, string> = { ledger: 'ledger' }
+const isBuiltinApp = (id: string): boolean => Object.hasOwn(BUILTIN_APPS, id)
+
 const root = (): string => localDataPath('plugins')
 const KV = 'plugins'
 
@@ -57,15 +66,37 @@ export function registerPluginScheme(): void {
   protocol.registerSchemesAsPrivileged([{ scheme: PLUGIN_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: false, corsEnabled: false, stream: true } }])
 }
 
+/**
+ * A plugin that became part of the app is taken out of the installed list. Its files go;
+ * its local data stays, because the built-in feature keeps using it.
+ */
+function retireBuiltinPlugins(): void {
+  const r = registry()
+  const gone = Object.keys(r).filter(isBuiltinApp)
+  if (!gone.length) return
+  for (const id of gone) {
+    rmSync(join(root(), id), { recursive: true, force: true })
+    delete r[id]
+    log.info(`[plugins] ${id} is now built in; removed the installed plugin and kept its data`)
+  }
+  saveRegistry(r)
+}
+
 export function servePlugins(): void {
+  try {
+    retireBuiltinPlugins()
+  } catch (e) {
+    log.warn('[plugins] could not retire built-in plugins', e)
+  }
   protocol.handle(PLUGIN_SCHEME, async (req) => {
     const u = new URL(req.url)
     const id = u.hostname
-    const p = registry()[id]
-    if (!p || !p.enabled || !PLUGIN_ID_RE.test(id)) return new Response('not installed', { status: 404 })
-    const rel = decodeURIComponent(u.pathname).replace(/^\/+/, '') || p.manifest.entry
+    const builtin = isBuiltinApp(id)
+    const p = builtin ? undefined : registry()[id]
+    if (!builtin && (!p || !p.enabled || !PLUGIN_ID_RE.test(id))) return new Response('not installed', { status: 404 })
+    const rel = decodeURIComponent(u.pathname).replace(/^\/+/, '') || (p ? p.manifest.entry : 'index.html')
     if (rel === '__sdk.js') return new Response(PLUGIN_SDK, { headers: { 'content-type': MIME['.js'], 'content-security-policy': CSP } })
-    const base = join(root(), id)
+    const base = builtin ? resourcePath(BUILTIN_APPS[id]) : join(root(), id)
     const file = normalize(join(base, rel))
     if (!file.startsWith(base + '\\') || !ALLOWED_EXT.has(extname(file).toLowerCase()) || !existsSync(file)) return new Response('not found', { status: 404 })
     const res = await net.fetch(pathToFileURL(file).toString())
@@ -83,6 +114,7 @@ function checkBundle(raw: unknown): PluginBundle {
 
 function install(b: PluginBundle, source: InstalledPlugin['source']): PluginManifest {
   const id = b.manifest.id
+  if (isBuiltinApp(id)) throw new Error('TeamHub에 기본으로 들어 있는 기능입니다. 왼쪽 메뉴에서 바로 쓸 수 있습니다.')
   const tmp = join(root(), `.${id}.${Date.now()}`)
   for (const [rel, data] of Object.entries(b.files)) {
     const f = normalize(join(tmp, rel))
@@ -129,7 +161,8 @@ export async function fetchCatalog(): Promise<CatalogPlugin[]> {
   } catch (e) {
     if (byId.size === 0) throw e
   }
-  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+  // an older download site may still list what is now part of the app
+  return [...byId.values()].filter((p) => !isBuiltinApp(p.id)).sort((a, b) => a.name.localeCompare(b.name, 'ko'))
 }
 
 /** Install a plugin shipped with the app: no network, checked against its catalog hash. */
@@ -173,7 +206,7 @@ export function installFromFile(path: string): PluginManifest {
 // ---------- files (permission 'files'): only through a dialog the user answers ----------
 const FILE_EXT = ['csv', 'tsv', 'txt', 'json', 'md', 'html']
 const MAX_FILE = 5 * 1024 * 1024
-const hasFilesPermission = (id: string): boolean => !!registry()[id]?.enabled && !!registry()[id]?.manifest.permissions.includes('files')
+const hasFilesPermission = (id: string): boolean => isBuiltinApp(id) || (!!registry()[id]?.enabled && !!registry()[id]?.manifest.permissions.includes('files'))
 const extOfName = (n: string): string => (/\.([a-z0-9]{1,5})$/i.exec(n)?.[1] ?? '').toLowerCase()
 
 /** Save text a plugin made (e.g. CSV) where the user chooses. */
@@ -217,7 +250,7 @@ function decodeText(buf: Buffer): string {
 }
 
 export function uninstallPlugin(id: string): void {
-  if (!PLUGIN_ID_RE.test(id)) return
+  if (!PLUGIN_ID_RE.test(id) || isBuiltinApp(id)) return
   rmSync(join(root(), id), { recursive: true, force: true })
   const r = registry()
   delete r[id]

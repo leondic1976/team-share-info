@@ -23,15 +23,22 @@ export function canTransition(from: TaskState, to: TaskState, role: { assignee: 
   return (who.includes('assignee') && role.assignee) || (who.includes('requester') && role.requester)
 }
 
-export const taskCreateSchema = z.object({
-  title: z.string().trim().min(1, '제목을 입력하세요').max(120),
-  bodyHtml: z.string().max(500_000).default(''),
-  assigneeId: z.string(),
-  dueAt: z.number().int().nullable().default(null),
-  priority: z.enum(['low', 'normal', 'high']).default('normal'),
-  scope: scopeSchema.optional(),
-  attachmentIds: z.array(z.string()).max(10).default([])
-})
+export const MAX_TASK_ASSIGNEES = 30
+const assigneeIdsSchema = z.array(z.string()).min(1, '담당자를 고르세요').max(MAX_TASK_ASSIGNEES, `담당자는 ${MAX_TASK_ASSIGNEES}명까지 고를 수 있습니다`)
+
+/** `assigneeIds` is the current form; a single `assigneeId` is still accepted from older clients. */
+export const taskCreateSchema = z
+  .object({
+    title: z.string().trim().min(1, '제목을 입력하세요').max(120),
+    bodyHtml: z.string().max(500_000).default(''),
+    assigneeId: z.string().optional(),
+    assigneeIds: assigneeIdsSchema.optional(),
+    dueAt: z.number().int().nullable().default(null),
+    priority: z.enum(['low', 'normal', 'high']).default('normal'),
+    scope: scopeSchema.optional(),
+    attachmentIds: z.array(z.string()).max(10).default([])
+  })
+  .refine((v) => !!v.assigneeIds || !!v.assigneeId, { message: '담당자를 고르세요', path: ['assigneeIds'] })
 
 export const taskPatchSchema = z.object({
   title: z.string().trim().min(1).max(120).optional(),
@@ -39,8 +46,33 @@ export const taskPatchSchema = z.object({
   dueAt: z.number().int().nullable().optional(),
   priority: z.enum(['low', 'normal', 'high']).optional(),
   assigneeId: z.string().optional(),
+  assigneeIds: assigneeIdsSchema.optional(),
   state: z.enum(['requested', 'doing', 'done', 'confirmed']).optional()
 })
+
+/** Assignees from either field, first one first, without duplicates; null when neither is given. */
+export function assigneeIdsOf(v: { assigneeId?: string; assigneeIds?: string[] }): string[] | null {
+  const ids = v.assigneeIds ?? (v.assigneeId ? [v.assigneeId] : null)
+  return ids ? [...new Set(ids)] : null
+}
+
+export interface TaskAssignee {
+  id: string
+  name: string
+}
+
+export function isTaskAssignee(t: Pick<TaskDto, 'assigneeId'> & { assignees?: TaskAssignee[] }, memberId: string | undefined): boolean {
+  if (!memberId) return false
+  // A server older than this client sends only assigneeId.
+  return t.assignees ? t.assignees.some((a) => a.id === memberId) : t.assigneeId === memberId
+}
+
+/** Short assignee text for lists: "김철수", "김철수, 이영희", "김철수 외 2명". */
+export function assigneeLabel(t: Pick<TaskDto, 'assigneeName'> & { assignees?: TaskAssignee[] }): string {
+  const a = t.assignees
+  if (!a || a.length <= 2) return t.assigneeName
+  return `${a[0].name} 외 ${a.length - 1}명`
+}
 
 export interface TaskDto {
   id: string
@@ -48,8 +80,11 @@ export interface TaskDto {
   bodyHtml?: string
   requesterId: string
   requesterName: string
+  /** First assignee (kept for older clients). */
   assigneeId: string
+  /** All assignee names joined with ", ". */
   assigneeName: string
+  assignees: TaskAssignee[]
   dueAt: number | null
   priority: 'low' | 'normal' | 'high'
   state: TaskState

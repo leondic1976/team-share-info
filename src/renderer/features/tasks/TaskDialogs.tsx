@@ -9,15 +9,15 @@ import { Badge } from '@renderer/components/ui/badge'
 import { Editor, RichView } from '@renderer/components/Editor'
 import { AttachmentInput, AttachmentList, type Att } from '@renderer/components/Attachments'
 import { Comments } from '@renderer/components/Comments'
-import { ScopeTags } from '@renderer/components/ScopePicker'
+import { MemberPicker, ScopeTags } from '@renderer/components/ScopePicker'
 import { Field } from '@renderer/features/setup/SetupFrame'
 import { api, errorMessage } from '@renderer/lib/api'
 import { invoke } from '@renderer/lib/bridge'
 import { fromInputValue, toInputValue } from '@renderer/lib/dates'
-import { useMembers, useMe } from '@renderer/lib/queries'
+import { useMe } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
-import { PRIORITY_LABEL, TASK_STATE_LABEL, canTransition, type TaskDto, type TaskState } from '@shared/schemas/work'
+import { MAX_TASK_ASSIGNEES, PRIORITY_LABEL, TASK_STATE_LABEL, canTransition, isTaskAssignee, type TaskDto, type TaskState } from '@shared/schemas/work'
 import type { PersonalTaskDto } from '@shared/schemas/personal'
 import { cn } from '@renderer/lib/utils'
 
@@ -30,13 +30,11 @@ export function NewTaskDialog({ onClose, personal: initialPersonal }: { onClose:
   const qc = useQueryClient()
   const online = useConn((s) => s.state === 'online')
   const space = useSpace((s) => s.space)
-  const { data: me } = useMe()
-  const { data: members } = useMembers()
   const [personal, setPersonal] = useState(initialPersonal ?? !online)
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [note, setNote] = useState('')
-  const [assignee, setAssignee] = useState('')
+  const [assignees, setAssignees] = useState<string[]>([])
   const [due, setDue] = useState('')
   const [priority, setPriority] = useState<'low' | 'normal' | 'high'>('normal')
   const [atts, setAtts] = useState<Att[]>([])
@@ -49,7 +47,9 @@ export function NewTaskDialog({ onClose, personal: initialPersonal }: { onClose:
         await api.post('/api/tasks', {
           title,
           bodyHtml: body,
-          assigneeId: assignee,
+          // assigneeId is what a server older than this client reads.
+          assigneeId: assignees[0],
+          assigneeIds: assignees,
           dueAt,
           priority,
           attachmentIds: atts.map((a) => a.id),
@@ -69,7 +69,7 @@ export function NewTaskDialog({ onClose, personal: initialPersonal }: { onClose:
       title={personal ? '새 할 일' : '업무 요청'}
       width="max-w-2xl"
       footer={
-        <Button onClick={() => save.mutate()} disabled={!title.trim() || (!personal && !assignee) || save.isPending}>
+        <Button onClick={() => save.mutate()} disabled={!title.trim() || (!personal && (!assignees.length || assignees.length > MAX_TASK_ASSIGNEES)) || save.isPending}>
           <Send /> {personal ? '저장' : '요청 보내기'}
         </Button>
       }
@@ -91,28 +91,21 @@ export function NewTaskDialog({ onClose, personal: initialPersonal }: { onClose:
             className={cn('cursor-pointer rounded-md border-2 px-3 py-2 text-left disabled:opacity-50', !personal ? 'border-primary bg-primary/5' : 'border-border')}
           >
             <div className="text-sm font-semibold">업무 요청</div>
-            <div className="text-xs text-muted-foreground">팀원(또는 나)에게 담당 지정</div>
+            <div className="text-xs text-muted-foreground">팀원(또는 나)에게 담당 지정 · 여러 명 가능</div>
           </button>
         </div>
         <Field label="제목">
           <Input aria-label="할 일 제목" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
         </Field>
-        <div className="grid grid-cols-3 gap-3">
-          {!personal && (
-            <Field label="담당자">
-              <Select aria-label="담당자" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-                <option value="">선택</option>
-                {me && <option value={me.id}>나 ({me.name})</option>}
-                {(members ?? [])
-                  .filter((m) => m.id !== me?.id)
-                  .map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} {m.deptName ? `· ${m.deptName}` : ''}
-                    </option>
-                  ))}
-              </Select>
-            </Field>
-          )}
+        {!personal && (
+          <Field label={`담당자${assignees.length ? ` (${assignees.length}명)` : ''}`}>
+            <div data-testid="task-assignees">
+              <MemberPicker value={assignees} onChange={setAssignees} />
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">한 명 이상 고릅니다. 나 자신도 고를 수 있고, 여러 명이면 담당자 누구나 진행 상태를 바꿀 수 있습니다.</p>
+          </Field>
+        )}
+        <div className="grid grid-cols-2 gap-3">
           <Field label="마감">
             <Input aria-label="마감" type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
           </Field>
@@ -134,7 +127,7 @@ export function NewTaskDialog({ onClose, personal: initialPersonal }: { onClose:
               <Editor value={body} onChange={setBody} minHeight={100} />
             </Field>
             <AttachmentInput value={atts} onChange={setAtts} />
-            <p className="text-xs text-muted-foreground">요청한 사람과 담당자에게 보입니다{space !== 'team' ? ' (지금 고른 그룹 구성원에게도 보입니다)' : ''}.</p>
+            <p className="text-xs text-muted-foreground">요청한 사람과 담당자 모두에게 보입니다{space !== 'team' ? ' (지금 고른 그룹 구성원에게도 보입니다)' : ''}.</p>
           </>
         )}
         {err && <p className="text-sm text-urgent">{err}</p>}
@@ -177,7 +170,7 @@ export function TaskDetailDialog({ id, onClose }: { id: string; onClose: () => v
   })
   const t = q.data
   if (!t) return <Dialog open onClose={onClose} title="업무">{q.error ? <p className="text-sm text-urgent">{errorMessage(q.error)}</p> : <p className="text-sm">불러오는 중…</p>}</Dialog>
-  const role = { assignee: t.assigneeId === me?.id, requester: t.requesterId === me?.id }
+  const role = { assignee: isTaskAssignee(t, me?.id), requester: t.requesterId === me?.id }
   const overdue = t.dueAt && t.dueAt < Date.now() && (t.state === 'requested' || t.state === 'doing')
   return (
     <Dialog open onClose={onClose} title={t.title} width="max-w-2xl">

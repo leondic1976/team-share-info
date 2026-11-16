@@ -1,4 +1,6 @@
-/* 스마트 대장 UI. Talks to TeamHub only via TeamHub.call (see __sdk.js). Logic lives in formula.js / sheet.js. */
+/* 관리대장 UI. Talks to TeamHub only via TeamHub.call (see __sdk.js). Logic lives in formula.js / sheet.js.
+   Three kinds of ledger: 개인용 (this PC's local DB), 팀용 (server, whole team or a group) and
+   지정자용 (server, named people only). Server ledgers are edited by one person at a time. */
 ;(function () {
   'use strict'
   const F = window.LedgerFormula
@@ -25,6 +27,23 @@
   let me = null
   let saveTimer = null
   let viewing = null // shared room shown read-only
+
+  // team ledgers: kept on the server, edited by one person at a time (edit lock)
+  let team = null // meta of the open team ledger; null while a ledger of this PC is open
+  let teamList = []
+  let teamError = ''
+  let online = true
+  let holding = false // I am the editor (set at once, confirmed by the server in `acquiring`)
+  let acquiring = null
+  let beatTimer = null
+  let lastEdit = 0
+  let stale = false // a newer version arrived while I was typing in a cell
+  let saveFailed = false
+  let saveChain = Promise.resolve()
+  let teamDialogMode = null // 'create' | 'move' | 'scope'
+  let pendingTeam = null
+  const LOCK_BEAT = 25000
+  const LOCK_IDLE = 60000
 
   const grid = $('grid')
   const wrap = $('gridWrap')
@@ -68,9 +87,18 @@
     clearTimeout(saveTimer)
     saveTimer = setTimeout(flush, 300)
   }
-  async function flush() {
+  /** Saves run one after another: a team save needs the version the save before it produced. */
+  function flush() {
     clearTimeout(saveTimer)
     saveTimer = null
+    const p = saveChain.then(save)
+    saveChain = p.catch(() => undefined)
+    return p
+  }
+  /** Everything typed so far is saved (or has failed) when this resolves. */
+  const settle = () => (saveTimer ? flush() : saveChain)
+  const iconOf = (b) => (S.TEMPLATES.find((t) => t.key === b.template) || {}).icon || '📄'
+  async function save() {
     if (!book) return
     const b = book
     b.updatedAt = Date.now()
@@ -80,10 +108,11 @@
       toast('대장이 너무 커서 저장하지 못했습니다(약 500KB). 오래된 행을 다른 대장으로 옮기거나 나눠 주세요.', true)
       return
     }
+    if (team) return saveTeam(b, team, json)
     try {
       await call('storage.set', { key: `book:${b.id}`, value: b })
       const e = index.find((x) => x.id === b.id)
-      const entry = { id: b.id, name: b.name, updatedAt: b.updatedAt, rows: b.rows.length, icon: (S.TEMPLATES.find((t) => t.key === b.template) || {}).icon || '📄' }
+      const entry = { id: b.id, name: b.name, updatedAt: b.updatedAt, rows: b.rows.length, icon: iconOf(b) }
       if (e) Object.assign(e, entry)
       else index.unshift(entry)
       await saveIndex()
@@ -94,30 +123,98 @@
       toast(`저장하지 못했습니다: ${err.message}`, true)
     }
   }
+  async function saveTeam(b, t, json) {
+    if (acquiring && !(await acquiring)) return
+    if (!holding || team !== t) return
+    try {
+      const meta = await call('team.save', { id: t.id, doc: b, version: t.version, icon: iconOf(b) })
+      Object.assign(t, meta)
+      saveFailed = false
+      const e = teamList.find((x) => x.id === t.id)
+      if (e) Object.assign(e, meta)
+      else teamList.unshift({ ...meta })
+      if (team === t) {
+        $('saveState').textContent = `서버에 저장됨 · ${(json.length / 1024).toFixed(0)}KB`
+        teamBar()
+      }
+      renderBooks()
+    } catch (err) {
+      if (err.code === 'CONFLICT' || err.code === 'FORBIDDEN' || err.code === 'NOT_FOUND') {
+        // somebody else has it now: what I typed is kept as a ledger of this PC, then the server's version is shown
+        stopHolding(false)
+        await keepLocalCopy(b)
+        $('saveState').textContent = '저장 실패'
+        toast(`${err.message} 저장하지 못한 내 내용은 "개인용 대장"에 사본으로 남겼습니다.`, true)
+        if (team === t) setTimeout(() => (err.code === 'NOT_FOUND' ? closeSheet() : openTeam(t.id, true)), 0)
+        loadTeamList()
+      } else {
+        $('saveState').textContent = '서버에 저장하지 못함 · 다시 시도 중'
+        if (!saveFailed) toast(`서버에 저장하지 못했습니다: ${err.message} 연결되면 다시 저장합니다.`, true)
+        saveFailed = true
+        if (team === t && !saveTimer) saveTimer = setTimeout(flush, 5000)
+      }
+    }
+  }
+  async function keepLocalCopy(b) {
+    try {
+      const copy = JSON.parse(JSON.stringify(b))
+      copy.id = S.uid('b')
+      copy.name = `${b.name} (저장 못 한 내 변경)`.slice(0, 60)
+      delete copy.share
+      await call('storage.set', { key: `book:${copy.id}`, value: copy })
+      index.unshift({ id: copy.id, name: copy.name, updatedAt: Date.now(), rows: copy.rows.length, icon: iconOf(copy) })
+      await saveIndex()
+      renderBooks()
+    } catch {
+      /* nothing more can be done */
+    }
+  }
 
   // ---------- book list ----------
   function renderBooks() {
     const q = $('bookSearch').value.trim().toLowerCase()
+    const hit = (b) => !q || b.name.toLowerCase().includes(q)
     const list = index
-      .filter((b) => !q || b.name.toLowerCase().includes(q))
+      .filter(hit)
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map((b) => `<li data-id="${esc(b.id)}" class="${book && book.id === b.id ? 'on' : ''}" title="${esc(b.name)}"><span class="n">${esc(b.icon || '📄')} ${esc(b.name)}</span><span class="m">${b.rows}행 · ${fmtDate(b.updatedAt)}</span></li>`)
+      .map((b) => `<li data-id="${esc(b.id)}" class="${book && !team && book.id === b.id ? 'on' : ''}" title="${esc(b.name)}"><span class="n">${esc(b.icon || '📄')} ${esc(b.name)}</span><span class="m">${b.rows}행 · ${fmtDate(b.updatedAt)}</span></li>`)
     $('books').innerHTML = list.join('') || '<li class="muted small">대장이 없습니다</li>'
+    const shared = (picked) =>
+      teamList
+        .filter((t) => hit(t) && isPicked(t) === picked)
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .map((t) => {
+          const m = t.lock ? `✏️ ${t.lock.mine ? '내가' : `${esc(t.lock.name)}님이`} 편집 중` : `${t.rows}행 · ${esc(t.updatedByName || t.ownerName)} · ${fmtDate(t.updatedAt)}`
+          return `<li data-team="${esc(t.id)}" class="${team && team.id === t.id ? 'on' : ''}" title="${esc(t.name)}"><span class="n">${esc(t.icon || '📄')} ${esc(t.name)}${t.canEdit ? '' : ' <i class="tag">보기</i>'}</span><span class="m">${m}</span></li>`
+        })
+        .join('')
+    $('teamBooks').innerHTML = shared(false) || `<li class="muted small">${esc(teamError || '팀용 대장이 없습니다')}</li>`
+    $('pickBooks').innerHTML = shared(true) || `<li class="muted small">${esc(teamError || '지정자용 대장이 없습니다')}</li>`
   }
   $('books').addEventListener('click', (e) => {
     const li = e.target.closest('li[data-id]')
     if (li) openBook(li.dataset.id)
   })
+  for (const list of ['teamBooks', 'pickBooks'])
+    $(list).addEventListener('click', (e) => {
+      const li = e.target.closest('li[data-team]')
+      if (li) openTeam(li.dataset.team)
+    })
   $('bookSearch').addEventListener('input', renderBooks)
 
   async function openBook(id) {
-    if (saveTimer) await flush()
+    await settle()
     const b = await call('storage.get', { key: `book:${id}` }).catch(() => null)
     if (!b) return toast('대장을 열지 못했습니다.', true)
     show(b)
   }
-  function show(b) {
+  function show(b, meta) {
+    if (team && (!meta || meta.id !== team.id)) stopHolding(true)
     book = b
+    team = meta || null
+    if (team) book.id = team.id
+    stale = false
+    saveFailed = false
     viewing = null
     undoStack = []
     redoStack = []
@@ -132,15 +229,315 @@
     $('note').value = b.note || ''
     $('note').hidden = !b.note
     $('saveState').textContent = ''
+    syncTeamUi()
     recompute()
     render()
     renderBooks()
     focusGrid()
+    call('storage.set', { key: 'last', value: team ? { team: team.id } : { book: book.id } }).catch(() => undefined)
   }
+  /** A new ledger of this PC. */
   async function addBook(b) {
+    await settle()
+    stopHolding(true)
+    team = null
     book = b
     await flush()
     show(b)
+  }
+  function closeSheet() {
+    book = null
+    team = null
+    $('sheet').hidden = true
+    $('empty').hidden = false
+    syncTeamUi()
+    renderBooks()
+  }
+
+  // ---------- team ledgers (server) ----------
+  const canEditNow = () => !team || (team.canEdit && online && (holding || !team.lock || team.lock.mine))
+  const whyNot = () =>
+    !team.canEdit
+      ? '보기 전용 대장입니다. 만든 사람과 관리자만 고칠 수 있습니다.'
+      : !online
+        ? '서버에 연결되지 않아 이 대장을 고칠 수 없습니다(보기만 가능).'
+        : `${team.lock.name}님이 편집 중입니다. 끝나면 고칠 수 있습니다.`
+  /** 지정자용: shared with named people only. 팀용: the whole team or a group. */
+  const isPicked = (t) => t.scope.type === 'members'
+  const kindName = (t) => (isPicked(t) ? '👤 지정자용 대장' : '👥 팀용 대장')
+  const scopeText = (sc) => (sc.type === 'team' ? '팀 전체' : sc.type === 'group' ? `${sc.groups.map((g) => g.name).join(', ')} 그룹` : `지정한 사람 ${sc.members.length}명(${sc.members.map((m) => m.name).join(', ')})`)
+
+  async function loadTeamList() {
+    try {
+      teamList = (await call('team.list')) || []
+      teamError = ''
+    } catch (err) {
+      teamList = []
+      teamError = online ? `불러오지 못했습니다: ${err.message}` : '서버에 연결되면 보입니다'
+    }
+    renderBooks()
+  }
+  async function openTeam(id, keep) {
+    await settle()
+    let full
+    try {
+      full = await call('team.get', { id })
+    } catch (err) {
+      return toast(`대장을 열지 못했습니다: ${err.message}`, true)
+    }
+    const { doc, ...meta } = full
+    const at = keep && team && team.id === id ? { sel: { ...sel }, filters, query } : null
+    show(doc, meta)
+    if (at) {
+      sel = at.sel
+      filters = at.filters
+      query = at.query
+      $('search').value = query
+      recompute()
+      render()
+    }
+  }
+  /** Somebody else saved: show their version without losing my place. */
+  async function reloadTeam(id) {
+    let full
+    try {
+      full = await call('team.get', { id })
+    } catch {
+      return
+    }
+    if (!team || team.id !== id || holding) return
+    if (editing) return void (stale = true)
+    stale = false
+    const { doc, ...meta } = full
+    Object.assign(team, meta)
+    book = doc
+    book.id = team.id
+    undoStack = []
+    redoStack = []
+    $('bookName').value = book.name
+    $('note').value = book.note || ''
+    $('note').hidden = !book.note
+    if (meta.updatedByName) $('saveState').textContent = `${meta.updatedByName}님이 고침 · ${fmtDate(meta.updatedAt)}`
+    recompute()
+    render()
+    syncTeamUi()
+    renderBooks()
+  }
+  function teamBar() {
+    const bar = $('teamBar')
+    bar.hidden = !team
+    document.body.classList.toggle('readonly', !!team && !canEditNow())
+    if (!team) return
+    const [state, cls] = !team.canEdit
+      ? ['👀 보기 전용 · 만든 사람과 관리자만 고칩니다', 'ro']
+      : !online
+        ? ['⚠ 서버에 연결되지 않음 · 보기만 가능', 'ro']
+        : holding
+          ? ['✏️ 내가 편집 중 · 다른 사람은 그동안 보기만 합니다', 'me']
+          : team.lock && !team.lock.mine
+            ? [`🔒 ${team.lock.name}님이 편집 중 · 끝나면 고칠 수 있습니다`, 'busy']
+            : ['입력을 시작하면 내가 편집 중으로 바뀝니다', '']
+    bar.className = `teambar ${cls}`
+    bar.innerHTML = `<b>${kindName(team)}</b><span>${esc(scopeText(team.scope))}</span><span>만든 사람 ${esc(team.ownerName)}</span><span class="st" id="teamState2">${esc(state)}</span>${holding ? '<button type="button" id="teamDone">편집 끝내기</button>' : ''}`
+  }
+  function syncTeamUi() {
+    teamBar()
+    const item = (act) => $('moreMenu').querySelector(`[data-act="${act}"]`)
+    item('share').hidden = !!team
+    item('toTeam').hidden = !!team
+    item('teamScope').hidden = !team || !team.canManage
+    item('delete').hidden = !!team && !team.canManage
+    item('dup').textContent = team ? '개인용 대장으로 사본 받기' : '대장 복제'
+    $('bookName').readOnly = !!team && !team.canEdit
+    $('note').readOnly = !!team && !team.canEdit
+  }
+  $('teamBar').addEventListener('click', async (e) => {
+    if (!e.target.closest('#teamDone') || !team) return
+    const t = team
+    await settle()
+    if (team !== t) return
+    stopHolding(true)
+    t.lock = null
+    teamBar()
+    renderBooks()
+    toast('편집을 끝냈습니다. 이제 다른 사람이 고칠 수 있습니다.')
+  })
+
+  /**
+   * Become the editor. The change that triggered this is applied at once; if the server
+   * answers that somebody else was first, the server's version replaces it.
+   */
+  function acquire() {
+    const t = team
+    holding = true
+    lastEdit = Date.now()
+    acquiring = call('team.lock', { id: t.id })
+      .then(
+        (full) => {
+          if (team !== t) return false
+          const { doc, ...meta } = full
+          const moved = meta.version !== t.version
+          Object.assign(t, meta)
+          startBeat()
+          if (moved) {
+            clearTimeout(saveTimer)
+            saveTimer = null
+            book = doc
+            book.id = t.id
+            undoStack = []
+            redoStack = []
+            $('bookName').value = book.name
+            recompute()
+            render()
+            toast('다른 사람이 방금 고친 내용을 불러왔습니다. 방금 입력은 반영되지 않았으니 다시 입력해 주세요.', true)
+          }
+          syncTeamUi()
+          renderBooks()
+          return !moved
+        },
+        (err) => {
+          if (team !== t) return false
+          stopHolding(false)
+          clearTimeout(saveTimer)
+          saveTimer = null
+          toast(`${err.message} 방금 입력은 반영되지 않았습니다.`, true)
+          setTimeout(() => team === t && openTeam(t.id, true), 0)
+          loadTeamList()
+          return false
+        }
+      )
+      .finally(() => (acquiring = null))
+    teamBar()
+    return acquiring
+  }
+  function startBeat() {
+    clearInterval(beatTimer)
+    beatTimer = setInterval(async () => {
+      const t = team
+      if (!t || !holding) return stopHolding(false)
+      if (!editing && !saveTimer && !saveFailed && Date.now() - lastEdit > LOCK_IDLE) {
+        // nothing typed for a while: let others edit
+        await saveChain
+        if (team !== t || !holding || saveTimer || editing) return
+        stopHolding(true)
+        t.lock = null
+        teamBar()
+        renderBooks()
+        return
+      }
+      call('team.beat', { id: t.id }).catch(() => undefined)
+    }, LOCK_BEAT)
+  }
+  function stopHolding(release) {
+    clearInterval(beatTimer)
+    beatTimer = null
+    const was = holding
+    holding = false
+    if (release && was && team) call('team.unlock', { id: team.id }).catch(() => undefined)
+  }
+  window.TeamHub.on('online', (d) => {
+    online = !!(d && d.online)
+    if (!online) teamError = '서버에 연결되면 보입니다'
+    teamBar()
+  })
+  window.TeamHub.on('team.changed', async (d) => {
+    await loadTeamList()
+    const t = team
+    if (!t || (d && d.id && d.id !== t.id)) return
+    if (d && d.deleted) {
+      stopHolding(false)
+      closeSheet()
+      return toast('이 대장은 삭제되었습니다.', true)
+    }
+    const m = teamList.find((x) => x.id === t.id)
+    if (!m) {
+      if (teamError) return
+      stopHolding(false)
+      closeSheet()
+      return toast('이 대장을 더 볼 수 없게 되었습니다(볼 수 있는 사람이 바뀌었거나 삭제됨).', true)
+    }
+    if (holding) return
+    if (m.version !== t.version) return reloadTeam(t.id)
+    Object.assign(t, m)
+    syncTeamUi()
+  })
+
+  // audience dialog: new team ledger, move a ledger of this PC to the team, change the audience
+  async function openTeamDialog(mode, kind) {
+    teamDialogMode = mode
+    const sc = mode === 'scope' ? team.scope : null
+    $('teamTitle').textContent = mode === 'scope' ? '볼 수 있는 사람 · 편집 권한' : mode === 'move' ? '팀용·지정자용으로 올리기' : kind === 'members' ? '새 지정자용 대장' : '새 팀용 대장'
+    $('teamGo').textContent = mode === 'scope' ? '저장' : mode === 'move' ? '올리기' : '만들기'
+    $('teamKeepRow').hidden = mode !== 'move'
+    $('teamKeep').checked = false
+    $('teamStateMsg').textContent = ''
+    $('teamEdit').value = mode === 'scope' ? team.editMode : 'all'
+    try {
+      members = (await call('members')) || members
+    } catch {
+      /* keep what we have */
+    }
+    const groups = (await call('groups').catch(() => [])) || []
+    const type = sc ? sc.type : kind === 'members' ? 'members' : 'team'
+    const gOn = new Set(sc ? sc.groups.map((g) => g.id) : [])
+    const mOn = new Set(sc ? sc.members.map((m) => m.id) : [])
+    // groups I am not in (an admin may have picked them) stay listed so saving does not drop them
+    const allGroups = [...groups, ...(sc ? sc.groups.filter((g) => !groups.some((x) => x.id === g.id)) : [])]
+    $('teamGroups').innerHTML = allGroups.map((g) => `<label><input type="checkbox" value="${esc(g.id)}"${gOn.has(g.id) ? ' checked' : ''} /> ${esc(g.name)}</label>`).join('') || '<span class="muted small">내가 속한 그룹이 없습니다.</span>'
+    $('teamMembers').innerHTML = members
+      .filter((m) => !me || m.id !== me.id)
+      .map((m) => `<label><input type="checkbox" value="${esc(m.id)}"${mOn.has(m.id) ? ' checked' : ''} /> ${esc(m.name)}</label>`)
+      .join('')
+    document.querySelector(`input[name="teamTo"][value="${type}"]`).checked = true
+    syncTeamDialog()
+    $('teamDialog').showModal()
+  }
+  function syncTeamDialog() {
+    const type = document.querySelector('input[name="teamTo"]:checked').value
+    $('teamGroups').hidden = type !== 'group'
+    $('teamMembers').hidden = type !== 'members'
+  }
+  document.querySelectorAll('input[name="teamTo"]').forEach((r) => r.addEventListener('change', syncTeamDialog))
+  $('teamGo').onclick = async () => {
+    const mode = teamDialogMode
+    const type = document.querySelector('input[name="teamTo"]:checked').value
+    const groupIds = type === 'group' ? [...$('teamGroups').querySelectorAll('input:checked')].map((x) => x.value) : []
+    const memberIds = type === 'members' ? [...$('teamMembers').querySelectorAll('input:checked')].map((x) => x.value) : []
+    if (type === 'group' && !groupIds.length) return ($('teamStateMsg').textContent = '그룹을 고르세요.')
+    if (type === 'members' && !memberIds.length) return ($('teamStateMsg').textContent = '함께 쓸 사람을 지정하세요.')
+    const scope = { type, groupIds, memberIds }
+    const editMode = $('teamEdit').value
+    $('teamStateMsg').textContent = '저장하는 중…'
+    try {
+      if (mode === 'scope') {
+        const meta = await call('team.update', { id: team.id, scope, editMode })
+        Object.assign(team, meta)
+        syncTeamUi()
+        toast('볼 수 있는 사람과 편집 권한을 바꿨습니다.')
+      } else {
+        if (mode === 'move') await settle()
+        const src = mode === 'move' ? book : pendingTeam
+        const doc = JSON.parse(JSON.stringify(src))
+        const oldShare = doc.share
+        delete doc.share
+        const full = await call('team.create', { doc, scope, editMode, icon: iconOf(doc) })
+        if (mode === 'move' && !$('teamKeep').checked) {
+          // one ledger, one place: the copy on this PC (and its read-only share) goes
+          if (oldShare) await call('rooms.delete', { roomId: oldShare.roomId }).catch(() => undefined)
+          await call('storage.set', { key: `book:${src.id}`, value: null })
+          index = index.filter((x) => x.id !== src.id)
+          await saveIndex()
+        }
+        const { doc: saved, ...meta } = full
+        show(saved, meta)
+        toast(`${isPicked(meta) ? '지정자용' : '팀용'} 대장${mode === 'move' ? '으로 올렸습니다. 이제 함께 쓸 수 있습니다.' : '을 만들었습니다.'}`)
+      }
+      pendingTeam = null
+      $('teamDialog').close()
+      loadTeamList()
+    } catch (err) {
+      $('teamStateMsg').textContent = `하지 못했습니다: ${err.message}`
+    }
   }
 
   // ---------- compute & render ----------
@@ -288,6 +685,9 @@
 
   // ---------- changes ----------
   function change(fn) {
+    if (team && !canEditNow()) return toast(whyNot(), true)
+    if (team && !holding) acquire()
+    lastEdit = Date.now()
     undoStack.push(JSON.stringify(book))
     if (undoStack.length > 80) undoStack.shift()
     redoStack = []
@@ -300,8 +700,12 @@
     const from = dir > 0 ? redoStack : undoStack
     const to = dir > 0 ? undoStack : redoStack
     if (!from.length) return
+    if (team && !canEditNow()) return toast(whyNot(), true)
+    if (team && !holding) acquire()
+    lastEdit = Date.now()
     to.push(JSON.stringify(book))
     book = JSON.parse(from.pop())
+    if (team) book.id = team.id
     $('bookName').value = book.name
     recompute()
     render()
@@ -344,6 +748,10 @@
   // ---------- editing ----------
   function startEdit(mode, via, initial) {
     if (!view.length || !book.cols.length) return
+    if (team && !canEditNow()) {
+      editor.value = '' // the key that was typed must not stay in the input box over the cell
+      return toast(whyNot(), true)
+    }
     const col = book.cols[sel.c]
     if (col.type === 'check' && via === 'cell') {
       editor.value = ''
@@ -371,7 +779,11 @@
     editor.removeAttribute('list')
     if (r === undefined) return
     const col = book.cols[c]
-    if (S.editText(col, book.rows[r].c[col.id]) === text) return paint()
+    if (S.editText(col, book.rows[r].c[col.id]) === text) {
+      paint()
+      if (stale && team && !holding) reloadTeam(team.id)
+      return
+    }
     change(() => setCell(r, c, text))
   }
   function cancelEdit() {
@@ -380,6 +792,7 @@
     editor.removeAttribute('list')
     paint()
     focusGrid()
+    if (stale && team && !holding) reloadTeam(team.id)
   }
 
   editor.addEventListener('compositionstart', () => {
@@ -985,6 +1398,7 @@
     const n = e.target.value.trim() || '이름 없는 대장'
     e.target.value = n
     change((b) => (b.name = n))
+    e.target.value = book.name // unchanged when someone else is editing
   })
   $('bookName').addEventListener('keydown', (e) => e.key === 'Enter' && focusGrid())
   $('note').addEventListener('change', (e) => change((b) => (b.note = e.target.value)))
@@ -1016,17 +1430,31 @@
         $('printTitle').textContent = book.name
         window.print()
       } else if (act === 'share') openShare()
+      else if (act === 'toTeam') {
+        if (!online) return toast('서버에 연결되어야 올릴 수 있습니다.', true)
+        openTeamDialog('move')
+      } else if (act === 'teamScope') openTeamDialog('scope')
       else if (act === 'dup') {
-        await flush()
+        await settle()
+        const wasTeam = !!team
         const copy = JSON.parse(JSON.stringify(book))
         copy.id = S.uid('b')
-        copy.name = `${book.name} (사본)`
+        copy.name = `${book.name} (사본)`.slice(0, 60)
         delete copy.share
         await addBook(copy)
-        toast('복제했습니다.')
+        toast(wasTeam ? '개인용 대장으로 사본을 받았습니다. 이 사본은 이 PC에만 있습니다.' : '복제했습니다.')
       } else if (act === 'note') {
         $('note').hidden = false
         $('note').focus()
+      } else if (act === 'delete' && team) {
+        const t = team
+        if (!confirm(`“${book.name}” 대장을 삭제할까요?\n함께 쓰던 모든 사람에게서 사라지며 되돌릴 수 없습니다. 필요하면 먼저 "대장 파일로 저장"으로 백업하세요.`)) return
+        await settle()
+        await call('team.delete', { id: t.id })
+        stopHolding(false)
+        if (team === t) closeSheet()
+        loadTeamList()
+        toast('함께 쓰던 대장을 삭제했습니다.')
       } else if (act === 'delete') {
         if (!confirm(`“${book.name}” 대장을 삭제할까요?\n이 PC에서 지워지며 되돌릴 수 없습니다. 필요하면 먼저 "대장 파일로 저장"으로 백업하세요.`)) return
         const id = book.id
@@ -1035,10 +1463,7 @@
         await call('storage.set', { key: `book:${id}`, value: null })
         index = index.filter((x) => x.id !== id)
         await saveIndex()
-        book = null
-        $('sheet').hidden = true
-        $('empty').hidden = false
-        renderBooks()
+        closeSheet()
       }
     } catch (err) {
       toast(err.message, true)
@@ -1049,6 +1474,8 @@
   $('templates').innerHTML = S.TEMPLATES.map((t) => `<button type="button" data-t="${t.key}"><span class="ic">${t.icon}</span><span><b>${esc(t.name)}</b><small>${esc(t.desc)}</small></span></button>`).join('')
   $('newBook').onclick = () => {
     $('newName').value = ''
+    for (const v of ['team', 'members']) document.querySelector(`input[name="newWhere"][value="${v}"]`).disabled = !online
+    document.querySelector('input[name="newWhere"][value="local"]').checked = true
     $('newDialog').showModal()
     $('newName').focus()
   }
@@ -1056,7 +1483,13 @@
     const b = e.target.closest('button[data-t]')
     if (!b) return
     $('newDialog').close()
-    await addBook(S.fromTemplate(b.dataset.t, $('newName').value.trim() || undefined))
+    const made = S.fromTemplate(b.dataset.t, $('newName').value.trim() || undefined)
+    const where = document.querySelector('input[name="newWhere"]:checked').value
+    if (where !== 'local') {
+      pendingTeam = made
+      return openTeamDialog('create', where)
+    }
+    await addBook(made)
   })
   $('importCsv').onclick = async () => {
     try {
@@ -1075,7 +1508,7 @@
       if (!r || !r.ok) return r && r.error && toast(r.error, true)
       const data = JSON.parse(r.text)
       const b = data && data.format === FORMAT ? data.book : null
-      if (!b || !Array.isArray(b.cols) || !Array.isArray(b.rows)) throw new Error('스마트 대장 파일이 아닙니다.')
+      if (!b || !Array.isArray(b.cols) || !Array.isArray(b.rows)) throw new Error('관리대장 파일이 아닙니다.')
       b.id = S.uid('b')
       delete b.share
       if (index.some((x) => x.name === b.name)) b.name = `${b.name} (가져옴)`
@@ -1094,7 +1527,7 @@
     return { kind: 'ledger', name: book.name, note: book.note || '', cols, rows, totals, at: Date.now(), by: me ? me.name : '' }
   }
   async function openShare() {
-    await flush()
+    await settle()
     $('shareState').textContent = book.share ? `공유 중 (${fmtDate(book.share.at)}에 마지막 갱신)` : ''
     $('shareGo').textContent = book.share ? '공유 갱신' : '공유하기'
     $('shareStop').hidden = !book.share
@@ -1169,8 +1602,11 @@
   async function openRoom(id) {
     try {
       const room = await call('rooms.get', { roomId: id })
-      if (!room.shared || room.shared.kind !== 'ledger') return toast('스마트 대장 공유가 아닙니다.', true)
-      if (saveTimer) await flush()
+      if (!room.shared || room.shared.kind !== 'ledger') return toast('관리대장 공유가 아닙니다.', true)
+      await settle()
+      stopHolding(true)
+      team = null
+      syncTeamUi()
       viewing = room
       const s = room.shared
       $('empty').hidden = true
@@ -1249,12 +1685,22 @@
   window.addEventListener('beforeunload', () => {
     if (saveTimer) void flush()
   })
+  // leaving the screen (clicking another menu) takes the focus away first: save what is pending
+  window.addEventListener('blur', () => {
+    if (saveTimer) void flush()
+  })
   ;(async () => {
+    online = !!(await call('online').catch(() => false))
     me = await call('me').catch(() => null)
     members = (await call('members').catch(() => null)) || []
     await loadIndex()
+    await loadTeamList()
+    const last = await call('storage.get', { key: 'last' }).catch(() => null)
     if (window.TeamHub.room) openRoom(window.TeamHub.room)
+    else if (last && last.team && teamList.some((t) => t.id === last.team)) openTeam(last.team)
+    else if (last && last.book && index.some((b) => b.id === last.book)) openBook(last.book)
     else if (index.length) openBook([...index].sort((a, b) => b.updatedAt - a.updatedAt)[0].id)
+    else if (teamList.length) openTeam(teamList[0].id)
   })()
-  window.__ledger = { get book() { return book }, get view() { return view }, get sel() { return sel }, flush }
+  window.__ledger = { get book() { return book }, get view() { return view }, get sel() { return sel }, get team() { return team }, get holding() { return holding }, flush, settle }
 })()

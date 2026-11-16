@@ -26,6 +26,7 @@ import { registerLauncherRoutes } from './routes/launcher'
 import { leaveAllMeetings, registerMeetingRoutes } from './routes/meetings'
 import { registerBackupRoutes } from './routes/backup'
 import { registerPluginRoutes } from './routes/plugins'
+import { registerLedgerRoutes } from './routes/ledgers'
 import { registerSearchRoutes } from './routes/search'
 import { runBackupJob } from './backup'
 
@@ -104,6 +105,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   registerMeetingRoutes(app, ctx, { requireAuth })
   registerBackupRoutes(app, ctx, { requireAuth, requireAdmin })
   registerPluginRoutes(app, ctx, { requireAuth })
+  registerLedgerRoutes(app, ctx, { requireAuth })
   registerSearchRoutes(app, ctx, { requireAuth })
   hub.onMemberOffline = (memberId) => leaveAllMeetings(ctx, memberId)
 

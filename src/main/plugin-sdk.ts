@@ -15,7 +15,7 @@ export const PLUGIN_SDK = `(() => {
     if (m.id && waiting.has(m.id)) {
       const w = waiting.get(m.id)
       waiting.delete(m.id)
-      m.error ? w.reject(new Error(m.error)) : w.resolve(m.result)
+      m.error ? w.reject(Object.assign(new Error(m.error), { code: m.code || '' })) : w.resolve(m.result)
     } else if (m.event) {
       for (const cb of handlers.get(m.event) || []) { try { cb(m.data) } catch (err) { console.error(err) } }
     }

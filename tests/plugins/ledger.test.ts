@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const ctx: Record<string, any> = {}
-for (const f of ['formula.js', 'sheet.js']) runInNewContext(readFileSync(join(import.meta.dirname, '../../plugins/ledger', f), 'utf8'), ctx)
+for (const f of ['formula.js', 'sheet.js']) runInNewContext(readFileSync(join(import.meta.dirname, '../../resources/ledger', f), 'utf8'), ctx)
 const F = ctx.LedgerFormula
 const S = ctx.LedgerSheet
 

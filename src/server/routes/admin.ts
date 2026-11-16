@@ -98,6 +98,8 @@ export function registerAdminRoutes(
       )
       if (!r.changes) throw badRequest('이미 처리된 신청입니다.')
       logActivity(ctx, req, 'join.reject', { type: 'join_request', id })
+      // Other admins drop the request from their list and pending count.
+      ctx.hub.sendTo(listMembers(ctx.db).filter((m) => m.role === 'admin').map((m) => m.id), 'member.changed', { joinRequestId: id })
     }
     return ok({ id, action })
   })

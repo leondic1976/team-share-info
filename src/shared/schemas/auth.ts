@@ -65,6 +65,8 @@ export interface MeDto extends MemberDto {
   groups: GroupBrief[]
   disabledFeatures: string[]
   adminPinSet: boolean
+  /** Join requests waiting for a decision; always 0 for non-admins. */
+  pendingJoins: number
 }
 
 export const mePatchSchema = z.object({

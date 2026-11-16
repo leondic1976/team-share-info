@@ -4,7 +4,7 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import globals from 'globals'
 
 export default tseslint.config(
-  { ignores: ['out/**', 'release/**', 'node_modules/**', 'resources/**', '_site/**', 'site/**'] },
+  { ignores: ['out/**', 'release/**', 'node_modules/**', 'resources/plugins/**', 'resources/data/**', '_site/**', 'site/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -15,8 +15,8 @@ export default tseslint.config(
     }
   },
   {
-    // Plugins are plain browser scripts running in a sandboxed frame.
-    files: ['plugins/**/*.js'],
+    // Plugins and the built-in ledger screen are plain browser scripts running in a sandboxed frame.
+    files: ['plugins/**/*.js', 'resources/ledger/**/*.js'],
     languageOptions: { sourceType: 'script', globals: { ...globals.browser } }
   },
   {

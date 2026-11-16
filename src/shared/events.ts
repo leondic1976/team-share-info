@@ -47,6 +47,7 @@ export type EventName =
   | 'alarm.fire'
   | 'launcher.changed'
   | 'plugin.room'
+  | 'ledger.changed'
   | 'plugin.invite'
   | 'meeting.invite'
   | 'meeting.changed'

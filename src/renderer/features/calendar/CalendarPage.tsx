@@ -22,7 +22,7 @@ import { parseIcs, toIcs } from '@shared/ics'
 import { useHolidays, usePersonalEvents, useServerEvents, type Range } from './calendar-api'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import type { TaskDto } from '@shared/schemas/work'
+import { isTaskAssignee, type TaskDto } from '@shared/schemas/work'
 import { useAnnualTasks } from '@renderer/features/docs/AnnualCalendar'
 import { annualDate } from '@renderer/features/docs/useDocAlerts'
 import { EventDialog, ModeDialog, type EditMode, type EventTarget } from './EventDialog'
@@ -101,7 +101,7 @@ export function CalendarPage(): React.JSX.Element {
       }
     }
     for (const t of tasks.data ?? []) {
-      if (t.assigneeId !== me?.id && t.requesterId !== me?.id) continue
+      if (!isTaskAssignee(t, me?.id) && t.requesterId !== me?.id) continue
       out.push({ id: `task:${t.id}`, title: `📌 마감: ${t.title}`, start: t.dueAt!, allDay: false, backgroundColor: '#fef3c7', borderColor: '#d97706', textColor: '#92400e', editable: false, extendedProps: { origin: 'task' } })
     }
     if (show === 'all' || show === 'mine' || show === 'personal') {

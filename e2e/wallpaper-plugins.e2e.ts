@@ -131,15 +131,15 @@ describe('wallpaper and built-in plugins', () => {
   it('plugins shipped with the app install with one click, without the download site', async () => {
     await go(a.page, '/plugins')
     const cards = a.page.getByTestId('catalog-plugin')
-    await expect.poll(() => cards.count(), { timeout: 20000 }).toBeGreaterThanOrEqual(2)
+    await expect.poll(() => cards.count(), { timeout: 20000 }).toBeGreaterThanOrEqual(1)
     const ladder = cards.filter({ hasText: '사다리타기' })
     expect(await ladder.textContent()).toContain('기본 제공')
     await ladder.getByRole('button', { name: '바로 설치' }).click()
     await expect.poll(() => a.page.getByTestId('installed-plugin').count(), { timeout: 15000 }).toBe(1)
     expect(await a.page.getByTestId('installed-plugin').textContent()).toContain('기본 제공')
     await expect.poll(() => a.page.getByRole('navigation', { name: '주 메뉴' }).getByRole('link', { name: '사다리타기' }).count()).toBe(1)
-    // the rest in one go would need a second uninstalled built-in; install the remaining one directly
-    await cards.filter({ hasText: '스마트 대장' }).getByRole('button', { name: '바로 설치' }).click()
-    await expect.poll(() => a.page.getByTestId('installed-plugin').count(), { timeout: 15000 }).toBe(2)
+    // 관리대장 (the former 스마트 대장 plugin) is part of the app now: not offered as a plugin, always in the menu
+    expect(await cards.filter({ hasText: '스마트 대장' }).count()).toBe(0)
+    expect(await a.page.getByRole('navigation', { name: '주 메뉴' }).getByRole('link', { name: '관리대장' }).count()).toBe(1)
   }, 120000)
 })

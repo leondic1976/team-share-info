@@ -52,7 +52,11 @@ describe('join and approval (M1-3)', () => {
     s = await createTestServer()
     const r = await s.req(null, { method: 'POST', url: '/api/join', payload: { name: 'a', pcName: 'p', winUser: 'w' } })
     const { requestId, pollToken } = r.json().data
+    // Admins see how many requests wait (menu badge, tray) without the admin PIN.
+    const pending = async (): Promise<number> => (await s!.req(s!.admin, { method: 'GET', url: '/api/me' })).json().data.pendingJoins
+    expect(await pending()).toBe(1)
     await s.req(s.admin, { method: 'PATCH', url: `/api/admin/join-requests/${requestId}`, payload: { action: 'reject' } })
+    expect(await pending()).toBe(0)
     const p = await s.req(null, { method: 'GET', url: `/api/join/${requestId}?token=${pollToken}` })
     expect(p.json().data).toEqual({ state: 'rejected' })
   })
