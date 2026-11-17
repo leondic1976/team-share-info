@@ -7,6 +7,7 @@ import { startedHidden } from './autostart'
 import { openLocalDb, closeLocalDb, localDb } from './localdb'
 import { registerAppIpc } from './ipc/app'
 import { registerLocalIpc } from './ipc/local'
+import { registerLedgerIpc } from './ipc/ledger'
 import { autoStartServer, registerConnectionIpc } from './ipc/connection'
 import { registerNotifyIpc } from './ipc/notify'
 import { registerPersonalIpc } from './ipc/personal'
@@ -66,6 +67,7 @@ if (!app.requestSingleInstanceLock()) {
     registerAppIpc()
     registerStorageIpc()
     registerLocalIpc()
+    registerLedgerIpc()
     registerConnectionIpc()
     registerNotifyIpc()
     registerPersonalIpc()

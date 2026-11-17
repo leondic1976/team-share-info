@@ -26,6 +26,13 @@ export function canTransition(from: TaskState, to: TaskState, role: { assignee: 
 export const MAX_TASK_ASSIGNEES = 30
 const assigneeIdsSchema = z.array(z.string()).min(1, '담당자를 고르세요').max(MAX_TASK_ASSIGNEES, `담당자는 ${MAX_TASK_ASSIGNEES}명까지 고를 수 있습니다`)
 
+/**
+ * How a task with several assignees gets done. any: one shared state, any assignee moves it.
+ * each: every assignee finishes their own part; the task is done when all have.
+ */
+export const taskDoneModeSchema = z.enum(['any', 'each'])
+export type TaskDoneMode = z.infer<typeof taskDoneModeSchema>
+
 /** `assigneeIds` is the current form; a single `assigneeId` is still accepted from older clients. */
 export const taskCreateSchema = z
   .object({
@@ -33,6 +40,7 @@ export const taskCreateSchema = z
     bodyHtml: z.string().max(500_000).default(''),
     assigneeId: z.string().optional(),
     assigneeIds: assigneeIdsSchema.optional(),
+    doneMode: taskDoneModeSchema.default('any'),
     dueAt: z.number().int().nullable().default(null),
     priority: z.enum(['low', 'normal', 'high']).default('normal'),
     scope: scopeSchema.optional(),
@@ -47,6 +55,9 @@ export const taskPatchSchema = z.object({
   priority: z.enum(['low', 'normal', 'high']).optional(),
   assigneeId: z.string().optional(),
   assigneeIds: assigneeIdsSchema.optional(),
+  doneMode: taskDoneModeSchema.optional(),
+  /** doneMode 'each': an assignee marks (or unmarks) their own part as finished */
+  myDone: z.boolean().optional(),
   state: z.enum(['requested', 'doing', 'done', 'confirmed']).optional()
 })
 
@@ -59,12 +70,20 @@ export function assigneeIdsOf(v: { assigneeId?: string; assigneeIds?: string[] }
 export interface TaskAssignee {
   id: string
   name: string
+  /** doneMode 'each': when this assignee finished their part */
+  doneAt?: number | null
 }
 
 export function isTaskAssignee(t: Pick<TaskDto, 'assigneeId'> & { assignees?: TaskAssignee[] }, memberId: string | undefined): boolean {
   if (!memberId) return false
   // A server older than this client sends only assigneeId.
   return t.assignees ? t.assignees.some((a) => a.id === memberId) : t.assigneeId === memberId
+}
+
+/** "2/3 완료" for a task every assignee finishes on their own; null otherwise (or from an older server). */
+export function taskProgress(t: { doneMode?: TaskDoneMode; assignees?: TaskAssignee[] }): { done: number; total: number } | null {
+  if (t.doneMode !== 'each' || !t.assignees || t.assignees.length < 2) return null
+  return { done: t.assignees.filter((a) => !!a.doneAt).length, total: t.assignees.length }
 }
 
 /** Short assignee text for lists: "김철수", "김철수, 이영희", "김철수 외 2명". */
@@ -85,6 +104,7 @@ export interface TaskDto {
   /** All assignee names joined with ", ". */
   assigneeName: string
   assignees: TaskAssignee[]
+  doneMode: TaskDoneMode
   dueAt: number | null
   priority: 'low' | 'normal' | 'high'
   state: TaskState

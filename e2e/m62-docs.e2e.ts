@@ -57,11 +57,17 @@ describe('M6-2 knowledge records', () => {
     await ed.getByRole('button', { name: '저장' }).click()
     await a.page.getByTestId('followup').waitFor()
     await a.page.getByLabel('후속 조치', { exact: true }).fill('회의 자료 정리')
+    // a follow-up may go to several people: every pick adds one, a click on a name takes it away
+    expect(await a.page.getByTestId('followup').getByRole('button', { name: '등록' }).isDisabled()).toBe(true)
     await a.page.getByLabel('후속 조치 담당자').selectOption({ label: '팀원B' })
+    await a.page.getByLabel('후속 조치 담당자').selectOption({ label: '나' })
+    await expect.poll(() => a.page.getByTestId('followup-assignees').textContent()).toContain('담당 2명')
     await a.page.getByTestId('followup').getByRole('button', { name: '등록' }).click()
-    await expect.poll(() => a.page.getByTestId('followup').textContent()).toContain('할 일로 등록했습니다')
+    await expect.poll(() => a.page.getByTestId('followup').textContent()).toContain('할 일로 등록했습니다(담당: 팀원B, 나)')
     await go(b.page, '/tasks')
     await expect.poll(() => b.page.getByTestId('task-row-회의 자료 정리').count(), { timeout: 10000 }).toBe(1)
+    await go(a.page, '/tasks')
+    await expect.poll(() => a.page.getByTestId('task-row-회의 자료 정리').count(), { timeout: 10000 }).toBe(1)
   })
 
   it('annual task appears on the calendar', async () => {

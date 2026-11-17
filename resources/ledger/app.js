@@ -1,24 +1,30 @@
-/* 관리대장 UI. Talks to TeamHub only via TeamHub.call (see __sdk.js). Logic lives in formula.js / sheet.js.
-   Three kinds of ledger: 개인용 (this PC's local DB), 팀용 (server, whole team or a group) and
-   지정자용 (server, named people only). Server ledgers are edited by one person at a time. */
+/* 관리대장 UI. Talks to TeamHub only via TeamHub.call (see __sdk.js). Logic lives in formula.js / sheet.js / store.js.
+   Three kinds of ledger: 개인용 (rows in this PC's local DB), 팀용 (server, whole team or a group) and
+   지정자용 (server, named people only). Every ledger is saved row by row as it is edited; on the server
+   several people edit at once and a cell changed by two people is never overwritten silently. */
 ;(function () {
   'use strict'
   const F = window.LedgerFormula
   const S = window.LedgerSheet
+  const L = window.LedgerStore
   const call = (m, p) => window.TeamHub.call(m, p)
   const $ = (id) => document.getElementById(id)
   const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch])
   const TYPE_ICON = { text: 'Aa', number: '123', date: '날짜', select: '목록', check: '☑', member: '팀원', calc: 'fx' }
-  const FORMAT = 'teamhub-ledger@1'
-  const MAX_BYTES = 500 * 1024
+  const MAX_ROWS = 100000
+  /** Height of one row in pixels; measured after the first rows are drawn (zoom and fonts change it). */
+  let ROW_H = 26
+  /** Rows drawn above and below what is visible. */
+  const BUFFER = 40
+  const PRINT_ROWS = 20000
 
   // ---------- state ----------
-  let index = [] // [{ id, name, updatedAt, rows, icon }]
+  let index = [] // personal ledgers of this PC: [{ id, name, updatedAt, rows, icon }]
   let book = null
   let comp = null
   let view = [] // visible book row indices
   let sel = { r: 0, c: 0, r2: 0, c2: 0 } // r = position in view, c = column index
-  let editing = null // { mode: 'enter' | 'edit', via: 'cell' | 'fx' }
+  let editing = null // { mode: 'enter' | 'edit', via: 'cell' | 'fx', rowId }
   let undoStack = []
   let redoStack = []
   let filters = {}
@@ -28,22 +34,21 @@
   let saveTimer = null
   let viewing = null // shared room shown read-only
 
-  // team ledgers: kept on the server, edited by one person at a time (edit lock)
+  // where the open ledger is kept, and the rows as they are stored there (see store.js)
+  let src = null // { kind: 'local' | 'team', id }
+  let shadow = null
   let team = null // meta of the open team ledger; null while a ledger of this PC is open
   let teamList = []
   let teamError = ''
   let online = true
-  let holding = false // I am the editor (set at once, confirmed by the server in `acquiring`)
-  let acquiring = null
-  let beatTimer = null
-  let lastEdit = 0
-  let stale = false // a newer version arrived while I was typing in a cell
   let saveFailed = false
   let saveChain = Promise.resolve()
   let teamDialogMode = null // 'create' | 'move' | 'scope'
   let pendingTeam = null
-  const LOCK_BEAT = 25000
-  const LOCK_IDLE = 60000
+  let lastBy = '' // who changed the open team ledger last, for the bar
+  const compCache = {}
+  let win = { a: 0, b: 0 } // rows of `view` that are in the table right now
+  let printing = false
 
   const grid = $('grid')
   const wrap = $('gridWrap')
@@ -57,37 +62,44 @@
     t.className = 'toast' + (bad ? ' bad' : '')
     t.hidden = false
     clearTimeout(toast.timer)
-    toast.timer = setTimeout(() => (t.hidden = true), bad ? 5000 : 2500)
+    toast.timer = setTimeout(() => (t.hidden = true), bad ? 6000 : 2500)
   }
   const bytes = (s) => new TextEncoder().encode(s).length
   const curRow = () => view[sel.r]
   const rect = () => ({ r1: Math.min(sel.r, sel.r2), r2: Math.max(sel.r, sel.r2), c1: Math.min(sel.c, sel.c2), c2: Math.max(sel.c, sel.c2) })
   const addrOf = (vr, c) => (view[vr] === undefined ? F.colLetters(c) : F.colLetters(c) + (view[vr] + 1))
+  const pad = (n) => String(n).padStart(2, '0')
   const fmtDate = (t) => {
     const d = new Date(t)
-    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
   }
+  const num = (n) => Number(n).toLocaleString('ko-KR')
   function uniqueColName(base) {
     const taken = new Set(book.cols.map((c) => c.name.toLowerCase()))
     let n = base
     for (let i = 2; taken.has(n.toLowerCase()); i++) n = `${base} ${i}`
     return n
   }
+  const iconOf = (b) => (S.TEMPLATES.find((t) => t.key === b.template) || {}).icon || '📄'
+  /** The row at index r of a sheet being changed (rows are never changed in place, see store.js). */
+  const W = (b, r) => L.writable(b, r)
+  const setState = (text, cls) => {
+    const el = $('saveState')
+    el.textContent = text
+    el.className = `state ${cls || ''}`
+  }
 
-  // ---------- storage ----------
+  // ---------- storage: every ledger is saved by what changed ----------
   async function loadIndex() {
-    index = (await call('storage.get', { key: 'index' }).catch(() => null)) || []
+    index = (await call('local.list').catch(() => null)) || []
     renderBooks()
   }
-  async function saveIndex() {
-    await call('storage.set', { key: 'index', value: index })
-  }
   function scheduleSave() {
-    $('saveState').textContent = '저장 중…'
+    setState('저장 중…', 'busy')
     clearTimeout(saveTimer)
     saveTimer = setTimeout(flush, 300)
   }
-  /** Saves run one after another: a team save needs the version the save before it produced. */
+  /** Saves (and reading what others changed) run one after another. */
   function flush() {
     clearTimeout(saveTimer)
     saveTimer = null
@@ -97,99 +109,156 @@
   }
   /** Everything typed so far is saved (or has failed) when this resolves. */
   const settle = () => (saveTimer ? flush() : saveChain)
-  const iconOf = (b) => (S.TEMPLATES.find((t) => t.key === b.template) || {}).icon || '📄'
-  async function save() {
+  const metaNow = () => (team ? team : src ? index.find((x) => x.id === src.id) : null)
+  function savedState() {
     if (!book) return
-    const b = book
-    b.updatedAt = Date.now()
-    const json = JSON.stringify(b)
-    if (json.length > MAX_BYTES) {
-      $('saveState').textContent = '저장 실패: 대장이 너무 큽니다'
-      toast('대장이 너무 커서 저장하지 못했습니다(약 500KB). 오래된 행을 다른 대장으로 옮기거나 나눠 주세요.', true)
-      return
-    }
-    if (team) return saveTeam(b, team, json)
-    try {
-      await call('storage.set', { key: `book:${b.id}`, value: b })
-      const e = index.find((x) => x.id === b.id)
-      const entry = { id: b.id, name: b.name, updatedAt: b.updatedAt, rows: b.rows.length, icon: iconOf(b) }
-      if (e) Object.assign(e, entry)
-      else index.unshift(entry)
-      await saveIndex()
-      if (book === b) $('saveState').textContent = `저장됨 · ${(json.length / 1024).toFixed(0)}KB`
-      renderBooks()
-    } catch (err) {
-      $('saveState').textContent = '저장 실패'
-      toast(`저장하지 못했습니다: ${err.message}`, true)
-    }
+    setState(team ? '✓ 서버에 저장됨' : '✓ 이 PC에 저장됨', 'ok')
   }
-  async function saveTeam(b, t, json) {
-    if (acquiring && !(await acquiring)) return
-    if (!holding || team !== t) return
+
+  async function save() {
+    if (!book || !shadow || !src) return
+    const at = src
+    const sh = shadow
+    const d = L.diff(book, sh)
+    if (!d) return void (saveFailed || savedState())
+    if (book.rows.length > MAX_ROWS) {
+      setState('저장 실패: 행이 너무 많습니다', 'bad')
+      return toast(`한 대장에는 ${num(MAX_ROWS)}행까지 담을 수 있습니다. 실행 취소(Ctrl+Z)로 되돌리거나 오래된 행을 다른 대장으로 나눠 주세요.`, true)
+    }
     try {
-      const meta = await call('team.save', { id: t.id, doc: b, version: t.version, icon: iconOf(b) })
-      Object.assign(t, meta)
-      saveFailed = false
-      const e = teamList.find((x) => x.id === t.id)
-      if (e) Object.assign(e, meta)
-      else teamList.unshift({ ...meta })
-      if (team === t) {
-        $('saveState').textContent = `서버에 저장됨 · ${(json.length / 1024).toFixed(0)}KB`
-        teamBar()
+      for (const piece of L.pieces(d)) {
+        const answer = await call(`${at.kind}.save`, { id: at.id, change: Object.assign({}, piece, { since: sh.version, icon: piece.head ? iconOf(book) : undefined }) })
+        if (src !== at) return
+        took(answer.meta)
+        adopt(L.settle(book, sh, piece, d, answer), '')
       }
-      renderBooks()
+      saveFailed = false
+      // typed while the save was on its way: the next save is already scheduled
+      if (!saveTimer) savedState()
     } catch (err) {
-      if (err.code === 'CONFLICT' || err.code === 'FORBIDDEN' || err.code === 'NOT_FOUND') {
-        // somebody else has it now: what I typed is kept as a ledger of this PC, then the server's version is shown
-        stopHolding(false)
-        await keepLocalCopy(b)
-        $('saveState').textContent = '저장 실패'
+      if (src !== at) return
+      if (at.kind === 'team' && (err.code === 'FORBIDDEN' || err.code === 'NOT_FOUND')) {
+        // I may no longer edit (or see) it: what I typed is kept as a ledger of this PC
+        const mine = L.plain(book)
+        src = null
+        await keepCopy(mine, mine.rows, '저장 못 한 내 변경')
+        setState('저장 실패', 'bad')
         toast(`${err.message} 저장하지 못한 내 내용은 "개인용 대장"에 사본으로 남겼습니다.`, true)
-        if (team === t) setTimeout(() => (err.code === 'NOT_FOUND' ? closeSheet() : openTeam(t.id, true)), 0)
         loadTeamList()
+        if (err.code === 'NOT_FOUND') closeSheet()
+        else loadTeam(at.id, true)
+      } else if (err.code === 'BAD_REQUEST' || at.kind === 'local') {
+        setState('저장 실패', 'bad')
+        saveFailed = true
+        toast(`저장하지 못했습니다: ${err.message}`, true)
       } else {
-        $('saveState').textContent = '서버에 저장하지 못함 · 다시 시도 중'
+        setState('서버에 저장하지 못함 · 다시 시도 중', 'bad')
         if (!saveFailed) toast(`서버에 저장하지 못했습니다: ${err.message} 연결되면 다시 저장합니다.`, true)
         saveFailed = true
-        if (team === t && !saveTimer) saveTimer = setTimeout(flush, 5000)
+        if (!saveTimer) saveTimer = setTimeout(flush, 5000)
       }
     }
   }
-  async function keepLocalCopy(b) {
+  /** New facts about the open ledger (version, row count, who saved) into its list entry. */
+  function took(meta) {
+    if (team) {
+      Object.assign(team, meta)
+      const e = teamList.find((x) => x.id === team.id)
+      if (e) Object.assign(e, meta, { unseen: false })
+      else teamList.unshift(Object.assign({}, meta))
+    } else {
+      const e = index.find((x) => x.id === meta.id)
+      if (e) Object.assign(e, meta)
+      else index.unshift(meta)
+    }
+    renderBooks()
+  }
+  /**
+   * The result of a save or of reading others' changes goes on screen: the selection stays
+   * on its row, undo is emptied (it would undo other people's work), my rows that lost
+   * against someone else's edit are kept as a personal ledger.
+   */
+  function adopt(res, by) {
+    if (res.lost && res.lost.length) {
+      const lost = res.lost.map((r) => ({ id: r.id, c: r.c }))
+      keepCopy(L.plain(book), lost, '저장 못 한 내 변경').then((name) =>
+        toast(`다른 사람이 같은 칸을 먼저 고쳐 내 입력 ${lost.length}행은 반영되지 않았습니다. 내 입력은 개인용 대장${name ? ` "${name}"` : ''}에 남겼습니다.`, true)
+      )
+    }
+    if (res.headRefused) toast('다른 사람이 열·이름·설명을 먼저 바꿔 내 변경은 반영되지 않았습니다. 화면을 최신 내용으로 바꿨습니다.', true)
+    if (!res.rows && !res.head) return
+    const keepId = (vi) => (view[vi] !== undefined && book.rows[view[vi]] ? book.rows[view[vi]].id : null)
+    const a = keepId(sel.r)
+    const b = keepId(sel.r2)
+    book = res.book
+    undoStack = []
+    redoStack = []
+    if (by) lastBy = `${by}님이 방금 고침 · ${fmtDate(Date.now())}`
+    if (res.head) {
+      $('bookName').value = book.name
+      $('note').value = book.note || ''
+      $('note').hidden = !book.note
+      filters = {}
+    }
+    recompute()
+    const find = (id, was) => {
+      if (id === null) return Math.min(was, Math.max(0, view.length - 1))
+      for (let i = 0; i < view.length; i++) if (book.rows[view[i]].id === id) return i
+      return Math.min(was, Math.max(0, view.length - 1))
+    }
+    sel.r = find(a, sel.r)
+    sel.r2 = find(b, sel.r2)
+    if (editing && editing.via === 'cell' && (view[sel.r] === undefined || book.rows[view[sel.r]].id !== editing.rowId)) {
+      editing = null
+      editor.value = ''
+      toast('고치던 행을 다른 사람이 지웠습니다.', true)
+    }
+    render()
+    teamBar()
+  }
+  /** Rows of mine that could not be saved to the team ledger, kept as a ledger of this PC. Resolves to its name. */
+  async function keepCopy(head, rows, why) {
     try {
-      const copy = JSON.parse(JSON.stringify(b))
-      copy.id = S.uid('b')
-      copy.name = `${b.name} (저장 못 한 내 변경)`.slice(0, 60)
+      const copy = Object.assign({}, head, { name: `${head.name} (${why})`.slice(0, 60), rows })
       delete copy.share
-      await call('storage.set', { key: `book:${copy.id}`, value: copy })
-      index.unshift({ id: copy.id, name: copy.name, updatedAt: Date.now(), rows: copy.rows.length, icon: iconOf(copy) })
-      await saveIndex()
+      const meta = await call('local.create', { doc: copy, icon: iconOf(copy) })
+      index.unshift(meta)
       renderBooks()
+      return copy.name
     } catch {
-      /* nothing more can be done */
+      return '' // nothing more can be done
     }
   }
 
   // ---------- book list ----------
+  const collapsed = new Set()
   function renderBooks() {
     const q = $('bookSearch').value.trim().toLowerCase()
     const hit = (b) => !q || b.name.toLowerCase().includes(q)
-    const list = index
-      .filter(hit)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map((b) => `<li data-id="${esc(b.id)}" class="${book && !team && book.id === b.id ? 'on' : ''}" title="${esc(b.name)}"><span class="n">${esc(b.icon || '📄')} ${esc(b.name)}</span><span class="m">${b.rows}행 · ${fmtDate(b.updatedAt)}</span></li>`)
-    $('books').innerHTML = list.join('') || '<li class="muted small">대장이 없습니다</li>'
+    const mine = index.filter(hit).sort((a, b) => b.updatedAt - a.updatedAt)
+    $('books').innerHTML =
+      mine.map((b) => `<li data-id="${esc(b.id)}" class="${src && src.kind === 'local' && src.id === b.id ? 'on' : ''}" title="${esc(b.name)}"><span class="n">${esc(b.icon || '📄')} ${esc(b.name)}</span><span class="m">${num(b.rows)}행 · ${fmtDate(b.updatedAt)}</span></li>`).join('') ||
+      '<li class="muted small none">대장이 없습니다</li>'
     const shared = (picked) =>
       teamList
         .filter((t) => hit(t) && isPicked(t) === picked)
         .sort((a, b) => b.updatedAt - a.updatedAt)
-        .map((t) => {
-          const m = t.lock ? `✏️ ${t.lock.mine ? '내가' : `${esc(t.lock.name)}님이`} 편집 중` : `${t.rows}행 · ${esc(t.updatedByName || t.ownerName)} · ${fmtDate(t.updatedAt)}`
-          return `<li data-team="${esc(t.id)}" class="${team && team.id === t.id ? 'on' : ''}" title="${esc(t.name)}"><span class="n">${esc(t.icon || '📄')} ${esc(t.name)}${t.canEdit ? '' : ' <i class="tag">보기</i>'}</span><span class="m">${m}</span></li>`
-        })
-        .join('')
-    $('teamBooks').innerHTML = shared(false) || `<li class="muted small">${esc(teamError || '팀용 대장이 없습니다')}</li>`
-    $('pickBooks').innerHTML = shared(true) || `<li class="muted small">${esc(teamError || '지정자용 대장이 없습니다')}</li>`
+        .map(
+          (t) =>
+            `<li data-team="${esc(t.id)}" class="${team && team.id === t.id ? 'on' : ''}" title="${esc(t.name)}"><span class="n">${t.unseen && !(team && team.id === t.id) ? '<i class="dot" title="다른 사람이 고친 새 내용이 있습니다"></i>' : ''}${esc(t.icon || '📄')} ${esc(t.name)}${t.canEdit ? '' : ' <i class="tag">보기</i>'}</span><span class="m">${num(t.rows)}행 · ${esc(t.updatedByName || t.ownerName)} · ${fmtDate(t.updatedAt)}</span></li>`
+        )
+    const teams = shared(false)
+    const picks = shared(true)
+    $('teamBooks').innerHTML = teams.join('') || `<li class="muted small none">${esc(teamError || '팀용 대장이 없습니다')}</li>`
+    $('pickBooks').innerHTML = picks.join('') || `<li class="muted small none">${esc(teamError || '지정자용 대장이 없습니다')}</li>`
+    $('cntLocal').textContent = mine.length || ''
+    $('cntTeam').textContent = teams.length || ''
+    $('cntPick').textContent = picks.length || ''
+    for (const h of document.querySelectorAll('#side h2.grp')) {
+      const off = collapsed.has(h.dataset.list)
+      h.classList.toggle('off', off)
+      $(h.dataset.list).hidden = off
+    }
   }
   $('books').addEventListener('click', (e) => {
     const li = e.target.closest('li[data-id]')
@@ -201,19 +270,35 @@
       if (li) openTeam(li.dataset.team)
     })
   $('bookSearch').addEventListener('input', renderBooks)
+  for (const h of document.querySelectorAll('#side h2.grp'))
+    h.addEventListener('click', () => {
+      if (collapsed.has(h.dataset.list)) collapsed.delete(h.dataset.list)
+      else collapsed.add(h.dataset.list)
+      renderBooks()
+    })
 
   async function openBook(id) {
     await settle()
-    const b = await call('storage.get', { key: `book:${id}` }).catch(() => null)
-    if (!b) return toast('대장을 열지 못했습니다.', true)
-    show(b)
+    let full
+    try {
+      full = await call('local.open', { id })
+    } catch (err) {
+      return toast(`대장을 열지 못했습니다: ${err.message}`, true)
+    }
+    const { doc, ...meta } = full
+    const e = index.find((x) => x.id === id)
+    if (e) Object.assign(e, meta)
+    show(doc, meta, 'local')
   }
-  function show(b, meta) {
-    if (team && (!meta || meta.id !== team.id)) stopHolding(true)
-    book = b
-    team = meta || null
-    if (team) book.id = team.id
-    stale = false
+  /** Put a stored sheet on screen. kind: where it is kept. */
+  function show(doc, meta, kind) {
+    const o = L.open(doc, meta)
+    book = o.book
+    book.id = meta.id
+    shadow = o.shadow
+    src = { kind, id: meta.id }
+    team = kind === 'team' ? meta : null
+    lastBy = ''
     saveFailed = false
     viewing = null
     undoStack = []
@@ -225,29 +310,34 @@
     $('empty').hidden = true
     $('viewer').hidden = true
     $('sheet').hidden = false
-    $('bookName').value = b.name
-    $('note').value = b.note || ''
-    $('note').hidden = !b.note
-    $('saveState').textContent = ''
+    $('bookName').value = book.name
+    $('note').value = book.note || ''
+    $('note').hidden = !book.note
+    wrap.scrollTop = 0
+    wrap.scrollLeft = 0
     syncTeamUi()
     recompute()
     render()
     renderBooks()
+    savedState()
     focusGrid()
-    call('storage.set', { key: 'last', value: team ? { team: team.id } : { book: book.id } }).catch(() => undefined)
+    call('storage.set', { key: 'last', value: team ? { team: team.id } : { book: meta.id } }).catch(() => undefined)
   }
-  /** A new ledger of this PC. */
-  async function addBook(b) {
+  /** A new ledger of this PC from a whole sheet ({ …head, rows: [{ id, c }] }). */
+  async function addBook(doc) {
     await settle()
-    stopHolding(true)
-    team = null
-    book = b
-    await flush()
-    show(b)
+    const d = Object.assign({}, doc)
+    delete d.id
+    delete d.share
+    const meta = await call('local.create', { doc: d, icon: iconOf(d) })
+    index.unshift(meta)
+    await openBook(meta.id)
   }
   function closeSheet() {
     book = null
     team = null
+    src = null
+    shadow = null
     $('sheet').hidden = true
     $('empty').hidden = false
     syncTeamUi()
@@ -255,16 +345,11 @@
   }
 
   // ---------- team ledgers (server) ----------
-  const canEditNow = () => !team || (team.canEdit && online && (holding || !team.lock || team.lock.mine))
-  const whyNot = () =>
-    !team.canEdit
-      ? '보기 전용 대장입니다. 만든 사람과 관리자만 고칠 수 있습니다.'
-      : !online
-        ? '서버에 연결되지 않아 이 대장을 고칠 수 없습니다(보기만 가능).'
-        : `${team.lock.name}님이 편집 중입니다. 끝나면 고칠 수 있습니다.`
+  const canEditNow = () => !team || (team.canEdit && online)
+  const whyNot = () => (team.oldServer ? '서버 PC의 프로그램이 예전 버전이라 이 대장을 고칠 수 없습니다. 서버 PC를 먼저 업데이트하세요.' : !team.canEdit ? '보기 전용 대장입니다. 만든 사람과 관리자만 고칠 수 있습니다.' : '서버에 연결되지 않아 이 대장을 고칠 수 없습니다(보기만 가능).')
   /** 지정자용: shared with named people only. 팀용: the whole team or a group. */
   const isPicked = (t) => t.scope.type === 'members'
-  const kindName = (t) => (isPicked(t) ? '👤 지정자용 대장' : '👥 팀용 대장')
+  const kindName = (t) => (isPicked(t) ? '👤 지정자용' : '👥 팀용')
   const scopeText = (sc) => (sc.type === 'team' ? '팀 전체' : sc.type === 'group' ? `${sc.groups.map((g) => g.name).join(', ')} 그룹` : `지정한 사람 ${sc.members.length}명(${sc.members.map((m) => m.name).join(', ')})`)
 
   async function loadTeamList() {
@@ -279,15 +364,22 @@
   }
   async function openTeam(id, keep) {
     await settle()
+    return loadTeam(id, keep)
+  }
+  /** Read a team ledger and show it. keep: stay where I was (the same ledger read again). */
+  async function loadTeam(id, keep) {
     let full
     try {
-      full = await call('team.get', { id })
+      full = await call('team.open', { id })
     } catch (err) {
       return toast(`대장을 열지 못했습니다: ${err.message}`, true)
     }
     const { doc, ...meta } = full
-    const at = keep && team && team.id === id ? { sel: { ...sel }, filters, query } : null
-    show(doc, meta)
+    const at = keep && team && team.id === id ? { sel: { ...sel }, filters, query, top: wrap.scrollTop, left: wrap.scrollLeft } : null
+    const e = teamList.find((x) => x.id === id)
+    if (e) Object.assign(e, meta, { unseen: false })
+    show(doc, meta, 'team')
+    call('seen').catch(() => undefined)
     if (at) {
       sel = at.sel
       filters = at.filters
@@ -295,50 +387,57 @@
       $('search').value = query
       recompute()
       render()
+      wrap.scrollTop = at.top
+      wrap.scrollLeft = at.left
     }
   }
-  /** Somebody else saved: show their version without losing my place. */
-  async function reloadTeam(id) {
-    let full
-    try {
-      full = await call('team.get', { id })
-    } catch {
-      return
-    }
-    if (!team || team.id !== id || holding) return
-    if (editing) return void (stale = true)
-    stale = false
-    const { doc, ...meta } = full
-    Object.assign(team, meta)
-    book = doc
-    book.id = team.id
-    undoStack = []
-    redoStack = []
-    $('bookName').value = book.name
-    $('note').value = book.note || ''
-    $('note').hidden = !book.note
-    if (meta.updatedByName) $('saveState').textContent = `${meta.updatedByName}님이 고침 · ${fmtDate(meta.updatedAt)}`
-    recompute()
-    render()
-    syncTeamUi()
-    renderBooks()
+  /** Somebody else saved: their rows go into the sheet on screen, mine stay. */
+  function pull(id, version, by) {
+    const p = saveChain.then(async () => {
+      if (!team || team.id !== id || !shadow || version <= shadow.version) return
+      const at = src
+      let ch
+      try {
+        ch = await call('team.pull', { id, since: shadow.version })
+      } catch {
+        return
+      }
+      if (src !== at) return
+      if (ch.full) {
+        // away for too long to catch up row by row
+        await save()
+        if (src === at) await loadTeam(id, true)
+        return
+      }
+      adopt(L.merge(book, shadow, ch), by)
+      team.version = shadow.version
+      team.rows = book.rows.length
+      team.name = book.name
+      status()
+      call('seen').catch(() => undefined)
+    })
+    saveChain = p.catch(() => undefined)
+    return p
   }
   function teamBar() {
     const bar = $('teamBar')
-    bar.hidden = !team
+    bar.hidden = !src
     document.body.classList.toggle('readonly', !!team && !canEditNow())
-    if (!team) return
-    const [state, cls] = !team.canEdit
-      ? ['👀 보기 전용 · 만든 사람과 관리자만 고칩니다', 'ro']
+    if (!src) return
+    if (!team) {
+      bar.className = 'teambar local'
+      bar.innerHTML = '<b>🔒 개인용</b><span>이 PC의 로컬 DB에 저장 · 나만 봅니다</span><span class="st">고치는 대로 자동 저장</span>'
+      return
+    }
+    const [state, cls] = team.oldServer
+      ? ['⚠ 서버 PC를 업데이트해야 고칠 수 있습니다 · 보기만 가능', 'ro']
+      : !team.canEdit
+        ? ['👀 보기 전용 · 만든 사람과 관리자만 고칩니다', 'ro']
       : !online
         ? ['⚠ 서버에 연결되지 않음 · 보기만 가능', 'ro']
-        : holding
-          ? ['✏️ 내가 편집 중 · 다른 사람은 그동안 보기만 합니다', 'me']
-          : team.lock && !team.lock.mine
-            ? [`🔒 ${team.lock.name}님이 편집 중 · 끝나면 고칠 수 있습니다`, 'busy']
-            : ['입력을 시작하면 내가 편집 중으로 바뀝니다', '']
+        : [lastBy || '함께 편집 · 고치는 대로 저장되고 다른 사람 화면에 바로 보입니다', lastBy ? 'me' : '']
     bar.className = `teambar ${cls}`
-    bar.innerHTML = `<b>${kindName(team)}</b><span>${esc(scopeText(team.scope))}</span><span>만든 사람 ${esc(team.ownerName)}</span><span class="st" id="teamState2">${esc(state)}</span>${holding ? '<button type="button" id="teamDone">편집 끝내기</button>' : ''}`
+    bar.innerHTML = `<b>${kindName(team)}</b><span>${esc(scopeText(team.scope))}</span><span>만든 사람 ${esc(team.ownerName)}</span><span class="st" id="teamState2">${esc(state)}</span>`
   }
   function syncTeamUi() {
     teamBar()
@@ -351,114 +450,53 @@
     $('bookName').readOnly = !!team && !team.canEdit
     $('note').readOnly = !!team && !team.canEdit
   }
-  $('teamBar').addEventListener('click', async (e) => {
-    if (!e.target.closest('#teamDone') || !team) return
-    const t = team
-    await settle()
-    if (team !== t) return
-    stopHolding(true)
-    t.lock = null
-    teamBar()
-    renderBooks()
-    toast('편집을 끝냈습니다. 이제 다른 사람이 고칠 수 있습니다.')
-  })
-
-  /**
-   * Become the editor. The change that triggered this is applied at once; if the server
-   * answers that somebody else was first, the server's version replaces it.
-   */
-  function acquire() {
-    const t = team
-    holding = true
-    lastEdit = Date.now()
-    acquiring = call('team.lock', { id: t.id })
-      .then(
-        (full) => {
-          if (team !== t) return false
-          const { doc, ...meta } = full
-          const moved = meta.version !== t.version
-          Object.assign(t, meta)
-          startBeat()
-          if (moved) {
-            clearTimeout(saveTimer)
-            saveTimer = null
-            book = doc
-            book.id = t.id
-            undoStack = []
-            redoStack = []
-            $('bookName').value = book.name
-            recompute()
-            render()
-            toast('다른 사람이 방금 고친 내용을 불러왔습니다. 방금 입력은 반영되지 않았으니 다시 입력해 주세요.', true)
-          }
-          syncTeamUi()
-          renderBooks()
-          return !moved
-        },
-        (err) => {
-          if (team !== t) return false
-          stopHolding(false)
-          clearTimeout(saveTimer)
-          saveTimer = null
-          toast(`${err.message} 방금 입력은 반영되지 않았습니다.`, true)
-          setTimeout(() => team === t && openTeam(t.id, true), 0)
-          loadTeamList()
-          return false
-        }
-      )
-      .finally(() => (acquiring = null))
-    teamBar()
-    return acquiring
-  }
-  function startBeat() {
-    clearInterval(beatTimer)
-    beatTimer = setInterval(async () => {
-      const t = team
-      if (!t || !holding) return stopHolding(false)
-      if (!editing && !saveTimer && !saveFailed && Date.now() - lastEdit > LOCK_IDLE) {
-        // nothing typed for a while: let others edit
-        await saveChain
-        if (team !== t || !holding || saveTimer || editing) return
-        stopHolding(true)
-        t.lock = null
-        teamBar()
-        renderBooks()
-        return
-      }
-      call('team.beat', { id: t.id }).catch(() => undefined)
-    }, LOCK_BEAT)
-  }
-  function stopHolding(release) {
-    clearInterval(beatTimer)
-    beatTimer = null
-    const was = holding
-    holding = false
-    if (release && was && team) call('team.unlock', { id: team.id }).catch(() => undefined)
-  }
   window.TeamHub.on('online', (d) => {
     online = !!(d && d.online)
     if (!online) teamError = '서버에 연결되면 보입니다'
     teamBar()
+    // what could not be saved while the server was away goes now
+    if (online && saveFailed && team) flush()
   })
+  let deaf = false
+  let listTimer = null
+  /** The list follows other people's saves a little later (somebody typing saves several times a second). */
+  const listSoon = () => {
+    if (!listTimer)
+      listTimer = setTimeout(() => {
+        listTimer = null
+        loadTeamList()
+      }, 3000)
+  }
   window.TeamHub.on('team.changed', async (d) => {
+    if (deaf) return
+    if (d && d.id && d.version && !d.deleted && !d.shared) {
+      // somebody saved rows
+      const e = teamList.find((x) => x.id === d.id)
+      if (team && team.id === d.id) {
+        if (e) e.unseen = false
+        if (shadow && d.version > shadow.version) pull(d.id, d.version, me && d.byId === me.id ? '' : d.byName || '')
+      } else if (e && !(me && d.byId === me.id)) {
+        e.unseen = true
+        renderBooks()
+      }
+      return listSoon()
+    }
     await loadTeamList()
     const t = team
     if (!t || (d && d.id && d.id !== t.id)) return
     if (d && d.deleted) {
-      stopHolding(false)
       closeSheet()
-      return toast('이 대장은 삭제되었습니다.', true)
+      return toast('이 대장은 삭제되었습니다(만든 사람과 관리자는 휴지통에서 되살릴 수 있습니다).', true)
     }
     const m = teamList.find((x) => x.id === t.id)
     if (!m) {
       if (teamError) return
-      stopHolding(false)
       closeSheet()
       return toast('이 대장을 더 볼 수 없게 되었습니다(볼 수 있는 사람이 바뀌었거나 삭제됨).', true)
     }
-    if (holding) return
-    if (m.version !== t.version) return reloadTeam(t.id)
-    Object.assign(t, m)
+    if (shadow && m.version > shadow.version) return pull(t.id, m.version, me && m.updatedById === me.id ? '' : m.updatedByName || '')
+    const { unseen: _u, ...rest } = m
+    Object.assign(t, rest)
     syncTeamUi()
   })
 
@@ -516,20 +554,20 @@
         toast('볼 수 있는 사람과 편집 권한을 바꿨습니다.')
       } else {
         if (mode === 'move') await settle()
-        const src = mode === 'move' ? book : pendingTeam
-        const doc = JSON.parse(JSON.stringify(src))
+        const from = mode === 'move' ? src : null
+        const doc = mode === 'move' ? L.plain(book) : pendingTeam
         const oldShare = doc.share
         delete doc.share
+        delete doc.id
         const full = await call('team.create', { doc, scope, editMode, icon: iconOf(doc) })
-        if (mode === 'move' && !$('teamKeep').checked) {
-          // one ledger, one place: the copy on this PC (and its read-only share) goes
+        if (from && !$('teamKeep').checked) {
+          // one ledger, one place: the copy on this PC (and its read-only share) goes to the trash
           if (oldShare) await call('rooms.delete', { roomId: oldShare.roomId }).catch(() => undefined)
-          await call('storage.set', { key: `book:${src.id}`, value: null })
-          index = index.filter((x) => x.id !== src.id)
-          await saveIndex()
+          await call('local.delete', { id: from.id })
+          index = index.filter((x) => x.id !== from.id)
         }
         const { doc: saved, ...meta } = full
-        show(saved, meta)
+        show(saved, meta, 'team')
         toast(`${isPicked(meta) ? '지정자용' : '팀용'} 대장${mode === 'move' ? '으로 올렸습니다. 이제 함께 쓸 수 있습니다.' : '을 만들었습니다.'}`)
       }
       pendingTeam = null
@@ -542,12 +580,12 @@
 
   // ---------- compute & render ----------
   function recompute() {
-    comp = S.compute(book)
+    comp = S.compute(book, compCache)
     view = S.filterRows(book, comp.values, query, filters)
     sel.r = Math.min(sel.r, Math.max(0, view.length - 1))
     sel.r2 = Math.min(sel.r2, Math.max(0, view.length - 1))
-    sel.c = Math.min(sel.c, book.cols.length - 1)
-    sel.c2 = Math.min(sel.c2, book.cols.length - 1)
+    sel.c = Math.max(0, Math.min(sel.c, book.cols.length - 1))
+    sel.c2 = Math.max(0, Math.min(sel.c2, book.cols.length - 1))
     $('clearFilter').hidden = !query && !Object.keys(filters).length
   }
 
@@ -566,21 +604,14 @@
     return `<td data-v="${vi}" data-c="${c}"${cls.length ? ` class="${cls.join(' ')}"` : ''}${text.length > 12 ? ` title="${esc(text)}"` : ''}>${esc(text)}</td>`
   }
 
+  /** Head, totals and the visible rows. Only the rows near what is visible are in the table (large ledgers). */
   function render() {
     const cols = book.cols
     let h = '<colgroup><col style="width:52px">' + cols.map((c) => `<col style="width:${c.width || 120}px">`).join('') + '</colgroup><thead><tr><th class="rn">No.</th>'
     cols.forEach((c, i) => {
       h += `<th data-c="${i}"><div class="hc${filters[i] ? ' filtered' : ''}" data-h="${i}"><span class="l">${F.colLetters(i)}<span class="ty">${TYPE_ICON[c.type] || ''}</span></span><span class="t" title="${esc(c.name)}${c.type === 'calc' ? ' · ' + esc(c.calc || '') : ''}">${esc(c.name)}</span><button class="menuBtn" data-menu="${i}" tabindex="-1" aria-label="${esc(c.name)} 열 메뉴">▾</button><span class="rz" data-rz="${i}"></span></div></th>`
     })
-    h += '</tr></thead><tbody>'
-    const parts = []
-    for (let vi = 0; vi < view.length; vi++) {
-      const r = view[vi]
-      let row = `<tr data-v="${vi}"><td class="rn" data-rn="${vi}">${r + 1}</td>`
-      for (let c = 0; c < cols.length; c++) row += cellHtml(vi, r, c)
-      parts.push(row + '</tr>')
-    }
-    h += parts.join('') + '</tbody>'
+    h += '</tr></thead><tbody></tbody>'
     if (cols.some((c) => c.total && c.total !== 'none')) {
       h += '<tfoot><tr><td class="rn">합계</td>'
       cols.forEach((c, i) => {
@@ -593,14 +624,52 @@
       h += '</tr></tfoot>'
     }
     grid.innerHTML = h
-    painted = []
-    paint()
+    renderRows()
     status()
+  }
+  function renderRows() {
+    const n = view.length
+    // printing: from the first row; on screen: around what is visible
+    const b = printing ? Math.min(n, PRINT_ROWS) : Math.min(n, Math.ceil((wrap.scrollTop + (wrap.clientHeight || 600)) / ROW_H) + BUFFER)
+    const a = printing ? 0 : Math.max(0, Math.min(Math.floor(wrap.scrollTop / ROW_H) - BUFFER, b - 2 * BUFFER))
+    const cols = book.cols.length
+    const gap = (rows) => (rows > 0 ? `<tr class="sp"><td colspan="${cols + 1}" style="height:${rows * ROW_H}px"></td></tr>` : '')
+    const parts = [gap(a)]
+    for (let vi = a; vi < b; vi++) {
+      const r = view[vi]
+      let row = `<tr data-v="${vi}"><td class="rn" data-rn="${vi}">${r + 1}</td>`
+      for (let c = 0; c < cols; c++) row += cellHtml(vi, r, c)
+      parts.push(row + '</tr>')
+    }
+    parts.push(gap(n - b))
+    grid.tBodies[0].innerHTML = parts.join('')
+    win = { a, b }
+    painted = []
+    if (b > a && !printing) {
+      const h = grid.tBodies[0].rows[a > 0 ? 1 : 0].getBoundingClientRect().height
+      if (h > 8 && Math.abs(h - ROW_H) > 0.01) {
+        // the rows are not as high as assumed: lay the table out again with the real height
+        const top = wrap.scrollTop / ROW_H
+        ROW_H = h
+        wrap.scrollTop = top * ROW_H
+        return renderRows()
+      }
+    }
+    paint()
+  }
+  /** Scrolled near the end of the rows that are in the table: put the next ones in. */
+  function onScroll() {
+    if (!book || printing) return
+    const first = Math.floor(wrap.scrollTop / ROW_H)
+    const last = Math.ceil((wrap.scrollTop + wrap.clientHeight) / ROW_H)
+    if ((win.a > 0 && first < win.a + 8) || (win.b < view.length && last > win.b - 8)) renderRows()
+    else if (editing && editing.via === 'cell') placeEditor()
   }
 
   let painted = []
   function tdAt(vi, c) {
-    const tr = grid.tBodies[0] && grid.tBodies[0].rows[vi]
+    if (vi < win.a || vi >= win.b) return null
+    const tr = grid.tBodies[0] && grid.tBodies[0].rows[vi - win.a + (win.a > 0 ? 1 : 0)]
     return tr ? tr.cells[c + 1] : null
   }
   function paint() {
@@ -609,8 +678,8 @@
     if (!view.length || !book.cols.length) return placeEditor()
     const { r1, r2, c1, c2 } = rect()
     const many = r1 !== r2 || c1 !== c2
-    if (many && (r2 - r1 + 1) * (c2 - c1 + 1) <= 20000)
-      for (let r = r1; r <= r2; r++)
+    if (many)
+      for (let r = Math.max(r1, win.a); r <= Math.min(r2, win.b - 1); r++)
         for (let c = c1; c <= c2; c++) {
           const td = tdAt(r, c)
           if (td) {
@@ -630,7 +699,7 @@
   }
   function status() {
     const filtered = view.length !== book.rows.length
-    $('stat').textContent = `${filtered ? `${view.length}행 보임 / ` : ''}${book.rows.length}행 · ${book.cols.length}열`
+    $('stat').textContent = `${filtered ? `${num(view.length)}행 보임 / ` : ''}${num(book.rows.length)}행 · ${book.cols.length}열`
   }
   function selInfo() {
     const { r1, r2, c1, c2 } = rect()
@@ -647,17 +716,22 @@
           sum += v
         }
       }
-    $('selInfo').textContent = n ? `합계 ${S.display(sum, {})} · 평균 ${S.display(Math.round((sum / n) * 100) / 100, {})} · 개수 ${cnt}` : `개수 ${cnt}`
+    $('selInfo').textContent = n ? `합계 ${S.display(sum, {})} · 평균 ${S.display(Math.round((sum / n) * 100) / 100, {})} · 개수 ${num(cnt)}` : `개수 ${num(cnt)}`
   }
 
   function scrollToCell() {
-    const td = tdAt(sel.r, sel.c)
-    if (!td) return
     const head = grid.tHead ? grid.tHead.offsetHeight : 0
     const foot = grid.tFoot ? grid.tFoot.offsetHeight : 0
-    const left = 52
+    const top = head + sel.r * ROW_H
+    if (top - head < wrap.scrollTop) wrap.scrollTop = top - head
+    else if (top + ROW_H > wrap.scrollTop + wrap.clientHeight - foot) wrap.scrollTop = top + ROW_H - wrap.clientHeight + foot
+    if (sel.r < win.a || sel.r >= win.b) renderRows()
+    const td = tdAt(sel.r, sel.c)
+    if (!td) return
+    // the row is in the table now: its real place decides
     if (td.offsetTop - head < wrap.scrollTop) wrap.scrollTop = td.offsetTop - head
     else if (td.offsetTop + td.offsetHeight > wrap.scrollTop + wrap.clientHeight - foot) wrap.scrollTop = td.offsetTop + td.offsetHeight - wrap.clientHeight + foot
+    const left = 52
     if (td.offsetLeft - left < wrap.scrollLeft) wrap.scrollLeft = td.offsetLeft - left
     else if (td.offsetLeft + td.offsetWidth > wrap.scrollLeft + wrap.clientWidth) wrap.scrollLeft = td.offsetLeft + td.offsetWidth - wrap.clientWidth
   }
@@ -684,14 +758,18 @@
   }
 
   // ---------- changes ----------
+  /**
+   * Every edit goes through here. `fn` changes the sheet; rows are written through W() (a
+   * row is never changed in place), so undo only has to remember the old list of rows.
+   */
   function change(fn) {
-    if (team && !canEditNow()) return toast(whyNot(), true)
-    if (team && !holding) acquire()
-    lastEdit = Date.now()
-    undoStack.push(JSON.stringify(book))
-    if (undoStack.length > 80) undoStack.shift()
+    if (!canEditNow()) return toast(whyNot(), true)
+    undoStack.push({ head: L.headText(book), rows: book.rows })
+    while (undoStack.length > 80 || (undoStack.length > 5 && undoStack.length * book.rows.length > 4e6)) undoStack.shift()
     redoStack = []
+    book.rows = book.rows.slice()
     fn(book)
+    L.seal(book.rows)
     recompute()
     render()
     scheduleSave()
@@ -700,13 +778,12 @@
     const from = dir > 0 ? redoStack : undoStack
     const to = dir > 0 ? undoStack : redoStack
     if (!from.length) return
-    if (team && !canEditNow()) return toast(whyNot(), true)
-    if (team && !holding) acquire()
-    lastEdit = Date.now()
-    to.push(JSON.stringify(book))
-    book = JSON.parse(from.pop())
-    if (team) book.id = team.id
+    if (!canEditNow()) return toast(whyNot(), true)
+    to.push({ head: L.headText(book), rows: book.rows })
+    const e = from.pop()
+    book = Object.assign(JSON.parse(e.head), { id: book.id, rows: e.rows })
     $('bookName').value = book.name
+    $('note').value = book.note || ''
     recompute()
     render()
     scheduleSave()
@@ -722,7 +799,6 @@
       sel.r2 = r
       sel.c2 = c
     } else sel = { r, c, r2: r, c2: c }
-    paint()
     const keep = { r: sel.r, c: sel.c }
     if (extend) {
       sel.r = sel.r2
@@ -731,24 +807,25 @@
       sel.r = keep.r
       sel.c = keep.c
     } else scrollToCell()
-    placeEditor()
+    paint()
   }
-  function setCell(r, c, text) {
-    const col = book.cols[c]
+  function setCell(b, r, c, text) {
+    const col = b.cols[c]
     if (col.type === 'calc') {
       const f = String(text).trim()
       col.calc = f === '' ? '' : f.startsWith('=') ? f : `=${f}`
       return
     }
     const v = S.parseInput(col, text)
-    if (v === '') delete book.rows[r].c[col.id]
-    else book.rows[r].c[col.id] = v
+    const row = W(b, r)
+    if (v === '') delete row.c[col.id]
+    else row.c[col.id] = v
   }
 
   // ---------- editing ----------
   function startEdit(mode, via, initial) {
     if (!view.length || !book.cols.length) return
-    if (team && !canEditNow()) {
+    if (!canEditNow()) {
       editor.value = '' // the key that was typed must not stay in the input box over the cell
       return toast(whyNot(), true)
     }
@@ -758,7 +835,8 @@
       toggleChecks()
       return
     }
-    editing = { mode, via }
+    if (via === 'cell') scrollToCell()
+    editing = { mode, via, rowId: book.rows[curRow()].id, was: S.editText(col, book.rows[curRow()].c[col.id]) }
     if (via === 'cell') {
       if (initial !== undefined) editor.value = initial
       else editor.value = S.editText(col, book.rows[curRow()].c[col.id])
@@ -775,16 +853,19 @@
   function commit(text) {
     const r = curRow()
     const c = sel.c
+    const was = editing ? editing.was : undefined
     editing = null
     editor.removeAttribute('list')
     if (r === undefined) return
     const col = book.cols[c]
-    if (S.editText(col, book.rows[r].c[col.id]) === text) {
+    const now = S.editText(col, book.rows[r].c[col.id])
+    if (now === text) return paint()
+    if (team && was !== undefined && now !== was) {
+      // somebody else's value arrived in this very cell while I was typing: theirs is not overwritten
       paint()
-      if (stale && team && !holding) reloadTeam(team.id)
-      return
+      return toast(`입력하는 동안 다른 사람이 이 칸을 “${now}”(으)로 고쳤습니다. 내 입력 “${text}”은(는) 반영하지 않았습니다. 필요하면 다시 입력하세요.`, true)
     }
-    change(() => setCell(r, c, text))
+    change((b) => setCell(b, r, c, text))
   }
   function cancelEdit() {
     editing = null
@@ -792,7 +873,6 @@
     editor.removeAttribute('list')
     paint()
     focusGrid()
-    if (stale && team && !holding) reloadTeam(team.id)
   }
 
   editor.addEventListener('compositionstart', () => {
@@ -852,6 +932,7 @@
     const ctrl = e.ctrlKey || e.metaKey
     const k = e.key
     const nav = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }
+    const page = Math.max(5, Math.floor(wrap.clientHeight / ROW_H) - 3)
     if (nav[k]) {
       e.preventDefault()
       const [dr, dc] = nav[k]
@@ -880,7 +961,7 @@
       move(ctrl ? view.length - 1 - sel.r : 0, book.cols.length - 1 - sel.c)
     } else if (k === 'PageDown' || k === 'PageUp') {
       e.preventDefault()
-      move(k === 'PageDown' ? 15 : -15, 0, e.shiftKey)
+      move(k === 'PageDown' ? page : -page, 0, e.shiftKey)
     } else if (k === ' ' && book.cols[sel.c] && book.cols[sel.c].type === 'check') {
       e.preventDefault()
       toggleChecks()
@@ -898,9 +979,15 @@
       e.preventDefault()
       $('search').focus()
       $('search').select()
+    } else if (ctrl && (k === 's' || k === 'S')) {
+      e.preventDefault()
+      if (e.shiftKey) openSaveAs()
+      else flush().then(() => saveFailed || toast('저장되었습니다. 대장은 고치는 대로 자동 저장됩니다.'))
     } else if (ctrl && k === ';') {
       e.preventDefault()
-      if (curRow() !== undefined) change(() => setCell(curRow(), sel.c, F.serialToDate(F.todaySerial())))
+      const r = curRow()
+      const c = sel.c
+      if (r !== undefined) change((b) => setCell(b, r, c, F.serialToDate(F.todaySerial())))
     } else if (k === 'ContextMenu' || (e.shiftKey && k === 'F10')) {
       e.preventDefault()
       const td = tdAt(sel.r, sel.c)
@@ -920,20 +1007,33 @@
       for (let r = r1; r <= r2; r++) if (comp.values[view[r]][c] !== true) return false
       return true
     })
+    const rows = view.slice(r1, r2 + 1)
     change((b) => {
-      for (const c of cols) for (let r = r1; r <= r2; r++) b.rows[view[r]].c[b.cols[c].id] = !allOn
+      for (const r of rows) {
+        const row = W(b, r)
+        for (const c of cols) row.c[b.cols[c].id] = !allOn
+      }
     })
   }
   function clearSelection() {
     const { r1, r2, c1, c2 } = rect()
+    const rows = view.slice(r1, r2 + 1)
     change((b) => {
-      for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) if (b.cols[c].type !== 'calc') delete b.rows[view[r]].c[b.cols[c].id]
+      for (const r of rows) {
+        let row = null
+        for (let c = c1; c <= c2; c++) {
+          const id = b.cols[c].id
+          if (b.cols[c].type === 'calc' || b.rows[r].c[id] === undefined) continue
+          row = row || W(b, r)
+          delete row.c[id]
+        }
+      }
     })
   }
 
   // formula bar
   fx.addEventListener('focus', () => {
-    if (curRow() !== undefined) editing = { mode: 'edit', via: 'fx' }
+    if (curRow() !== undefined) editing = { mode: 'edit', via: 'fx', rowId: book.rows[curRow()].id, was: S.editText(book.cols[sel.c], book.rows[curRow()].c[book.cols[sel.c].id]) }
   })
   fx.addEventListener('keydown', (e) => {
     if (e.isComposing) return
@@ -1095,12 +1195,12 @@
       [
         { label: '위에 행 넣기', run: () => insertRows(view[r1], 1) },
         { label: '아래에 행 넣기', run: () => insertRows(view[r2] + 1, 1) },
-        { label: n > 1 ? `고른 ${n}행 복제` : '행 복제', run: () => duplicateRows() },
+        { label: n > 1 ? `고른 ${num(n)}행 복제` : '행 복제', run: () => duplicateRows() },
         '-',
         { label: '복사 (Ctrl+C)', run: () => call('clipboard.write', { text: selectionText() }).then(() => toast('복사했습니다.')) },
         { label: '칸 지우기 (Delete)', run: clearSelection },
         '-',
-        { label: n > 1 ? `고른 ${n}행 삭제` : '행 삭제', danger: true, run: deleteRows }
+        { label: n > 1 ? `고른 ${num(n)}행 삭제` : '행 삭제', danger: true, run: deleteRows }
       ],
       x,
       y
@@ -1127,7 +1227,9 @@
   }
 
   // ---------- row / column operations ----------
+  const full = (n) => (book.rows.length + n > MAX_ROWS ? (toast(`한 대장에는 ${num(MAX_ROWS)}행까지 담을 수 있습니다. 오래된 행을 다른 대장으로 나눠 주세요.`, true), true) : false)
   function insertRows(at, n) {
+    if (full(n)) return
     change((b) => {
       for (let i = 0; i < n; i++) b.rows.splice(at, 0, { id: S.uid('r'), c: {} })
     })
@@ -1141,18 +1243,20 @@
   function duplicateRows() {
     const { r1, r2 } = rect()
     const rows = view.slice(r1, r2 + 1)
+    if (full(rows.length)) return
     const last = rows[rows.length - 1]
-    change((b) => b.rows.splice(last + 1, 0, ...rows.map((r) => ({ id: S.uid('r'), c: JSON.parse(JSON.stringify(b.rows[r].c)) }))))
+    change((b) => b.rows.splice(last + 1, 0, ...rows.map((r) => ({ id: S.uid('r'), c: Object.assign({}, b.rows[r].c) }))))
   }
   function deleteRows() {
     const { r1, r2 } = rect()
     const rows = new Set(view.slice(r1, r2 + 1))
-    if (rows.size > 1 && !confirm(`${rows.size}행을 삭제할까요? (실행 취소로 되돌릴 수 있습니다)`)) return
+    if (rows.size > 1 && !confirm(`${num(rows.size)}행을 삭제할까요?\n실행 취소(Ctrl+Z)나 "변경 이력"으로 되돌릴 수 있습니다.`)) return
     change((b) => (b.rows = b.rows.filter((_, i) => !rows.has(i))))
-    sel = { r: r1, c: sel.c, r2: r1, c2: sel.c }
+    sel = { r: Math.min(r1, Math.max(0, view.length - 1)), c: sel.c, r2: Math.min(r1, Math.max(0, view.length - 1)), c2: sel.c }
     paint()
   }
   function insertCol(at) {
+    if (book.cols.length >= 200) return toast('열은 200개까지 만들 수 있습니다.', true)
     const col = { id: S.uid('c'), name: uniqueColName('새 열'), type: 'text', width: 120, total: 'none' }
     change((b) => b.cols.splice(at, 0, col))
     shiftFilters(at, 1)
@@ -1173,11 +1277,11 @@
     const ref = new RegExp(`\\[@?\\s*${col.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\]`, 'i')
     const users = book.cols.filter((x) => x.type === 'calc' && ref.test(x.calc || '')).map((x) => x.name)
     const filled = book.rows.filter((r) => r.c[col.id] !== undefined && r.c[col.id] !== '').length
-    const msg = `“${col.name}” 열을 삭제할까요?${filled ? `\n값이 들어 있는 칸 ${filled}개도 함께 지워집니다.` : ''}${users.length ? `\n이 열을 쓰는 계산 열(${users.join(', ')})은 #REF!가 됩니다.` : ''}\n(실행 취소로 되돌릴 수 있습니다)`
+    const msg = `“${col.name}” 열을 삭제할까요?${filled ? `\n값이 들어 있는 칸 ${num(filled)}개도 함께 지워집니다.` : ''}${users.length ? `\n이 열을 쓰는 계산 열(${users.join(', ')})은 #REF!가 됩니다.` : ''}\n실행 취소(Ctrl+Z)나 "변경 이력"으로 되돌릴 수 있습니다.`
     if (!confirm(msg)) return
     change((b) => {
       b.cols.splice(c, 1)
-      for (const r of b.rows) delete r.c[col.id]
+      for (let i = 0; i < b.rows.length; i++) if (b.rows[i].c[col.id] !== undefined) delete W(b, i).c[col.id]
     })
     shiftFilters(c, -1)
     recompute()
@@ -1200,12 +1304,14 @@
       const t = S.display(comp.values[r][c], col)
       counts.set(t, (counts.get(t) || 0) + 1)
     }
-    const vals = [...counts.keys()].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, 'ko', { numeric: true })))
+    const all = [...counts.keys()].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, 'ko', { numeric: true })))
+    // a column of a large ledger may hold more different values than a list can show
+    const vals = all.slice(0, 2000)
     const cur = filters[c] ? filters[c].values : null
     const el = $('filterPop')
     el.innerHTML = `<b>${esc(col.name)} 거르기</b><input type="search" placeholder="값 찾기" class="fq" /><div class="btnrow"><button class="ghost all">모두</button><button class="ghost none">모두 해제</button></div><div class="vals">${vals
       .map((v, i) => `<label><input type="checkbox" data-i="${i}"${!cur || cur.has(v) ? ' checked' : ''} /> ${v === '' ? '<i class="muted">(빈 칸)</i>' : esc(v)} <span class="muted small">${counts.get(v)}</span></label>`)
-      .join('')}</div><div class="btnrow"><button class="ghost clear">이 열 필터 해제</button><span class="spacer"></span><button class="primary ok">적용</button></div>`
+      .join('')}</div>${all.length > vals.length ? `<p class="muted small">값이 ${num(all.length)}가지라 앞의 ${num(vals.length)}가지만 보입니다. 위쪽 "찾기"로 좁히세요.</p>` : ''}<div class="btnrow"><button class="ghost clear">이 열 필터 해제</button><span class="spacer"></span><button class="primary ok">적용</button></div>`
     el.hidden = false
     el.style.left = `${Math.min(x, innerWidth - 260)}px`
     el.style.top = `${Math.min(y, innerHeight - 360)}px`
@@ -1225,20 +1331,29 @@
     }
     el.querySelector('.ok').onclick = () => {
       const on = boxes().filter((b) => b.checked)
-      if (on.length === vals.length) delete filters[c]
+      if (on.length === vals.length && all.length === vals.length) delete filters[c]
       else filters[c] = { values: new Set(on.map((b) => vals[+b.dataset.i])) }
       el.hidden = true
       sel = { r: 0, c, r2: 0, c2: c }
+      wrap.scrollTop = 0
       recompute()
       render()
       focusGrid()
     }
   }
+  let searchTimer = null
   $('search').addEventListener('input', (e) => {
-    query = e.target.value
-    sel = { r: 0, c: sel.c, r2: 0, c2: sel.c }
-    recompute()
-    render()
+    // a large ledger is searched once typing pauses
+    clearTimeout(searchTimer)
+    const run = () => {
+      query = e.target.value
+      sel = { r: 0, c: sel.c, r2: 0, c2: sel.c }
+      wrap.scrollTop = 0
+      recompute()
+      render()
+    }
+    if (book.rows.length > 5000) searchTimer = setTimeout(run, 250)
+    else run()
   })
   $('search').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === 'Escape') {
@@ -1261,6 +1376,7 @@
   }
 
   $('addRow').onclick = () => {
+    if (full(1)) return
     if (Object.keys(filters).length || query) {
       filters = {}
       query = ''
@@ -1268,26 +1384,25 @@
     }
     change((b) => b.rows.push({ id: S.uid('r'), c: {} }))
     sel = { r: view.length - 1, c: 0, r2: view.length - 1, c2: 0 }
-    paint()
     scrollToCell()
+    paint()
     focusGrid()
   }
   $('addCol').onclick = () => insertCol(book.cols.length)
 
   // ---------- clipboard (events, so no clipboard-read permission is needed) ----------
+  const plainCell = (v, col) => {
+    if (F.isErr(v)) return v.code
+    if (typeof v === 'boolean') return col.type === 'check' ? (v ? 'O' : '') : v ? 'TRUE' : 'FALSE'
+    if (typeof v === 'number') return col.type === 'date' || col.format === 'date' ? F.serialToDate(v) : String(Math.round(v * 1e10) / 1e10)
+    return v
+  }
   function selectionMatrix() {
     const { r1, r2, c1, c2 } = rect()
     const out = []
     for (let r = r1; r <= r2; r++) {
       const line = []
-      for (let c = c1; c <= c2; c++) {
-        const v = comp.values[view[r]][c]
-        const col = book.cols[c]
-        if (F.isErr(v)) line.push(v.code)
-        else if (typeof v === 'boolean') line.push(col.type === 'check' ? (v ? 'O' : '') : v ? 'TRUE' : 'FALSE')
-        else if (typeof v === 'number') line.push(col.type === 'date' || col.format === 'date' ? F.serialToDate(v) : String(Math.round(v * 1e10) / 1e10))
-        else line.push(v)
-      }
+      for (let c = c1; c <= c2; c++) line.push(plainCell(comp.values[view[r]][c], book.cols[c]))
       out.push(line)
     }
     return out
@@ -1310,8 +1425,11 @@
     e.preventDefault()
     const text = e.clipboardData.getData('text/plain')
     if (!text || curRow() === undefined) return
+    const at = view[sel.r]
+    const lines = text.replace(/\r?\n$/, '').split('\n').length
+    if (at + lines > MAX_ROWS) return void full(at + lines - book.rows.length)
     let area = null
-    change((b) => (area = S.pasteBlock(b, view[sel.r], sel.c, text)))
+    change((b) => (area = S.pasteBlock(b, at, sel.c, text, W)))
     if (area) {
       const r2 = view.indexOf(area.r2)
       sel = { r: sel.r, c: area.c1, r2: r2 >= 0 ? r2 : sel.r, c2: area.c2 }
@@ -1339,7 +1457,8 @@
     if ($('colType').value !== 'calc') return
     const f = $('colCalc').value.trim()
     if (!f) return ($('colCalcPreview').textContent = '')
-    const trial = JSON.parse(JSON.stringify(book))
+    // tried on the first rows only: a large ledger is not computed at every key
+    const trial = Object.assign({}, book, { cols: JSON.parse(JSON.stringify(book.cols)), rows: book.rows.slice(0, 200) })
     const c = trial.cols[colEditing]
     c.type = 'calc'
     c.calc = f.startsWith('=') ? f : `=${f}`
@@ -1381,8 +1500,14 @@
     const calc = $('colCalc').value.trim()
     change((b) => {
       const bc = b.cols[c]
-      if (bc.name !== name) S.renameColumn(b, bc.id, name)
-      if (type !== bc.type && type !== 'calc') for (const r of b.rows) if (r.c[bc.id] !== undefined) r.c[bc.id] = S.parseInput({ type }, S.editText(bc, r.c[bc.id]))
+      if (bc.name !== name) S.renameColumn(b, bc.id, name, W)
+      if (type !== bc.type && type !== 'calc')
+        for (let i = 0; i < b.rows.length; i++) {
+          const old = b.rows[i].c[bc.id]
+          if (old === undefined) continue
+          const v = S.parseInput({ type }, S.editText(bc, old))
+          if (v !== old) W(b, i).c[bc.id] = v
+        }
       bc.type = type
       bc.options = type === 'select' ? [...new Set($('colOptions').value.split('\n').map((s) => s.trim()).filter(Boolean))] : undefined
       bc.calc = type === 'calc' ? (calc ? (calc.startsWith('=') ? calc : `=${calc}`) : '') : undefined
@@ -1393,12 +1518,172 @@
     focusGrid()
   })
 
+  // ---------- save as (다른 이름으로 저장): xlsx / xls / csv / db / ledger file ----------
+  const XL_FORMAT = { int: '#,##0', dec1: '#,##0.0', dec2: '#,##0.00', won: '#,##0"원"', pct: '0.0%' }
+  /** The table as plain values with a kind per column (numbers stay numbers, dates stay dates in Excel). */
+  function exportSheet(rowIdx) {
+    const columns = book.cols.map((c, i) => {
+      const isDate = c.type === 'date' || c.format === 'date'
+      let kind = c.type === 'check' ? 'check' : isDate ? 'date' : c.type === 'number' ? 'number' : 'text'
+      if (c.type === 'calc' && !isDate) {
+        // a calculated column is a number column when its first results are numbers
+        let n = 0
+        let t = 0
+        for (let k = 0; k < rowIdx.length && n + t < 50; k++) {
+          const v = comp.values[rowIdx[k]][i]
+          if (typeof v === 'number') n++
+          else if (v !== '' && v !== null && v !== undefined) t++
+        }
+        if (n && !t) kind = 'number'
+      }
+      return { name: c.name, kind, format: kind === 'number' ? XL_FORMAT[c.format] : undefined, width: c.width || 120 }
+    })
+    const rows = rowIdx.map((r) =>
+      comp.values[r].map((v, i) => {
+        if (v === '' || v === null || v === undefined) return null
+        if (F.isErr(v)) return v.code
+        if (typeof v === 'number') return columns[i].kind === 'date' ? F.serialToDate(v) : v
+        if (typeof v === 'boolean') return columns[i].kind === 'check' ? v : v ? 'TRUE' : 'FALSE'
+        return String(v)
+      })
+    )
+    return { columns, rows }
+  }
+  function openSaveAs() {
+    if (!book) return
+    const filtered = view.length !== book.rows.length
+    $('saveAsScope').hidden = !filtered
+    $('saveAsVisible').checked = filtered
+    $('saveAsCount').textContent = filtered ? `(지금 ${num(view.length)}행 보임 / 전체 ${num(book.rows.length)}행)` : ''
+    $('saveAsMsg').textContent = ''
+    document.querySelector('input[name="saveAsFormat"][value="xlsx"]').checked = true
+    $('saveAsDialog').showModal()
+  }
+  $('saveAs').onclick = openSaveAs
+  $('saveAsGo').onclick = async () => {
+    const format = document.querySelector('input[name="saveAsFormat"]:checked').value
+    const whole = format === 'json' || $('saveAsScope').hidden || !$('saveAsVisible').checked
+    const idx = whole ? book.rows.map((_, i) => i) : view
+    if (format === 'xls' && idx.length > 65535) return ($('saveAsMsg').textContent = 'Excel 97-2003 통합 문서(.xls)는 65,535행까지 담을 수 있습니다. Excel 통합 문서(.xlsx)를 고르세요.')
+    $('saveAsMsg').textContent = '저장하는 중…'
+    try {
+      const mine = L.plain(book)
+      delete mine.share
+      const sheet = format === 'json' ? { columns: [], rows: [] } : exportSheet(idx)
+      const r = await call('file.saveAs', { name: book.name, format, columns: sheet.columns, rows: sheet.rows, book: mine })
+      if (r && r.ok) {
+        $('saveAsDialog').close()
+        toast(`저장했습니다: ${r.path}`)
+      } else $('saveAsMsg').textContent = r && r.error ? r.error : ''
+    } catch (err) {
+      $('saveAsMsg').textContent = `저장하지 못했습니다: ${err.message}`
+    }
+  }
+
+  // ---------- change history (변경 이력) ----------
+  const WHY = { edit: '고치기 전', bulk: '여러 행·열을 지우기 전', restore: '되돌리기 전', manual: '직접 보관' }
+  let versions = []
+  async function openHistory() {
+    if (!src) return
+    await settle()
+    $('historyList').innerHTML = '<li class="muted">불러오는 중…</li>'
+    $('historyKeep').hidden = !canEditNow()
+    $('historyDialog').showModal()
+    try {
+      versions = (await call(`${src.kind}.versions`, { id: src.id })) || []
+      drawHistory()
+    } catch (err) {
+      $('historyList').innerHTML = `<li class="warn">${esc(err.message)}</li>`
+    }
+  }
+  function drawHistory() {
+    const edit = canEditNow()
+    $('historyList').innerHTML =
+      versions
+        .map(
+          (v) =>
+            `<li><span class="grow"><b>${fmtDate(v.createdAt)}</b> · ${esc(WHY[v.reason] || v.reason)}<br /><span class="muted small">${num(v.rows)}행${v.byName ? ` · ${esc(v.byName)}` : ''}${v.name !== book.name ? ` · 이름 “${esc(v.name)}”` : ''}</span></span><button type="button" data-copy="${esc(v.id)}">사본으로 열기</button>${edit ? `<button type="button" data-back="${esc(v.id)}">이 시점으로</button>` : ''}</li>`
+        )
+        .join('') || '<li class="muted">아직 보관된 시점이 없습니다. 대장을 고치기 시작하면 그 전 모습이 자동으로 보관됩니다.</li>'
+  }
+  $('history').onclick = openHistory
+  $('historyKeep').onclick = async () => {
+    try {
+      versions = await call(`${src.kind}.keep`, { id: src.id })
+      drawHistory()
+      toast('지금 모습을 보관했습니다.')
+    } catch (err) {
+      toast(err.message, true)
+    }
+  }
+  $('historyList').addEventListener('click', async (e) => {
+    const b = e.target.closest('button')
+    if (!b || !src) return
+    const v = versions.find((x) => x.id === (b.dataset.copy || b.dataset.back))
+    if (!v) return
+    try {
+      if (b.dataset.copy) {
+        const doc = await call(`${src.kind}.version`, { id: src.id, versionId: v.id })
+        $('historyDialog').close()
+        doc.name = `${doc.name} (${fmtDate(v.createdAt)} 시점)`.slice(0, 60)
+        await addBook(doc)
+        toast('그 시점의 모습을 개인용 대장으로 열었습니다. 원래 대장은 그대로입니다.')
+      } else {
+        if (!confirm(`대장을 ${fmtDate(v.createdAt)} 시점(${num(v.rows)}행)으로 되돌릴까요?\n지금 모습도 변경 이력에 보관되어 다시 돌아올 수 있습니다.${team ? '\n함께 쓰는 모든 사람의 화면이 바뀝니다.' : ''}`)) return
+        const at = src
+        await settle()
+        await call(`${at.kind}.revert`, { id: at.id, versionId: v.id })
+        $('historyDialog').close()
+        if (src === at) await (at.kind === 'team' ? loadTeam(at.id, true) : openBook(at.id))
+        toast('되돌렸습니다.')
+      }
+    } catch (err) {
+      toast(`하지 못했습니다: ${err.message}`, true)
+    }
+  })
+
+  // ---------- trash (휴지통) ----------
+  async function openTrash() {
+    $('trashList').innerHTML = '<li class="muted">불러오는 중…</li>'
+    $('trashDialog').showModal()
+    const mine = ((await call('local.trash').catch(() => [])) || []).map((x) => Object.assign({ kind: 'local' }, x))
+    const shared = ((await call('team.trash').catch(() => [])) || []).map((x) => Object.assign({ kind: 'team' }, x))
+    $('trashList').innerHTML =
+      [...mine, ...shared]
+        .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0))
+        .map(
+          (x) =>
+            `<li><span class="grow"><b>${esc(x.icon || '📄')} ${esc(x.name)}</b><br /><span class="muted small">${x.kind === 'local' ? '🔒 개인용' : kindName(x)} · ${num(x.rows)}행 · ${fmtDate(x.deletedAt)}에 삭제${x.kind === 'team' ? ` · 만든 사람 ${esc(x.ownerName)}` : ''}</span></span><button type="button" data-kind="${x.kind}" data-restore="${esc(x.id)}">되살리기</button><button type="button" class="danger ghost" data-kind="${x.kind}" data-purge="${esc(x.id)}" data-name="${esc(x.name)}">완전히 삭제</button></li>`
+        )
+        .join('') || '<li class="muted">휴지통이 비어 있습니다.</li>'
+  }
+  $('trashBtn').onclick = openTrash
+  $('trashList').addEventListener('click', async (e) => {
+    const b = e.target.closest('button')
+    if (!b) return
+    const kind = b.dataset.kind
+    try {
+      if (b.dataset.restore) {
+        await call(`${kind}.restore`, { id: b.dataset.restore })
+        toast('되살렸습니다.')
+      } else {
+        if (!confirm(`“${b.dataset.name}” 대장을 완전히 삭제할까요?\n변경 이력까지 모두 지워지며 되돌릴 수 없습니다.`)) return
+        await call(`${kind}.purge`, { id: b.dataset.purge })
+      }
+      await loadIndex()
+      await loadTeamList()
+      openTrash()
+    } catch (err) {
+      toast(`하지 못했습니다: ${err.message}`, true)
+    }
+  })
+
   // ---------- book actions ----------
   $('bookName').addEventListener('change', (e) => {
     const n = e.target.value.trim() || '이름 없는 대장'
     e.target.value = n
     change((b) => (b.name = n))
-    e.target.value = book.name // unchanged when someone else is editing
+    e.target.value = book.name // unchanged when this ledger is read-only for me
   })
   $('bookName').addEventListener('keydown', (e) => e.key === 'Enter' && focusGrid())
   $('note').addEventListener('change', (e) => change((b) => (b.note = e.target.value)))
@@ -1410,23 +1695,16 @@
     $('moreMenu').hidden = true
     const act = b.dataset.act
     try {
-      if (act === 'csv') {
-        const r = await call('file.save', { name: `${book.name}.csv`, text: S.toCSV(book, comp.values, view) })
-        if (r && r.ok) toast(`저장했습니다: ${r.path}`)
-        else if (r && r.error) toast(r.error, true)
-      } else if (act === 'copyAll') {
+      if (act === 'saveAs') openSaveAs()
+      else if (act === 'history') openHistory()
+      else if (act === 'copyAll') {
+        if (view.length > 20000) return toast('표가 커서 한 번에 복사할 수 없습니다(20,000행까지). "다른 이름으로 저장"으로 엑셀 파일을 만드세요.', true)
         const head = book.cols.map((c) => c.name)
-        const keep = sel
-        sel = { r: 0, c: 0, r2: view.length - 1, c2: book.cols.length - 1 }
-        const text = S.toDelimited([head, ...(view.length ? selectionMatrix() : [])], '\t')
-        sel = keep
-        await call('clipboard.write', { text })
-        toast(`표 전체(${view.length}행)를 복사했습니다. 엑셀에 붙여 넣으세요.`)
-      } else if (act === 'json') {
-        const r = await call('file.save', { name: `${book.name}.json`, text: JSON.stringify({ format: FORMAT, book }, null, 1) })
-        if (r && r.ok) toast(`저장했습니다: ${r.path}`)
-        else if (r && r.error) toast(r.error, true)
+        const body = view.map((r) => comp.values[r].map((v, c) => plainCell(v, book.cols[c])))
+        await call('clipboard.write', { text: S.toDelimited([head, ...body], '\t') })
+        toast(`표 전체(${num(view.length)}행)를 복사했습니다. 엑셀에 붙여 넣으세요.`)
       } else if (act === 'print') {
+        if (view.length > PRINT_ROWS) toast(`앞의 ${num(PRINT_ROWS)}행만 인쇄됩니다. 찾기·필터로 필요한 행만 보이게 하거나 엑셀 파일로 저장해 인쇄하세요.`, true)
         $('printTitle').textContent = book.name
         window.print()
       } else if (act === 'share') openShare()
@@ -1437,48 +1715,53 @@
       else if (act === 'dup') {
         await settle()
         const wasTeam = !!team
-        const copy = JSON.parse(JSON.stringify(book))
-        copy.id = S.uid('b')
+        const copy = L.plain(book)
         copy.name = `${book.name} (사본)`.slice(0, 60)
-        delete copy.share
+        copy.rows = copy.rows.map((r) => ({ id: S.uid('r'), c: r.c }))
         await addBook(copy)
         toast(wasTeam ? '개인용 대장으로 사본을 받았습니다. 이 사본은 이 PC에만 있습니다.' : '복제했습니다.')
       } else if (act === 'note') {
         $('note').hidden = false
         $('note').focus()
-      } else if (act === 'delete' && team) {
-        const t = team
-        if (!confirm(`“${book.name}” 대장을 삭제할까요?\n함께 쓰던 모든 사람에게서 사라지며 되돌릴 수 없습니다. 필요하면 먼저 "대장 파일로 저장"으로 백업하세요.`)) return
-        await settle()
-        await call('team.delete', { id: t.id })
-        stopHolding(false)
-        if (team === t) closeSheet()
-        loadTeamList()
-        toast('함께 쓰던 대장을 삭제했습니다.')
       } else if (act === 'delete') {
-        if (!confirm(`“${book.name}” 대장을 삭제할까요?\n이 PC에서 지워지며 되돌릴 수 없습니다. 필요하면 먼저 "대장 파일로 저장"으로 백업하세요.`)) return
-        const id = book.id
-        clearTimeout(saveTimer)
-        saveTimer = null
-        await call('storage.set', { key: `book:${id}`, value: null })
-        index = index.filter((x) => x.id !== id)
-        await saveIndex()
-        closeSheet()
+        const at = src
+        if (!confirm(`“${book.name}” 대장을 삭제할까요?\n${team ? '함께 쓰던 모든 사람에게서 사라집니다. ' : ''}삭제한 대장은 30일 동안 휴지통에 있고 그 안에 되살릴 수 있습니다.`)) return
+        await settle()
+        if (book.share) await call('rooms.delete', { roomId: book.share.roomId }).catch(() => undefined)
+        await call(`${at.kind}.delete`, { id: at.id })
+        if (src === at) closeSheet()
+        await loadIndex()
+        loadTeamList()
+        toast('휴지통으로 옮겼습니다. 왼쪽 아래 "휴지통"에서 되살릴 수 있습니다.')
       }
     } catch (err) {
       toast(err.message, true)
     }
   })
+  window.addEventListener('beforeprint', () => {
+    if (!book) return
+    printing = true
+    renderRows()
+  })
+  window.addEventListener('afterprint', () => {
+    printing = false
+    if (book) renderRows()
+  })
 
   // ---------- new / import ----------
   $('templates').innerHTML = S.TEMPLATES.map((t) => `<button type="button" data-t="${t.key}"><span class="ic">${t.icon}</span><span><b>${esc(t.name)}</b><small>${esc(t.desc)}</small></span></button>`).join('')
-  $('newBook').onclick = () => {
+  function openNew(where) {
     $('newName').value = ''
     for (const v of ['team', 'members']) document.querySelector(`input[name="newWhere"][value="${v}"]`).disabled = !online
-    document.querySelector('input[name="newWhere"][value="local"]').checked = true
+    document.querySelector(`input[name="newWhere"][value="${where && (where === 'local' || online) ? where : 'local'}"]`).checked = true
     $('newDialog').showModal()
     $('newName').focus()
   }
+  $('newBook').onclick = () => openNew('local')
+  $('empty').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-new]')
+    if (b) openNew(b.dataset.new)
+  })
   $('templates').addEventListener('click', async (e) => {
     const b = e.target.closest('button[data-t]')
     if (!b) return
@@ -1489,33 +1772,28 @@
       pendingTeam = made
       return openTeamDialog('create', where)
     }
-    await addBook(made)
-  })
-  $('importCsv').onclick = async () => {
     try {
-      const r = await call('file.open', { exts: ['csv', 'tsv', 'txt'] })
+      await addBook(made)
+    } catch (err) {
+      toast(`만들지 못했습니다: ${err.message}`, true)
+    }
+  })
+  $('importFile').onclick = async () => {
+    try {
+      const r = await call('file.open')
       if (!r || !r.ok) return r && r.error && toast(r.error, true)
-      const b = S.fromCSV(r.text, r.name.replace(/\.[^.]+$/, ''))
+      let b
+      if (r.kind === 'book') {
+        b = r.book
+        if (!b || !Array.isArray(b.cols) || !Array.isArray(b.rows)) throw new Error('관리대장 파일이 아닙니다.')
+      } else if (r.kind === 'rows') b = S.fromMatrix(r.rows, r.name)
+      else b = S.fromCSV(r.text, r.name)
+      if (b.rows.length > MAX_ROWS) throw new Error(`행이 너무 많습니다(${num(MAX_ROWS)}행까지).`)
+      if (index.some((x) => x.name === b.name)) b.name = `${b.name} (가져옴)`.slice(0, 60)
       await addBook(b)
-      toast(`${b.rows.length}행 ${b.cols.length}열을 가져왔습니다. 열 머리글의 ▾ → 열 설정에서 종류를 확인하세요.`)
+      toast(r.kind === 'book' ? '대장을 열었습니다. 개인용 대장으로 저장됩니다.' : `${num(b.rows.length)}행 ${b.cols.length}열을 가져왔습니다. 열 머리글의 ▾ → 열 설정에서 종류를 확인하세요.`)
     } catch (err) {
       toast(`가져오지 못했습니다: ${err.message}`, true)
-    }
-  }
-  $('importJson').onclick = async () => {
-    try {
-      const r = await call('file.open', { exts: ['json'] })
-      if (!r || !r.ok) return r && r.error && toast(r.error, true)
-      const data = JSON.parse(r.text)
-      const b = data && data.format === FORMAT ? data.book : null
-      if (!b || !Array.isArray(b.cols) || !Array.isArray(b.rows)) throw new Error('관리대장 파일이 아닙니다.')
-      b.id = S.uid('b')
-      delete b.share
-      if (index.some((x) => x.name === b.name)) b.name = `${b.name} (가져옴)`
-      await addBook(b)
-      toast('대장을 열었습니다.')
-    } catch (err) {
-      toast(`열지 못했습니다: ${err.message}`, true)
     }
   }
 
@@ -1550,8 +1828,9 @@
     const type = document.querySelector('input[name="shareTo"]:checked').value
     const memberIds = [...$('shareMembers').querySelectorAll('input:checked')].map((x) => x.value)
     if (type === 'members' && !memberIds.length) return ($('shareState').textContent = '공유할 팀원을 고르세요.')
+    if (view.length > 3000) return ($('shareState').textContent = '표가 커서 공유할 수 없습니다. 함께 볼 대장은 "팀용·지정자용으로 올리기"를 쓰세요.')
     const shared = snapshot()
-    if (bytes(JSON.stringify(shared)) > 63 * 1024) return ($('shareState').textContent = '표가 커서 공유할 수 없습니다(64KB). 찾기·필터로 필요한 행만 보이게 한 뒤 공유하세요(보이는 행만 공유됩니다).')
+    if (bytes(JSON.stringify(shared)) > 63 * 1024) return ($('shareState').textContent = '표가 커서 공유할 수 없습니다(64KB). 찾기·필터로 필요한 행만 보이게 한 뒤 공유하거나, "팀용·지정자용으로 올리기"를 쓰세요.')
     $('shareState').textContent = '공유하는 중…'
     try {
       const scope = { type, groupIds: [], memberIds: type === 'members' ? memberIds : [] }
@@ -1604,8 +1883,9 @@
       const room = await call('rooms.get', { roomId: id })
       if (!room.shared || room.shared.kind !== 'ledger') return toast('관리대장 공유가 아닙니다.', true)
       await settle()
-      stopHolding(true)
       team = null
+      src = null
+      shadow = null
       syncTeamUi()
       viewing = room
       const s = room.shared
@@ -1636,7 +1916,7 @@
     const s = viewing.shared
     const cols = s.cols.map((c) => ({ id: S.uid('c'), name: c.name, type: c.type === 'member' || c.type === 'select' ? 'text' : c.type, width: c.width, total: 'none', format: c.num ? 'auto' : undefined }))
     const rows = s.rows.map((r) => ({ id: S.uid('r'), c: Object.fromEntries(r.map((v, j) => [cols[j].id, S.parseInput(cols[j], cols[j].type === 'check' ? (v ? 'O' : '') : v)]).filter(([, v]) => v !== '')) }))
-    await addBook({ id: S.uid('b'), name: `${s.name} (${viewing.createdByName})`, cols, rows, note: s.note || '' })
+    await addBook({ name: `${s.name} (${viewing.createdByName})`.slice(0, 60), cols, rows, note: s.note || '' })
     toast('내 대장으로 복사했습니다. 계산식은 값으로 바뀌었습니다.')
   }
   window.TeamHub.on('room.changed', ({ roomId, deleted }) => {
@@ -1679,9 +1959,15 @@
   $('helpBtn').onclick = () => $('helpDialog').showModal()
 
   // ---------- start ----------
+  let scrollFrame = 0
   wrap.addEventListener('scroll', () => {
-    if (editing && editing.via === 'cell') placeEditor()
+    if (scrollFrame) return
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = 0
+      onScroll()
+    })
   })
+  window.addEventListener('resize', () => book && !printing && renderRows())
   window.addEventListener('beforeunload', () => {
     if (saveTimer) void flush()
   })
@@ -1702,5 +1988,5 @@
     else if (index.length) openBook([...index].sort((a, b) => b.updatedAt - a.updatedAt)[0].id)
     else if (teamList.length) openTeam(teamList[0].id)
   })()
-  window.__ledger = { get book() { return book }, get view() { return view }, get sel() { return sel }, get team() { return team }, get holding() { return holding }, flush, settle }
+  window.__ledger = { get book() { return book }, get view() { return view }, get sel() { return sel }, get team() { return team }, get src() { return src }, get shadow() { return shadow }, get win() { return win }, flush, settle, metaNow, set deaf(v) { deaf = !!v } }
 })()

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { Lock, Send, Trash2, Play, CheckCheck, RotateCcw, ThumbsUp } from 'lucide-react'
+import { Lock, Send, Trash2, Play, CheckCheck, RotateCcw, ThumbsUp, Check, Undo2 } from 'lucide-react'
 import { Dialog } from '@renderer/components/Dialog'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Select, Textarea } from '@renderer/components/ui/input'
@@ -17,7 +17,7 @@ import { fromInputValue, toInputValue } from '@renderer/lib/dates'
 import { useMe } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
-import { MAX_TASK_ASSIGNEES, PRIORITY_LABEL, TASK_STATE_LABEL, canTransition, isTaskAssignee, type TaskDto, type TaskState } from '@shared/schemas/work'
+import { MAX_TASK_ASSIGNEES, PRIORITY_LABEL, TASK_STATE_LABEL, canTransition, isTaskAssignee, taskProgress, type TaskDto, type TaskState } from '@shared/schemas/work'
 import type { PersonalTaskDto } from '@shared/schemas/personal'
 import { cn } from '@renderer/lib/utils'
 
@@ -35,6 +35,7 @@ export function NewTaskDialog({ onClose, personal: initialPersonal }: { onClose:
   const [body, setBody] = useState('')
   const [note, setNote] = useState('')
   const [assignees, setAssignees] = useState<string[]>([])
+  const [each, setEach] = useState(false)
   const [due, setDue] = useState('')
   const [priority, setPriority] = useState<'low' | 'normal' | 'high'>('normal')
   const [atts, setAtts] = useState<Att[]>([])
@@ -50,6 +51,7 @@ export function NewTaskDialog({ onClose, personal: initialPersonal }: { onClose:
           // assigneeId is what a server older than this client reads.
           assigneeId: assignees[0],
           assigneeIds: assignees,
+          doneMode: each && assignees.length > 1 ? 'each' : 'any',
           dueAt,
           priority,
           attachmentIds: atts.map((a) => a.id),
@@ -102,7 +104,18 @@ export function NewTaskDialog({ onClose, personal: initialPersonal }: { onClose:
             <div data-testid="task-assignees">
               <MemberPicker value={assignees} onChange={setAssignees} />
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">한 명 이상 고릅니다. 나 자신도 고를 수 있고, 여러 명이면 담당자 누구나 진행 상태를 바꿀 수 있습니다.</p>
+            <p className="mt-1 text-xs text-muted-foreground">한 명 이상 고릅니다. 나 자신도 고를 수 있습니다.</p>
+            {assignees.length > 1 && (
+              <label className="mt-2 flex cursor-pointer items-start gap-2 rounded-md border border-border p-2 text-sm">
+                <input type="checkbox" className="mt-0.5" checked={each} onChange={(e) => setEach(e.target.checked)} aria-label="담당자마다 각자 완료" />
+                <span>
+                  담당자마다 각자 완료 표시
+                  <span className="block text-xs text-muted-foreground">
+                    {each ? '각자 자기 몫을 완료로 표시하고, 모두 끝나야 업무가 완료됩니다(예: 전원 제출·전원 확인).' : '끄면 업무 하나를 함께 맡아, 담당자 누구나 시작·완료를 누를 수 있습니다.'}
+                  </span>
+                </span>
+              </label>
+            )}
           </Field>
         )}
         <div className="grid grid-cols-2 gap-3">
@@ -171,6 +184,10 @@ export function TaskDetailDialog({ id, onClose }: { id: string; onClose: () => v
   const t = q.data
   if (!t) return <Dialog open onClose={onClose} title="업무">{q.error ? <p className="text-sm text-urgent">{errorMessage(q.error)}</p> : <p className="text-sm">불러오는 중…</p>}</Dialog>
   const role = { assignee: isTaskAssignee(t, me?.id), requester: t.requesterId === me?.id }
+  const progress = taskProgress(t)
+  const mine = t.assignees?.find((a) => a.id === me?.id)
+  // each assignee finishes on their own: "완료" and taking it back are their own marks, not the task's state
+  const next = NEXT.filter((n) => canTransition(t.state, n.to, role)).filter((n) => !progress || (n.to === 'doing' ? t.state === 'requested' || role.requester : n.to === 'confirmed' ? role.requester : n.to === 'requested' ? t.state === 'doing' && progress.done === 0 : false))
   const overdue = t.dueAt && t.dueAt < Date.now() && (t.state === 'requested' || t.state === 'doing')
   return (
     <Dialog open onClose={onClose} title={t.title} width="max-w-2xl">
@@ -185,17 +202,39 @@ export function TaskDetailDialog({ id, onClose }: { id: string; onClose: () => v
           <ScopeTags scope={t.scope} />
         </div>
         <div className="flex flex-wrap gap-2" data-testid="task-actions">
-          {NEXT.filter((n) => canTransition(t.state, n.to, role)).map((n) => (
+          {next.map((n) => (
             <Button key={n.to} size="sm" variant={n.to === 'requested' ? 'outline' : 'default'} onClick={() => patch.mutate({ state: n.to })}>
-              <n.icon /> {n.label}
+              <n.icon /> {progress && n.to === 'doing' && t.state !== 'requested' ? '다시 진행(모두 다시)' : n.label}
             </Button>
           ))}
+          {progress && mine && t.state !== 'confirmed' && (
+            <Button size="sm" variant={mine.doneAt ? 'outline' : 'default'} onClick={() => patch.mutate({ myDone: !mine.doneAt })}>
+              {mine.doneAt ? <Undo2 /> : <Check />} {mine.doneAt ? '내 완료 취소' : '내 몫 완료'}
+            </Button>
+          )}
           {(role.requester || me?.role === 'admin') && (
             <Button size="sm" variant="ghost" className="ml-auto text-urgent" onClick={() => window.confirm('이 업무 요청을 삭제할까요?') && del.mutate()}>
               <Trash2 /> 삭제
             </Button>
           )}
         </div>
+        {progress && (
+          <div className="rounded-md border border-border p-2 text-sm" data-testid="task-progress">
+            <div className="mb-1 font-semibold">
+              담당자별 완료 {progress.done}/{progress.total}
+              <span className="ml-2 text-xs font-normal text-muted-foreground">모두 완료하면 업무가 완료됩니다</span>
+            </div>
+            <ul className="flex flex-wrap gap-x-4 gap-y-1">
+              {t.assignees.map((a) => (
+                <li key={a.id} className={cn('flex items-center gap-1', !a.doneAt && 'text-muted-foreground')}>
+                  {a.doneAt ? <Check className="size-3.5 text-success" /> : <span className="inline-block size-3.5 rounded-full border border-border" />}
+                  {a.name}
+                  {a.doneAt ? <span className="text-xs text-muted-foreground">{format(a.doneAt, 'M/d HH:mm')}</span> : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {err && <p className="text-sm text-urgent">{err}</p>}
         <RichView html={t.bodyHtml || '<p class="text-muted-foreground">내용 없음</p>'} />
         <AttachmentList items={t.attachments} />

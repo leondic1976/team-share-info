@@ -10,7 +10,7 @@ import { api } from '@renderer/lib/api'
 import { invoke } from '@renderer/lib/bridge'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
-import { assigneeLabel, type TaskDto, type TaskState } from '@shared/schemas/work'
+import { assigneeLabel, taskProgress, type TaskDto, type TaskState } from '@shared/schemas/work'
 import type { PersonalTaskDto } from '@shared/schemas/personal'
 import { NewTaskDialog, PersonalTaskDialog, TaskDetailDialog, stateBadge } from './TaskDialogs'
 import { cn } from '@renderer/lib/utils'
@@ -74,6 +74,7 @@ export function TasksPage(): React.JSX.Element {
       </div>
       <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
         {i.origin === 'server' && <span>{filter === 'requested' ? `→ ${assigneeLabel(i)}` : i.requesterName}</span>}
+        {i.origin === 'server' && taskProgress(i) && <span className="rounded bg-muted px-1">{taskProgress(i)!.done}/{taskProgress(i)!.total} 완료</span>}
         {dueText(i)}
         {i.origin === 'server' && i.commentCount > 0 && (
           <span className="flex items-center gap-0.5">
@@ -162,6 +163,7 @@ export function TasksPage(): React.JSX.Element {
                 {i.origin === 'server' && (
                   <span className="text-xs text-muted-foreground">
                     {i.requesterName} → <span title={i.assigneeName}>{assigneeLabel(i)}</span>
+                    {taskProgress(i) && <span className="ml-1.5 rounded bg-muted px-1">{taskProgress(i)!.done}/{taskProgress(i)!.total} 완료</span>}
                   </span>
                 )}
                 <span className="ml-auto flex items-center gap-3">

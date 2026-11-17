@@ -691,4 +691,62 @@ CREATE TABLE ledgers (
 CREATE INDEX idx_ledgers_updated ON ledgers(deleted_at, updated_at);
 `
   }
+,
+  {
+    id: 14,
+    name: 'ledger-rows-versions-task-done-each',
+    sql: `
+-- ledgers: one record per row instead of the sheet in one piece (large ledgers, several
+-- people editing at once, change history, trash)
+ALTER TABLE ledgers ADD COLUMN head TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE ledgers ADD COLUMN head_rev INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE ledgers ADD COLUMN head_seq INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE ledgers ADD COLUMN feed_floor INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE ledgers ADD COLUMN snap_at INTEGER;
+ALTER TABLE ledgers ADD COLUMN noted_at INTEGER;
+ALTER TABLE ledgers ADD COLUMN deleted_by TEXT REFERENCES members(id);
+CREATE TABLE ledger_rows (
+  ledger_id TEXT NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  pos REAL NOT NULL,
+  cells TEXT NOT NULL DEFAULT '{}',
+  seq INTEGER NOT NULL DEFAULT 1,
+  gone INTEGER NOT NULL DEFAULT 0,
+  gone_at INTEGER,
+  PRIMARY KEY (ledger_id, id)
+) WITHOUT ROWID;
+CREATE INDEX idx_ledger_rows_pos ON ledger_rows(ledger_id, gone, pos);
+CREATE INDEX idx_ledger_rows_seq ON ledger_rows(ledger_id, seq);
+CREATE TABLE ledger_versions (
+  id TEXT PRIMARY KEY,
+  ledger_id TEXT NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  row_count INTEGER NOT NULL,
+  doc BLOB NOT NULL,
+  reason TEXT NOT NULL,
+  by_id TEXT,
+  by_name TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_ledger_versions ON ledger_versions(ledger_id, created_at);
+CREATE TABLE ledger_seen (
+  ledger_id TEXT NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+  member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  PRIMARY KEY (ledger_id, member_id)
+) WITHOUT ROWID;
+INSERT OR IGNORE INTO ledger_rows (ledger_id, id, pos, cells, seq)
+  SELECT l.id, json_extract(j.value, '$.id'), (j.key + 1) * 1024.0, COALESCE(json_extract(j.value, '$.c'), '{}'), l.version
+  FROM ledgers l, json_each(l.doc, '$.rows') j
+  WHERE json_valid(l.doc) AND json_extract(j.value, '$.id') IS NOT NULL;
+UPDATE ledgers SET head = json_remove(doc, '$.rows', '$.id'), head_seq = version WHERE json_valid(doc);
+UPDATE ledgers SET doc = '', row_count = (SELECT COUNT(*) FROM ledger_rows r WHERE r.ledger_id = ledgers.id);
+-- nobody is told about ledgers that exist already
+INSERT INTO ledger_seen (ledger_id, member_id, version) SELECT l.id, m.id, l.version FROM ledgers l, members m;
+-- tasks: each assignee may have to finish on their own
+ALTER TABLE tasks ADD COLUMN done_mode TEXT NOT NULL DEFAULT 'any' CHECK (done_mode IN ('any','each'));
+ALTER TABLE task_assignees ADD COLUMN done_at INTEGER;
+`
+  }
 ]

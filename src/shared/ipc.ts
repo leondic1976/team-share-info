@@ -3,6 +3,7 @@
  * Each channel maps to its request and response types. The preload script only
  * forwards channels listed in IPC_CHANNELS, and main validates every request.
  */
+import type { LedgerChange, LedgerChanges, LedgerDoc, LedgerExportCell, LedgerExportColumn, LedgerExportFormat, LedgerRefused, LedgerVersion, LocalLedgerDto, LocalLedgerMeta } from './schemas/ledger'
 
 import type { ServerSetupInput } from './schemas/settings'
 import type { ServerStatus } from './server-host'
@@ -140,6 +141,23 @@ export interface IpcMap {
   'local:kv.set': { req: { key: string; value: unknown }; res: void }
   'local:kv.delete': { req: { key: string }; res: void }
   'local:kv.all': { req: void; res: Record<string, unknown> }
+  // personal ledgers (관리대장 · 개인용): rows in the local DB
+  'local:ledger.list': { req: void; res: LocalLedgerMeta[] }
+  'local:ledger.trash': { req: void; res: LocalLedgerMeta[] }
+  'local:ledger.get': { req: { id: string; after?: { p: number; id: string } | null; limit?: number }; res: LocalLedgerDto }
+  'local:ledger.create': { req: { doc: LedgerDoc; icon?: string }; res: LocalLedgerMeta }
+  'local:ledger.save': { req: { id: string; change: LedgerChange }; res: { meta: LocalLedgerMeta; changes: LedgerChanges; refused: LedgerRefused } }
+  'local:ledger.delete': { req: { id: string }; res: void }
+  'local:ledger.restore': { req: { id: string }; res: LocalLedgerMeta }
+  'local:ledger.purge': { req: { id: string }; res: void }
+  'local:ledger.versions': { req: { id: string }; res: LedgerVersion[] }
+  'local:ledger.keep': { req: { id: string }; res: LedgerVersion[] }
+  'local:ledger.version': { req: { id: string; versionId: string }; res: LedgerDoc }
+  'local:ledger.revert': { req: { id: string; versionId: string }; res: LocalLedgerMeta }
+  /** 다른 이름으로 저장: the user picks the place; the file type is the one asked for. */
+  'ledger:saveAs': { req: { name: string; format: LedgerExportFormat; columns: LedgerExportColumn[]; rows: LedgerExportCell[][]; book: unknown }; res: { ok: boolean; path?: string; error?: string } }
+  /** Open a ledger file: xlsx gives rows of values, csv its text, json/db the ledger itself. */
+  'ledger:open': { req: void; res: { ok: boolean; name?: string; kind?: 'rows' | 'book' | 'text'; rows?: LedgerExportCell[][]; book?: unknown; text?: string; error?: string } }
   'local:export': { req: void; res: ExportResult }
   'local:import': { req: void; res: ExportResult }
   'local:cache.save': { req: { entries: { key: string; value: string }[] }; res: void }
@@ -375,6 +393,20 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'local:kv.set',
   'local:kv.delete',
   'local:kv.all',
+  'local:ledger.list',
+  'local:ledger.trash',
+  'local:ledger.get',
+  'local:ledger.create',
+  'local:ledger.save',
+  'local:ledger.delete',
+  'local:ledger.restore',
+  'local:ledger.purge',
+  'local:ledger.versions',
+  'local:ledger.keep',
+  'local:ledger.version',
+  'local:ledger.revert',
+  'ledger:saveAs',
+  'ledger:open',
   'local:export',
   'local:import',
   'local:cache.save',

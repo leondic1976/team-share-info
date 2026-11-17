@@ -13,47 +13,45 @@
         <button id="newBook" class="primary">+ 새 대장</button>
         <input id="bookSearch" type="search" placeholder="대장 찾기" aria-label="대장 찾기" />
         <div class="lists">
-          <h2 class="grp">🔒 개인용 <small>이 PC에만 · 나만</small></h2>
+          <h2 class="grp" data-list="books" title="접기 · 펴기"><span>🔒 개인용 <small>이 PC · 나만</small></span><i class="cnt" id="cntLocal"></i></h2>
           <ul id="books" class="books" aria-label="개인용 대장 목록"></ul>
-          <h2 class="grp">👥 팀용 <small>팀 전체 · 그룹</small></h2>
+          <h2 class="grp" data-list="teamBooks" title="접기 · 펴기"><span>👥 팀용 <small>팀 전체 · 그룹</small></span><i class="cnt" id="cntTeam"></i></h2>
           <ul id="teamBooks" class="books" aria-label="팀용 대장 목록"></ul>
-          <h2 class="grp">👤 지정자용 <small>지정한 사람만</small></h2>
+          <h2 class="grp" data-list="pickBooks" title="접기 · 펴기"><span>👤 지정자용 <small>지정한 사람만</small></span><i class="cnt" id="cntPick"></i></h2>
           <ul id="pickBooks" class="books" aria-label="지정자용 대장 목록"></ul>
         </div>
         <div class="side-foot">
-          <button id="importCsv" class="ghost">CSV 가져오기</button>
-          <button id="importJson" class="ghost">대장 파일 열기</button>
-          <button id="sharedBtn" class="ghost">공유받은 대장</button>
-          <button id="helpBtn" class="ghost">사용법 · 함수</button>
+          <button id="importFile" class="ghost" title="엑셀(.xlsx) · CSV · 관리대장 파일(.json, .db)">📥 파일에서 가져오기</button>
+          <button id="trashBtn" class="ghost">🗑 휴지통</button>
+          <button id="sharedBtn" class="ghost">👀 공유받은 대장</button>
+          <button id="helpBtn" class="ghost">❔ 사용법 · 함수</button>
         </div>
       </aside>
 
       <main id="main">
         <div id="empty" class="empty">
           <div class="big">📒</div>
-          <p>왼쪽에서 대장을 고르거나 <b>+ 새 대장</b>으로 만드세요.</p>
-          <p class="muted">물품 관리·문서 수발신·예산 집행 같은 서식으로 바로 시작할 수 있습니다.</p>
-          <p class="muted">🔒 개인용은 이 PC에만 저장되어 나만 봅니다. 👥 팀용은 팀 전체나 그룹이, 👤 지정자용은 지정한 사람만 서버에서 함께 씁니다.</p>
-          <p class="muted">모든 대장은 고치는 대로 자동 저장됩니다.</p>
+          <p class="lead">어떤 대장을 만들까요?</p>
+          <div class="kinds">
+            <button type="button" data-new="local"><span class="ic">🔒</span><b>개인용</b><small>이 PC의 로컬 DB에 저장<br />나만 봅니다</small></button>
+            <button type="button" data-new="team"><span class="ic">👥</span><b>팀용</b><small>서버에 저장<br />팀 전체나 그룹이 함께 씁니다</small></button>
+            <button type="button" data-new="members"><span class="ic">👤</span><b>지정자용</b><small>서버에 저장<br />지정한 사람만 함께 씁니다</small></button>
+          </div>
+          <p class="muted">왼쪽 목록에서 대장을 고르면 이어서 씁니다. 엑셀 파일은 <b>파일에서 가져오기</b>로 엽니다.</p>
+          <p class="muted">모든 대장은 고치는 대로 자동 저장되고, 고치기 전 모습은 <b>변경 이력</b>에 남습니다.</p>
         </div>
 
         <section id="sheet" hidden>
           <div class="toolbar">
             <input id="bookName" class="title" aria-label="대장 이름" maxlength="60" />
-            <span id="saveState" class="muted small"></span>
+            <span id="saveState" class="state" role="status"></span>
             <span class="spacer"></span>
-            <button id="undo" class="icon" title="실행 취소 (Ctrl+Z)" aria-label="실행 취소">↶</button>
-            <button id="redo" class="icon" title="다시 실행 (Ctrl+Y)" aria-label="다시 실행">↷</button>
-            <button id="addRow" title="맨 아래에 행 추가">+ 행</button>
-            <button id="addCol" title="맨 오른쪽에 열 추가">+ 열</button>
-            <input id="search" type="search" placeholder="찾기 (Ctrl+F)" aria-label="표에서 찾기" />
-            <button id="clearFilter" class="ghost" hidden>필터 해제</button>
+            <button id="saveAs" title="엑셀(.xlsx · .xls) · CSV · 데이터베이스(.db)로 저장 (Ctrl+Shift+S)">💾 다른 이름으로 저장</button>
+            <button id="history" title="고치기 전 모습 보기 · 되돌리기">🕘 변경 이력</button>
             <div class="menu-wrap">
               <button id="moreBtn" aria-haspopup="true">더보기 ▾</button>
               <div id="moreMenu" class="menu" role="menu" hidden>
-                <button data-act="csv">CSV로 저장 (엑셀에서 열기)</button>
                 <button data-act="copyAll">표 전체 복사 (엑셀에 붙여넣기)</button>
-                <button data-act="json">대장 파일로 저장 (백업·다른 PC로)</button>
                 <button data-act="print">인쇄</button>
                 <hr />
                 <button data-act="toTeam">팀용·지정자용으로 올리기 (함께 쓰기)</button>
@@ -62,15 +60,22 @@
                 <button data-act="dup">대장 복제</button>
                 <button data-act="note">대장 설명 쓰기</button>
                 <hr />
-                <button data-act="delete" class="danger">대장 삭제</button>
+                <button data-act="delete" class="danger">대장 삭제 (휴지통으로)</button>
               </div>
             </div>
           </div>
           <div id="teamBar" class="teambar" hidden></div>
           <div class="fbar">
+            <button id="undo" class="icon" title="실행 취소 (Ctrl+Z)" aria-label="실행 취소">↶</button>
+            <button id="redo" class="icon" title="다시 실행 (Ctrl+Y)" aria-label="다시 실행">↷</button>
+            <button id="addRow" title="맨 아래에 행 추가">+ 행</button>
+            <button id="addCol" title="맨 오른쪽에 열 추가">+ 열</button>
+            <span class="sep"></span>
             <span id="addr" class="addr">A1</span>
             <span class="fx">fx</span>
             <input id="fx" aria-label="수식 입력줄" placeholder="값 또는 =수식 (Enter로 입력)" autocomplete="off" />
+            <input id="search" type="search" placeholder="찾기 (Ctrl+F)" aria-label="표에서 찾기" />
+            <button id="clearFilter" class="ghost" hidden>필터 해제</button>
           </div>
           <textarea id="note" class="note" rows="2" maxlength="2000" placeholder="대장 설명 (작성 기준, 보관 기간, 담당 등)" aria-label="대장 설명" hidden></textarea>
           <h2 id="printTitle" class="print-title"></h2>
@@ -170,7 +175,7 @@
     <dialog id="teamDialog">
       <form method="dialog">
         <h3 id="teamTitle">팀용·지정자용으로 올리기</h3>
-        <p class="muted small">팀용·지정자용 대장은 서버에 자동 저장되고 서버 백업에 포함됩니다. 아래에서 정한 사람들이 같은 대장을 보고, 한 번에 한 사람씩 고칩니다(고치는 동안 다른 사람 화면에는 "편집 중"으로 표시되고, 저장되는 대로 바로 보입니다).</p>
+        <p class="muted small">팀용·지정자용 대장은 서버에 자동 저장되고 서버 백업에 포함됩니다. 아래에서 정한 사람들이 같은 대장을 함께 고치며, 고친 내용은 저장되는 대로 다른 사람 화면에 보입니다. 두 사람이 같은 칸을 동시에 고치면 먼저 저장된 값이 남고, 나중 사람의 입력은 그 사람의 개인용 대장에 따로 남습니다.</p>
         <p class="warn small">개인정보(주민등록번호·연락처 등)가 들어 있으면 볼 사람을 꼭 필요한 범위로 정하세요.</p>
         <label><input type="radio" name="teamTo" value="team" checked /> 👥 팀용 · 팀 전체</label>
         <label><input type="radio" name="teamTo" value="group" /> 👥 팀용 · 그룹</label>
@@ -191,6 +196,50 @@
           <button value="cancel" class="ghost">취소</button>
           <button type="button" id="teamGo" class="primary">올리기</button>
         </div>
+      </form>
+    </dialog>
+
+    <dialog id="saveAsDialog">
+      <form method="dialog">
+        <h3>다른 이름으로 저장</h3>
+        <p class="muted small">대장은 고치는 대로 자동 저장됩니다. 여기서는 엑셀 등 다른 프로그램에서 쓸 파일을 따로 만듭니다.</p>
+        <div class="formats" role="radiogroup" aria-label="파일 형식">
+          <label><input type="radio" name="saveAsFormat" value="xlsx" checked /> <b>Excel 통합 문서 (.xlsx)</b><small class="muted">엑셀 2007 이상 · 숫자·날짜·표시 형식 유지 · 1,048,575행까지</small></label>
+          <label><input type="radio" name="saveAsFormat" value="xls" /> <b>Excel 97-2003 통합 문서 (.xls)</b><small class="muted">옛 엑셀·한셀용 · 65,535행까지</small></label>
+          <label><input type="radio" name="saveAsFormat" value="csv" /> <b>CSV (.csv)</b><small class="muted">쉼표로 나눈 글자 파일 · 어느 프로그램에서나 열림</small></label>
+          <label><input type="radio" name="saveAsFormat" value="db" /> <b>SQLite 데이터베이스 (.db)</b><small class="muted">표 "data"로 저장 · DB 도구로 조회 · 관리대장에서 다시 열면 수식까지 그대로</small></label>
+          <label><input type="radio" name="saveAsFormat" value="json" /> <b>관리대장 파일 (.json)</b><small class="muted">백업·다른 PC로 옮기기 · 수식과 열 설정까지 그대로</small></label>
+        </div>
+        <label id="saveAsScope"><input type="checkbox" id="saveAsVisible" /> 찾기·필터로 보이는 행만 저장 <span id="saveAsCount" class="muted small"></span></label>
+        <p class="muted small">수식은 계산된 값으로 저장됩니다(관리대장 파일과 .db 안의 대장 정보는 수식 그대로).</p>
+        <div id="saveAsMsg" class="small warn"></div>
+        <div class="btns">
+          <span class="spacer"></span>
+          <button value="cancel" class="ghost">취소</button>
+          <button type="button" id="saveAsGo" class="primary">저장할 곳 고르기…</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="historyDialog" class="wide">
+      <form method="dialog">
+        <h3>변경 이력</h3>
+        <p class="muted small">대장을 고치기 시작할 때(10분 넘게 쉬었다가 다시 고칠 때), 여러 행이나 열을 한꺼번에 지울 때, 되돌릴 때 그 전 모습이 자동으로 보관됩니다. 최근 30개까지 남습니다.</p>
+        <ul id="historyList" class="list"></ul>
+        <div class="btns">
+          <button type="button" id="historyKeep">지금 모습 보관</button>
+          <span class="spacer"></span>
+          <button value="cancel" class="primary">닫기</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="trashDialog" class="wide">
+      <form method="dialog">
+        <h3>휴지통</h3>
+        <p class="muted small">삭제한 대장은 30일 동안 여기에 있습니다. 팀용·지정자용 대장은 만든 사람과 관리자가 되살릴 수 있습니다.</p>
+        <ul id="trashList" class="list"></ul>
+        <div class="btns"><button value="cancel" class="primary">닫기</button></div>
       </form>
     </dialog>
 
@@ -229,12 +278,15 @@
           </table>
           <h4>저장</h4>
           <ul>
-            <li>모든 대장은 고치는 대로 <b>자동 저장</b>됩니다. 저장 단추는 없고, 이름 옆에 "저장됨"·"서버에 저장됨"이 표시됩니다.</li>
-            <li><b>🔒 개인용</b>: 이 PC에만 저장되어 나만 봅니다(서버로 보내지 않음). 다른 PC로 옮기거나 백업하려면 <b>더보기 → 대장 파일로 저장</b>, 새 PC에서 <b>대장 파일 열기</b>.</li>
-            <li><b>👥 팀용</b>(팀 전체·그룹)과 <b>👤 지정자용</b>(지정한 사람만): 서버에 저장되어 함께 씁니다. 입력을 시작하면 "내가 편집 중"이 되고 그동안 다른 사람은 보기만 하며, 저장된 내용은 바로 다른 사람 화면에 나타납니다. 1분 동안 입력이 없거나 <b>편집 끝내기</b>를 누르면 다른 사람이 고칠 수 있습니다.</li>
-            <li>두 사람이 같은 대장을 동시에 고쳐 서로 덮어쓰는 일은 없습니다. 드물게 내 입력이 서버에 저장되지 못하면(연결이 끊긴 사이 다른 사람이 고친 경우 등) 내 내용은 개인용 대장에 사본으로 남고, 화면은 서버의 최신 내용으로 바뀝니다.</li>
+            <li>모든 대장은 고치는 대로 <b>자동 저장</b>됩니다(고친 행만 저장). 이름 옆에 "이 PC에 저장됨"·"서버에 저장됨"이 표시되고, <kbd>Ctrl</kbd>+<kbd>S</kbd>를 누르면 바로 저장합니다.</li>
+            <li><b>🔒 개인용</b>: 이 PC의 로컬 DB에 저장되어 나만 봅니다(서버로 보내지 않음).</li>
+            <li><b>👥 팀용</b>(팀 전체·그룹)과 <b>👤 지정자용</b>(지정한 사람만): 서버 DB에 저장되어 여러 사람이 함께 고칩니다. 다른 사람이 고친 칸은 저장되는 대로 내 화면에 나타납니다.</li>
+            <li>두 사람이 <b>같은 칸</b>을 동시에 고치면 먼저 저장된 값이 남습니다. 나중 사람의 입력은 덮어쓰지 않고 그 사람의 개인용 대장에 "(저장 못 한 내 변경)" 사본으로 남깁니다. 같은 행의 다른 칸은 둘 다 저장됩니다.</li>
+            <li><b>다른 이름으로 저장</b>(<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>): Excel 통합 문서(.xlsx), Excel 97-2003(.xls), CSV, SQLite 데이터베이스(.db), 관리대장 파일(.json) 중에서 고릅니다. <b>파일에서 가져오기</b>는 .xlsx · CSV · .json · .db를 엽니다.</li>
+            <li><b>변경 이력</b>: 고치기 전 모습이 자동으로 보관됩니다. 그 시점을 사본으로 열어 보거나 대장을 그 시점으로 되돌릴 수 있습니다.</li>
+            <li><b>휴지통</b>: 삭제한 대장은 30일 동안 휴지통에 있고 되살릴 수 있습니다.</li>
             <li>개인용 대장을 함께 쓰려면 <b>더보기 → 팀용·지정자용으로 올리기</b>, 함께 쓰는 대장을 따로 보관하려면 <b>더보기 → 개인용 대장으로 사본 받기</b>.</li>
-            <li>대장 하나는 약 500KB(보통 2,000~5,000행)까지입니다. 해마다·분기마다 대장을 나누면 가볍게 쓸 수 있습니다.</li>
+            <li>대장 하나에 100,000행까지 담습니다. 행이 수만 개가 되면 SUM([열])·CUMSUM처럼 열 전체를 읽는 계산 열은 입력할 때마다 다시 계산되어 느려질 수 있습니다(같은 행만 쓰는 =[수량]*[단가] 같은 식은 빠릅니다).</li>
           </ul>
         </div>
         <div class="btns"><button value="cancel" class="primary">닫기</button></div>
@@ -243,6 +295,7 @@
 
     <script src="formula.js"></script>
     <script src="sheet.js"></script>
+    <script src="store.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -296,5 +296,52 @@ CREATE TRIGGER notes_au AFTER UPDATE OF title, body_text ON notes BEGIN
   INSERT INTO notes_fts(rowid, title, body_text) VALUES (new.rowid, new.title, new.body_text);
 END;
 `
+  },
+  {
+    id: 7,
+    name: 'ledgers',
+    sql: `
+-- personal ledgers (관리대장 · 개인용): one record per row (same shape as on the server)
+CREATE TABLE ledgers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  icon TEXT NOT NULL DEFAULT '📄',
+  head TEXT NOT NULL DEFAULT '{}',
+  head_rev INTEGER NOT NULL DEFAULT 1,
+  head_seq INTEGER NOT NULL DEFAULT 1,
+  row_count INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 1,
+  feed_floor INTEGER NOT NULL DEFAULT 0,
+  snap_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE TABLE ledger_rows (
+  ledger_id TEXT NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  pos REAL NOT NULL,
+  cells TEXT NOT NULL DEFAULT '{}',
+  seq INTEGER NOT NULL DEFAULT 1,
+  gone INTEGER NOT NULL DEFAULT 0,
+  gone_at INTEGER,
+  PRIMARY KEY (ledger_id, id)
+) WITHOUT ROWID;
+CREATE INDEX idx_ledger_rows_pos ON ledger_rows(ledger_id, gone, pos);
+CREATE INDEX idx_ledger_rows_seq ON ledger_rows(ledger_id, seq);
+CREATE TABLE ledger_versions (
+  id TEXT PRIMARY KEY,
+  ledger_id TEXT NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  row_count INTEGER NOT NULL,
+  doc BLOB NOT NULL,
+  reason TEXT NOT NULL,
+  by_id TEXT,
+  by_name TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_ledger_versions ON ledger_versions(ledger_id, created_at);
+`
   }
 ]

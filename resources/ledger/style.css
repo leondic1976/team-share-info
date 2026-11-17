@@ -730,3 +730,230 @@ table.fn td:first-child {
 .print-title {
   display: none;
 }
+
+/* ---------- layout refresh: list sections, toolbar groups, save state, dialogs ---------- */
+#side h2.grp {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 10px 0 2px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+#side h2.grp:hover {
+  background: var(--head);
+}
+#side h2.grp::before {
+  content: '▾';
+  font-size: 10px;
+  width: 10px;
+}
+#side h2.grp.off::before {
+  content: '▸';
+}
+#side h2.grp > span {
+  flex: 1;
+  color: var(--fg);
+}
+#side h2.grp .cnt {
+  font-style: normal;
+  font-weight: 600;
+  font-size: 11px;
+  min-width: 18px;
+  text-align: center;
+  border-radius: 9px;
+  background: var(--head);
+  padding: 0 5px;
+}
+#side h2.grp .cnt:empty {
+  display: none;
+}
+.books li.none {
+  cursor: default;
+  padding: 4px 8px 4px 22px;
+}
+.books li.none:hover {
+  background: transparent;
+}
+.books li {
+  border-left: 3px solid transparent;
+}
+.books li.on {
+  border-left-color: var(--primary);
+}
+.books .dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.side-foot {
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+.toolbar .tools {
+  display: inline-flex;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+.state {
+  font-size: 12px;
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+.state:empty {
+  display: none;
+}
+.state.ok {
+  color: #15803d;
+  background: rgba(22, 163, 74, 0.1);
+}
+.state.busy {
+  color: var(--primary);
+  background: var(--sel);
+}
+.state.bad {
+  color: var(--danger);
+  background: rgba(220, 38, 38, 0.1);
+  font-weight: 600;
+}
+[data-theme='dark'] .state.ok {
+  color: #4ade80;
+}
+.teambar.local .st {
+  color: var(--muted);
+}
+.empty {
+  max-width: 640px;
+  padding: 24px;
+}
+.empty .lead {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 4px 0 14px;
+}
+.kinds {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.kinds button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 10px;
+  border-radius: 12px;
+  white-space: normal;
+}
+.kinds button:hover {
+  background: var(--sel);
+}
+.kinds .ic {
+  font-size: 26px;
+}
+.kinds b {
+  font-size: 14px;
+}
+.kinds small {
+  color: var(--muted);
+  line-height: 1.4;
+}
+/* rows: the same height everywhere (only the rows near the visible ones are in the table) */
+#grid tbody tr {
+  height: 26px;
+}
+#grid tbody tr.sp td {
+  padding: 0;
+  border: 0;
+  cursor: default;
+}
+#grid tbody tr:not(.sp):nth-child(even) td:not(.rn):not(.calc) {
+  background-image: linear-gradient(rgba(100, 116, 139, 0.045), rgba(100, 116, 139, 0.045));
+}
+#grid tbody tr:not(.sp):hover td.rn {
+  color: var(--primary);
+  font-weight: 700;
+}
+body.readonly #grid td {
+  cursor: default;
+}
+.formats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+.formats label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.formats label:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--sel);
+}
+.formats small {
+  grid-column: 2;
+}
+.list li button {
+  flex: none;
+}
+@media print {
+  #grid tbody tr.sp {
+    display: none;
+  }
+}
+.toast {
+  /* never in the way of the rows underneath */
+  pointer-events: none;
+}
+input.title {
+  flex: 1 1 160px;
+  max-width: 280px;
+  width: auto;
+}
+#side h2.grp small {
+  color: var(--muted);
+}
+.toolbar {
+  flex-wrap: nowrap;
+}
+.fbar {
+  gap: 4px;
+}
+.fbar .sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--line);
+  margin: 2px 6px;
+}
+.fbar #fx {
+  flex: 1;
+  min-width: 80px;
+}
+.fbar #search {
+  flex: none;
+  width: 170px;
+  margin-left: 6px;
+}
+@media print {
+  .fbar {
+    display: none !important;
+  }
+}

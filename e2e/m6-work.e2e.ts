@@ -71,6 +71,37 @@ describe('M6 tasks, boards, directory', () => {
     await expect.poll(() => b.page.getByTestId('task-row-합동 점검').textContent(), { timeout: 10000 }).toContain('완료')
   })
 
+  it('"each assignee finishes on their own": the task is done only when everybody is', async () => {
+    await a.page.getByRole('button', { name: '새 할 일' }).click()
+    const d = a.page.getByRole('dialog')
+    await d.getByRole('radio', { name: /업무 요청/ }).click()
+    await d.getByLabel('할 일 제목').fill('전원 서약서 제출')
+    // the choice appears with the second assignee
+    await d.getByTestId('task-assignees').getByLabel('팀원B', { exact: true }).check()
+    expect(await d.getByLabel('담당자마다 각자 완료').count()).toBe(0)
+    await d.getByTestId('task-assignees').getByLabel('서버관리자', { exact: true }).check()
+    await d.getByLabel('담당자마다 각자 완료').check()
+    await d.getByRole('button', { name: '요청 보내기' }).click()
+    await expect.poll(() => b.page.getByTestId('task-row-전원 서약서 제출').textContent(), { timeout: 10000 }).toContain('0/2 완료')
+    // B finishes B's part: under way, 1/2
+    await b.page.getByTestId('task-row-전원 서약서 제출').click()
+    expect(await b.page.getByTestId('task-actions').getByRole('button', { name: '완료', exact: true }).count()).toBe(0)
+    await b.page.getByTestId('task-actions').getByRole('button', { name: '내 몫 완료' }).click()
+    await expect.poll(() => b.page.getByTestId('task-progress').textContent()).toContain('담당자별 완료 1/2')
+    await expect.poll(() => b.page.getByTestId('task-actions').getByRole('button', { name: '내 완료 취소' }).count()).toBe(1)
+    await b.page.getByRole('dialog').getByRole('button', { name: '닫기' }).click()
+    await expect.poll(() => a.page.getByTestId('task-row-전원 서약서 제출').textContent(), { timeout: 10000 }).toContain('1/2 완료')
+    expect(await a.page.getByTestId('task-row-전원 서약서 제출').textContent()).toContain('진행 중')
+    // A cannot confirm yet; A finishes A's part and the task is done
+    await a.page.getByTestId('task-row-전원 서약서 제출').click()
+    expect(await a.page.getByTestId('task-actions').getByRole('button', { name: '확인' }).count()).toBe(0)
+    await a.page.getByTestId('task-actions').getByRole('button', { name: '내 몫 완료' }).click()
+    await expect.poll(() => a.page.getByTestId('task-progress').textContent()).toContain('담당자별 완료 2/2')
+    await expect.poll(() => a.page.getByTestId('task-actions').getByRole('button', { name: '확인' }).count()).toBe(1)
+    await a.page.getByRole('dialog').getByRole('button', { name: '닫기' }).click()
+    await expect.poll(() => b.page.getByTestId('task-row-전원 서약서 제출').textContent(), { timeout: 10000 }).toContain('2/2 완료')
+  })
+
   it('personal to-do stays local and shows a lock', async () => {
     await b.page.getByRole('button', { name: '새 할 일' }).click()
     const d = b.page.getByRole('dialog')

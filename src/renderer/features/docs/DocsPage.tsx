@@ -1,3 +1,4 @@
+import { MAX_TASK_ASSIGNEES } from '@shared/schemas/work'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -29,13 +30,15 @@ function FollowUp({ doc }: { doc: DocDto }): React.JSX.Element {
   const { data: members } = useMembers()
   const { data: me } = useMe()
   const [title, setTitle] = useState('')
-  const [assignee, setAssignee] = useState('')
+  const [assignees, setAssignees] = useState<string[]>([])
   const [due, setDue] = useState('')
   const [msg, setMsg] = useState('')
+  const nameOf = (id: string): string => (id === me?.id ? '나' : ((members ?? []).find((m) => m.id === id)?.name ?? ''))
   const add = useMutation({
-    mutationFn: () => api.post('/api/tasks', { title, assigneeId: assignee, dueAt: due ? fromInputValue(due) : null, bodyHtml: `<p>회의록 「${doc.title}」의 후속 조치입니다.</p>` }),
+    // assigneeId is what a server older than this client reads
+    mutationFn: () => api.post('/api/tasks', { title, assigneeId: assignees[0], assigneeIds: assignees, dueAt: due ? fromInputValue(due) : null, bodyHtml: `<p>회의록 「${doc.title}」의 후속 조치입니다.</p>` }),
     onSuccess: () => {
-      setMsg(`'${title}'을(를) 할 일로 등록했습니다.`)
+      setMsg(`'${title}'을(를) 할 일로 등록했습니다(담당: ${assignees.map(nameOf).join(', ')}).`)
       setTitle('')
     },
     onError: (e) => setMsg(errorMessage(e))
@@ -47,11 +50,20 @@ function FollowUp({ doc }: { doc: DocDto }): React.JSX.Element {
       </div>
       <div className="flex flex-wrap gap-2">
         <Input aria-label="후속 조치" className="min-w-56 flex-1" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="할 일 내용" />
-        <Select aria-label="후속 조치 담당자" className="w-36" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-          <option value="">담당자</option>
-          {me && <option value={me.id}>나</option>}
+        {/* picking a name adds it: a follow-up may go to several people */}
+        <Select
+          aria-label="후속 조치 담당자"
+          className="w-36"
+          value=""
+          onChange={(e) => {
+            const id = e.target.value
+            if (id && !assignees.includes(id) && assignees.length < MAX_TASK_ASSIGNEES) setAssignees([...assignees, id])
+          }}
+        >
+          <option value="">{assignees.length ? '담당자 추가' : '담당자'}</option>
+          {me && !assignees.includes(me.id) && <option value={me.id}>나</option>}
           {(members ?? [])
-            .filter((m) => m.id !== me?.id)
+            .filter((m) => m.id !== me?.id && !assignees.includes(m.id))
             .map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
@@ -59,10 +71,20 @@ function FollowUp({ doc }: { doc: DocDto }): React.JSX.Element {
             ))}
         </Select>
         <Input aria-label="후속 조치 기한" type="datetime-local" className="w-52" value={due} onChange={(e) => setDue(e.target.value)} />
-        <Button onClick={() => add.mutate()} disabled={!title.trim() || !assignee}>
+        <Button onClick={() => add.mutate()} disabled={!title.trim() || !assignees.length}>
           등록
         </Button>
       </div>
+      {assignees.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs" data-testid="followup-assignees">
+          <span className="text-muted-foreground">담당 {assignees.length}명</span>
+          {assignees.map((id) => (
+            <button key={id} type="button" className="cursor-pointer rounded-full bg-muted px-2 py-0.5 hover:bg-muted/70" title="누르면 뺍니다" onClick={() => setAssignees(assignees.filter((x) => x !== id))}>
+              {nameOf(id)} ✕
+            </button>
+          ))}
+        </div>
+      )}
       {msg && <p className="text-xs text-muted-foreground">{msg}</p>}
     </div>
   )

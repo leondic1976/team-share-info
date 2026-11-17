@@ -14,6 +14,7 @@
     "vitest.e2e.config.ts",
     "e2e/**/*",
     "src/shared/**/*",
+    "src/node/ledger-files.ts",
     "src/preload/*.d.ts"
   ]
 }

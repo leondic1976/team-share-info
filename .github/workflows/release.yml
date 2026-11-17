@@ -3,6 +3,7 @@
 # The github-pages environment accepts deployments from main only, so this runs twice:
 #   tag run  : checks, build, GitHub Release record, then starts the run on main
 #   main run : checks, build, download site + update feed (Pages)
+# If the run on main does not appear after a tag run: gh workflow run release.yml --ref main
 # Only the newest version is kept: older GitHub Releases (and their installers) are deleted,
 # the Pages artifact expires after a day (artifact storage quota).
 name: release
@@ -18,22 +19,25 @@ permissions:
   id-token: write
   actions: write
 
+# One Pages deployment at a time (group "release", shared with site.yml). The tag run is in
+# a group of its own: it starts the run on main while it is still running itself, and a run
+# that has to wait for the very run that started it was once left queued for good (v1.1.0).
 concurrency:
-  group: release
+  group: ${{ startsWith(github.ref, 'refs/tags/') && 'release-tag' || 'release' }}
   cancel-in-progress: false
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - run: git fetch --tags --force
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -90,7 +94,7 @@ jobs:
       - if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: node scripts/build-site.mjs
       - if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: _site
           retention-days: 1
@@ -104,4 +108,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

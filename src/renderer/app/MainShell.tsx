@@ -26,6 +26,7 @@ import { TransferPanel } from '@renderer/features/files/TransferPanel'
 import { useChatAlerts, useChatUnread } from '@renderer/features/chat/useChatAlerts'
 import { useTaskAlerts } from '@renderer/features/tasks/useTaskAlerts'
 import { useJoinAlerts } from '@renderer/features/admin/useJoinAlerts'
+import { useLedgerAlerts } from '@renderer/features/ledger/useLedgerAlerts'
 import { useDocAlerts } from '@renderer/features/docs/useDocAlerts'
 import { CaptureDialog } from '@renderer/features/memos/CaptureDialog'
 import { useMorningSummary, useTeamAlarms } from '@renderer/features/alarms/useTeamAlarms'
@@ -73,6 +74,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   useMeetingAlerts()
   usePluginInvites()
   useJoinAlerts(me?.role === 'admin')
+  useLedgerAlerts(me?.id)
   const liveMeetings = useLiveMeetings()
   const [searchOpen, setSearchOpen] = useState(false)
 
@@ -139,7 +141,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
       />
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
       <div className="flex min-h-0 flex-1">
-        <Sidebar isAdmin={isAdmin} disabledFeatures={disabled} badges={{ notices: unread, chat: chatUnread.messages + chatUnread.notes, meetings: liveMeetings.data?.length ?? 0, admin: me?.pendingJoins ?? 0 }} />
+        <Sidebar isAdmin={isAdmin} disabledFeatures={disabled} badges={{ notices: unread, chat: chatUnread.messages + chatUnread.notes, meetings: liveMeetings.data?.length ?? 0, admin: me?.pendingJoins ?? 0, ledger: me?.ledgerUnseen ?? 0 }} />
         <main className="min-w-0 flex-1 overflow-hidden">
           <Suspense fallback={<Loading />}>
           <Routes>

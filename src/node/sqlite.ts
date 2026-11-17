@@ -61,8 +61,13 @@ export class Db {
     this.raw.exec(sql)
   }
 
+  private depth = 0
+
+  /** One transaction; a tx started inside another joins the outer one. */
   tx<T>(fn: () => T): T {
+    if (this.depth > 0) return fn()
     this.raw.exec('BEGIN IMMEDIATE')
+    this.depth++
     try {
       const r = fn()
       this.raw.exec('COMMIT')
@@ -70,6 +75,8 @@ export class Db {
     } catch (e) {
       this.raw.exec('ROLLBACK')
       throw e
+    } finally {
+      this.depth--
     }
   }
 

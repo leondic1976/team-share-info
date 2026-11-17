@@ -8,6 +8,7 @@ import { AlarmsRepo, MemosRepo, ToolsRepo } from './tools'
 import { LauncherRepo } from './launcher'
 import { OrganizeRepo } from './organize'
 import { NotesRepo } from './notes'
+import { LedgersRepo } from './ledgers'
 
 export interface LocalDb {
   db: Db
@@ -21,6 +22,7 @@ export interface LocalDb {
   launcher: LauncherRepo
   organize: OrganizeRepo
   notes: NotesRepo
+  ledgers: LedgersRepo
 }
 
 let current: LocalDb | null = null
@@ -35,7 +37,14 @@ export function openLocalDb(path: string): LocalDb {
     tools: new ToolsRepo(db),
     launcher: new LauncherRepo(db),
     organize: new OrganizeRepo(db),
-    notes: new NotesRepo(db)
+    notes: new NotesRepo(db),
+    ledgers: new LedgersRepo(db)
+  }
+  // ledgers kept whole by v1.1.0 become rows (once)
+  try {
+    current.ledgers.importLegacy(current.kv)
+  } catch {
+    // they stay under their old keys; nothing is lost
   }
   return current
 }

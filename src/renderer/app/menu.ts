@@ -35,6 +35,7 @@ export interface MenuItem {
   adminOnly?: boolean
 }
 
+/** Shared (team) features first, then the personal ones of this PC; the sidebar draws a line between the two. */
 export const MENU: MenuItem[] = [
   { key: 'home', label: '홈', path: '/home', icon: Home },
   { key: 'notices', label: '공지', path: '/notices', icon: Megaphone },
@@ -43,6 +44,7 @@ export const MENU: MenuItem[] = [
   { key: 'meetings', label: '회의', path: '/meetings', icon: Video },
   { key: 'chat', label: '메신저', path: '/chat', icon: MessagesSquare },
   { key: 'tasks', label: '할 일', path: '/tasks', icon: ListTodo },
+  { key: 'ledger', label: '관리대장', path: '/ledger', icon: Table2 },
   { key: 'boards', label: '게시판', path: '/boards', icon: ClipboardList },
   { key: 'directory', label: '주소록', path: '/directory', icon: Contact },
   { key: 'docs', label: '기록', path: '/docs', icon: BookOpen },
@@ -53,7 +55,6 @@ export const MENU: MenuItem[] = [
   { key: 'myfiles', label: '내 파일', path: '/myfiles', icon: FolderSearch, personal: true },
   { key: 'launcher', label: '런처', path: '/launcher', icon: Rocket, personal: true },
   { key: 'utilities', label: '유틸리티', path: '/utilities', icon: Gauge, personal: true },
-  { key: 'ledger', label: '관리대장', path: '/ledger', icon: Table2 },
   { key: 'plugins', label: '확장 기능', path: '/plugins', icon: Puzzle, personal: true }
 ]
 
@@ -62,3 +63,20 @@ export const BOTTOM_MENU: MenuItem[] = [
   { key: 'settings', label: '설정', path: '/settings', icon: Settings },
   { key: 'help', label: '도움말', path: '/help', icon: CircleHelp }
 ]
+
+/**
+ * The menus in the order saved on this PC. A menu added after the order was saved goes next
+ * to its neighbour of the default order, not to the end.
+ */
+export function orderMenu(order: string[]): MenuItem[] {
+  if (!order.length) return [...MENU]
+  const out = MENU.filter((m) => order.includes(m.key)).sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
+  for (const m of MENU) {
+    if (order.includes(m.key)) continue
+    const before = MENU.slice(0, MENU.indexOf(m))
+      .reverse()
+      .find((x) => out.includes(x))
+    out.splice(before ? out.indexOf(before) + 1 : 0, 0, m)
+  }
+  return out
+}

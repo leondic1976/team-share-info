@@ -1,9 +1,9 @@
-import { useEffect } from 'react'
+import { Fragment, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { invoke, onMain } from '@renderer/lib/bridge'
 import { NavLink } from 'react-router-dom'
 import { ChevronsLeft, ChevronsRight, Lock } from 'lucide-react'
-import { MENU, BOTTOM_MENU, type MenuItem } from './menu'
+import { BOTTOM_MENU, orderMenu, type MenuItem } from './menu'
 import { usePrefs } from './prefs-store'
 import { cn } from '@renderer/lib/utils'
 import { SpaceSwitcher } from './SpaceSwitcher'
@@ -14,20 +14,13 @@ interface SidebarProps {
   badges?: Partial<Record<string, number>>
 }
 
-function orderedMenu(order: string[], hidden: string[], disabled: string[]): MenuItem[] {
-  const items = MENU.filter((m) => !hidden.includes(m.key) && !disabled.includes(m.key))
-  if (!order.length) return items
-  return [...items].sort((a, b) => {
-    const ia = order.indexOf(a.key)
-    const ib = order.indexOf(b.key)
-    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)
-  })
-}
-
 export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps): React.JSX.Element {
   const { sidebarCollapsed: collapsed, update, menuOrder, hiddenMenus } = usePrefs()
-  const items = orderedMenu(menuOrder, hiddenMenus, disabledFeatures)
+  const items = orderMenu(menuOrder).filter((m) => !hiddenMenus.includes(m.key) && !disabledFeatures.includes(m.key))
   const bottom = BOTTOM_MENU.filter((m) => !m.adminOnly || isAdmin)
+  // one line between the shared menus and the personal ones, when they are not mixed
+  const firstPersonal = items.findIndex((m) => m.personal)
+  const split = firstPersonal > 0 && items.slice(firstPersonal).every((m) => m.personal) ? firstPersonal : -1
   // Installed plugins appear under "확장 기능".
   const qc = useQueryClient()
   const plugins = useQuery({ queryKey: ['local', 'plugins'], queryFn: () => invoke('plugins:list'), networkMode: 'always' })
@@ -76,7 +69,12 @@ export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps
     >
       <SpaceSwitcher />
       <div className="flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden p-2">
-        {items.map(renderItem)}
+        {items.map((m, i) => (
+          <Fragment key={m.key}>
+            {i === split && <div className="mx-1 my-1.5 border-t border-border" role="separator" />}
+            {renderItem(m)}
+          </Fragment>
+        ))}
         {(plugins.data ?? [])
           .filter((p) => p.enabled && !hiddenMenus.includes('plugins'))
           .map((p) => (

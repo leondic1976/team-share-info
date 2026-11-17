@@ -15,7 +15,7 @@
   const TOTALS = { none: '없음', sum: '합계', avg: '평균', min: '최소', max: '최대', count: '개수(값 있는 칸)', checked: '체크한 개수' }
 
   let seq = 0
-  const uid = (p) => `${p}${Date.now().toString(36)}${(seq++).toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`
+  const uid = (p) => `${p}${Date.now().toString(36)}${(seq++).toString(36)}${Math.floor(Math.random() * 60466176).toString(36)}`
 
   /** Normalise typed input: "2026.3.5" → "2026-03-05"; "1,234" stays text until computed. */
   function normalizeDate(s) {
@@ -47,7 +47,11 @@
    * Compute every cell. Returns { get(r, c) → value, values: value[][] } (0-based row/col).
    * Formulas: column calc (every row) or a cell starting with '='. Cycles → #CYCLE!.
    */
-  function compute(book) {
+  function compute(book, cache) {
+    if (cache) {
+      const fast = computeByRow(book, cache)
+      if (fast) return fast
+    }
     const cols = book.cols
     const rows = book.rows
     const memo = new Map()
@@ -68,11 +72,7 @@
       const key = r * 4096 + c
       if (memo.has(key)) return memo.get(key)
       const f = formulaOf(r, c)
-      if (f === null) {
-        const v = typed(cols[c], rows[r].c[cols[c].id])
-        memo.set(key, v)
-        return v
-      }
+      if (f === null) return typed(cols[c], rows[r].c[cols[c].id])
       if (f === '') return ''
       if (visiting.has(key)) return F.ERR.cycle
       visiting.add(key)
@@ -128,6 +128,95 @@
       values.push(line)
     }
     return { get, values }
+  }
+
+  /**
+   * The same values, row by row, kept per row object in `cache` ({ sig, map }): a row that
+   * did not change is not computed again, which keeps large ledgers quick. Works when every
+   * formula reads only its own row (see F.rowLocal) and no cell holds a formula of its own;
+   * returns null otherwise (compute() then does the whole sheet). Rows must be immutable.
+   */
+  function computeByRow(book, cache) {
+    const cols = book.cols
+    const rows = book.rows
+    const calcs = []
+    for (let c = 0; c < cols.length; c++) {
+      if (cols[c].type !== 'calc' || !cols[c].calc) continue
+      const comp = F.compile(cols[c].calc)
+      if (!comp.err && !F.rowLocal(comp.ast)) return null
+      calcs.push(c)
+    }
+    const sig = F.todaySerial() + '|' + cols.map((c) => `${c.id}\u0001${c.name}\u0001${c.type}\u0001${c.type === 'calc' ? c.calc || '' : ''}`).join('\u0002')
+    if (cache.sig !== sig) {
+      cache.sig = sig
+      cache.map = new WeakMap()
+    }
+    const byName = new Map(cols.map((c, i) => [c.name.trim().toLowerCase(), i]))
+    const n = cols.length
+    function line(row) {
+      const out = new Array(n)
+      const raw = row.c
+      let blank = true
+      for (let c = 0; c < n; c++) {
+        const col = cols[c]
+        if (col.type === 'calc') continue
+        const v = raw[col.id]
+        if (typeof v === 'string' && v.length > 1 && v.charCodeAt(0) === 61) return null // a cell formula
+        if (v !== undefined && v !== '' && v !== false) blank = false
+        out[c] = typed(col, v)
+      }
+      if (!calcs.length) return out
+      const state = new Array(n) // 1 computing, 2 done
+      const get = (c) => {
+        const col = cols[c]
+        if (col.type !== 'calc') return out[c]
+        if (state[c] === 2) return out[c]
+        if (state[c] === 1) return F.ERR.cycle
+        if (blank || !col.calc) {
+          state[c] = 2
+          return (out[c] = '')
+        }
+        state[c] = 1
+        let v
+        const comp = F.compile(col.calc)
+        if (comp.err) v = comp.err
+        else {
+          try {
+            v = F.scalar(F.evaluate(comp.ast, ctx))
+          } catch (e) {
+            v = F.isErr(e) ? e : F.ERR.value
+          }
+        }
+        if (v && v.range) v = F.ERR.value
+        if (typeof v === 'number' && !isFinite(v)) v = F.ERR.num
+        if (v === undefined || v === null) v = ''
+        state[c] = 2
+        return (out[c] = v)
+      }
+      const ctx = {
+        row: 1,
+        cell: () => F.ERR.ref,
+        range: () => F.ERR.ref,
+        column: (name) => {
+          const i = byName.get(name.trim().toLowerCase())
+          return i === undefined ? null : { cells: [[get(i)]] }
+        }
+      }
+      for (const c of calcs) get(c)
+      return out
+    }
+    const values = new Array(rows.length)
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r]
+      let v = cache.map.get(row)
+      if (v === undefined) {
+        v = line(row)
+        if (v === null) return null
+        cache.map.set(row, v)
+      }
+      values[r] = v
+    }
+    return { values, get: (r, c) => (c < 0 || c >= n ? F.ERR.ref : r < 0 || r >= rows.length ? '' : values[r][c]) }
   }
 
   function addCommas(s) {
@@ -327,8 +416,56 @@
     return { id: uid('b'), name: name || '가져온 대장', cols, rows: out, note: '' }
   }
 
+  /**
+   * A new book from rows of values (an Excel sheet): first row = column names, column types
+   * taken from the values (numbers, 'YYYY-MM-DD' dates, true/false).
+   */
+  function fromMatrix(matrix, name) {
+    const rows = (matrix || []).filter((r) => r && r.some((x) => x !== null && x !== undefined && String(x).trim() !== ''))
+    if (!rows.length) throw new Error('빈 파일입니다.')
+    let width = 0
+    for (const r of rows) width = Math.max(width, r.length)
+    const head = rows[0]
+    const used = new Set()
+    const cols = []
+    for (let i = 0; i < width; i++) {
+      let n = (head[i] === null || head[i] === undefined ? '' : String(head[i])).trim().slice(0, 60) || F.colLetters(i)
+      while (used.has(n.toLowerCase())) n += '_'
+      used.add(n.toLowerCase())
+      let num = 0
+      let date = 0
+      let bool = 0
+      let all = 0
+      for (let r = 1; r < rows.length; r++) {
+        const v = rows[r][i]
+        if (v === null || v === undefined || v === '') continue
+        all++
+        if (typeof v === 'number') num++
+        else if (typeof v === 'boolean') bool++
+        else if (normalizeDate(v)) date++
+      }
+      const type = all && num === all ? 'number' : all && date === all ? 'date' : all && bool === all ? 'check' : 'text'
+      cols.push({ id: uid('c'), name: n, type, width: type === 'text' ? 160 : 110, format: type === 'number' ? 'auto' : undefined, total: type === 'number' ? 'sum' : 'none' })
+    }
+    const out = []
+    for (let r = 1; r < rows.length; r++) {
+      const c = {}
+      for (let i = 0; i < width; i++) {
+        const v = rows[r][i]
+        if (v === null || v === undefined || v === '') continue
+        const col = cols[i]
+        if (col.type === 'number' || col.type === 'check') c[col.id] = v
+        else if (col.type === 'date') c[col.id] = normalizeDate(v)
+        else c[col.id] = typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : typeof v === 'number' ? String(v) : String(v).slice(0, 20000)
+      }
+      out.push({ id: uid('r'), c })
+    }
+    return { name: (name || '가져온 대장').slice(0, 60), cols, rows: out, note: '' }
+  }
+
   /** Paste a block of text (from Excel, TSV) at (r, c); grows rows as needed. Returns the changed area. */
-  function pasteBlock(book, r0, c0, text) {
+  function pasteBlock(book, r0, c0, text, writable) {
+    const w = writable || ((b, r) => b.rows[r])
     const block = parseDelimited(String(text).replace(/\r?\n$/, ''), text.includes('\t') ? '\t' : ',')
     if (!block.length) return null
     let rows = 0
@@ -338,7 +475,10 @@
       line.forEach((v, j) => {
         const col = book.cols[c0 + j]
         if (!col || col.type === 'calc') return
-        book.rows[r].c[col.id] = parseInput(col, v)
+        const val = parseInput(col, v)
+        const row = w(book, r)
+        if (val === '') delete row.c[col.id]
+        else row.c[col.id] = val
       })
       rows++
     })
@@ -510,7 +650,8 @@
   }
 
   /** Renaming a column rewrites [이름] references in calc columns and cell formulas. */
-  function renameColumn(book, colId, newName) {
+  function renameColumn(book, colId, newName, writable) {
+    const w = writable || ((b, r) => b.rows[r])
     const col = book.cols.find((c) => c.id === colId)
     if (!col) return
     const old = col.name
@@ -519,11 +660,18 @@
     const re = new RegExp(`\\[(@?)\\s*${esc}\\s*\\]`, 'gi')
     const fix = (f) => f.replace(re, (_m, at) => `[${at}${newName}]`)
     for (const c of book.cols) if (c.type === 'calc' && c.calc) c.calc = fix(c.calc)
-    for (const r of book.rows) for (const k of Object.keys(r.c)) if (typeof r.c[k] === 'string' && r.c[k].startsWith('=')) r.c[k] = fix(r.c[k])
+    for (let i = 0; i < book.rows.length; i++) {
+      const c = book.rows[i].c
+      for (const k of Object.keys(c)) {
+        if (typeof c[k] !== 'string' || !c[k].startsWith('=')) continue
+        const f = fix(c[k])
+        if (f !== c[k]) w(book, i).c[k] = f
+      }
+    }
   }
 
   /** Approximate stored size (storage values are limited to 512 KB). */
   const sizeOf = (book) => JSON.stringify(book).length
 
-  g.LedgerSheet = { TYPES, FORMATS, TOTALS, TEMPLATES, uid, compute, display, invalid, total, sortOrder, filterRows, parseDelimited, toDelimited, toCSV, fromCSV, pasteBlock, parseInput, editText, normalizeDate, fromTemplate, renameColumn, sizeOf }
+  g.LedgerSheet = { TYPES, FORMATS, TOTALS, TEMPLATES, uid, compute, computeByRow, display, invalid, total, sortOrder, filterRows, parseDelimited, toDelimited, toCSV, fromCSV, fromMatrix, pasteBlock, parseInput, editText, normalizeDate, fromTemplate, renameColumn, sizeOf }
 })(typeof window !== 'undefined' ? window : globalThis)

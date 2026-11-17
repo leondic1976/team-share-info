@@ -67,6 +67,8 @@ export interface MeDto extends MemberDto {
   adminPinSet: boolean
   /** Join requests waiting for a decision; always 0 for non-admins. */
   pendingJoins: number
+  /** team ledgers somebody else changed since I last opened them */
+  ledgerUnseen: number
 }
 
 export const mePatchSchema = z.object({

@@ -88,6 +88,56 @@ describe('tasks (M6-1)', () => {
     expect((await patch(a, { assigneeId: b.memberId })).json().data.assigneeName).toBe('B')
   })
 
+  it('done mode "each": every assignee finishes their own part; the task is done when all have', async () => {
+    s = await createTestServer()
+    const a = await s.join('A')
+    const b = await s.join('B')
+    const c = await s.join('C')
+    const d = await s.join('D')
+    const t = (await s.req(a, { method: 'POST', url: '/api/tasks', ip: IP, payload: { title: '전원 서약서 제출', assigneeIds: [b.memberId, c.memberId], doneMode: 'each' } })).json().data
+    expect(t).toMatchObject({ doneMode: 'each', state: 'requested' })
+    expect(t.assignees).toEqual([{ id: b.memberId, name: 'B', doneAt: null }, { id: c.memberId, name: 'C', doneAt: null }])
+    const patch = (who: typeof a, body: object) => s!.req(who, { method: 'PATCH', url: `/api/tasks/${t.id}`, ip: IP, payload: body })
+    const marks = (x: { assignees: { name: string; doneAt: number | null }[] }): string => x.assignees.map((m) => `${m.name}:${m.doneAt ? 'O' : '-'}`).join(' ')
+    // B finishes: the task is under way, not done
+    let now = (await patch(b, { myDone: true })).json().data
+    expect([now.state, marks(now)]).toEqual(['doing', 'B:O C:-'])
+    // the requester cannot finish for them, nor confirm before all are done
+    expect((await patch(a, { myDone: true })).statusCode).toBe(403)
+    expect((await patch(a, { state: 'confirmed' })).statusCode).toBe(403)
+    // "완료" from an older screen means C's own part: now everybody is done
+    now = (await patch(c, { state: 'done' })).json().data
+    expect([now.state, marks(now)]).toEqual(['done', 'B:O C:O'])
+    expect(now.doneAt).toBeGreaterThan(0)
+    // C takes it back: under way again; then finishes again
+    now = (await patch(c, { myDone: false })).json().data
+    expect([now.state, marks(now)]).toEqual(['doing', 'B:O C:-'])
+    await patch(c, { myDone: true })
+    // D joins: the task is open again until D is done too; B and C keep their marks
+    now = (await patch(a, { assigneeIds: [b.memberId, c.memberId, d.memberId] })).json().data
+    expect([now.state, marks(now)]).toEqual(['doing', 'B:O C:O D:-'])
+    now = (await patch(d, { myDone: true })).json().data
+    expect(now.state).toBe('done')
+    // confirmed by the requester; an assignee cannot change a confirmed task
+    expect((await patch(a, { state: 'confirmed' })).json().data.state).toBe('confirmed')
+    expect((await patch(b, { myDone: false })).statusCode).toBe(403)
+    // sent back: everybody's part is open again
+    now = (await patch(a, { state: 'doing' })).json().data
+    expect([now.state, marks(now)]).toEqual(['doing', 'B:- C:- D:-'])
+    // back to one shared state: any assignee finishes it, nobody is marked
+    now = (await patch(a, { doneMode: 'any' })).json().data
+    expect(now.doneMode).toBe('any')
+    expect(now.assignees[0]).toEqual({ id: b.memberId, name: 'B' })
+    expect((await patch(d, { state: 'done' })).json().data.state).toBe('done')
+    // …and a finished task switched to "each" counts as finished by all
+    now = (await patch(a, { doneMode: 'each' })).json().data
+    expect([now.state, marks(now)]).toEqual(['done', 'B:O C:O D:O'])
+    expect((await patch(c, { doneMode: 'any' })).statusCode).toBe(403)
+    // with one assignee there is nothing to split
+    const one = (await s.req(a, { method: 'POST', url: '/api/tasks', ip: IP, payload: { title: '혼자', assigneeIds: [b.memberId], doneMode: 'each' } })).json().data
+    expect(one.doneMode).toBe('any')
+  })
+
   it('accepts the single-assignee form of older clients', async () => {
     s = await createTestServer()
     const b = await s.join('B')

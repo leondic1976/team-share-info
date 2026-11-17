@@ -13,6 +13,7 @@ import { getMember, listDepartments, listMembers, toMemberDto, updateMember } fr
 import { logActivity } from '../activity'
 import { approveJoinRequest } from './admin'
 import { myGroups } from '../repos/groups'
+import { visibleWhere } from '../scope'
 
 export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, requireAuth: preHandlerAsyncHookHandler): void {
   app.get('/api/hello', async () => {
@@ -73,6 +74,17 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
     return ok(res)
   })
 
+  const ledgerUnseen = (memberId: string): number => {
+    const w = visibleWhere('l', 'ledger', memberId)
+    return (
+      ctx.db.get<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM ledgers l LEFT JOIN ledger_seen s ON s.ledger_id = l.id AND s.member_id = ?
+         WHERE l.deleted_at IS NULL AND (l.updated_by IS NULL OR l.updated_by <> ?) AND l.version > COALESCE(s.version, 0) AND ${w.sql}`,
+        [memberId, memberId, ...w.params]
+      )?.n ?? 0
+    )
+  }
+
   app.get('/api/me', { preHandler: requireAuth }, async (req) => {
     const m = req.member
     const ops = getSection(ctx.db, 'ops')
@@ -83,7 +95,8 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
       disabledFeatures: ops.disabledFeatures,
       adminPinSet: !!readSetting<string>(ctx.db, 'adminPinHash'),
       // Only the count, so the menu badge and alerts work before the admin PIN is entered.
-      pendingJoins: m.role === 'admin' ? (ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM join_requests WHERE state = 'pending'`)?.n ?? 0) : 0
+      pendingJoins: m.role === 'admin' ? (ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM join_requests WHERE state = 'pending'`)?.n ?? 0) : 0,
+      ledgerUnseen: ledgerUnseen(m.id)
     }
     return ok(me)
   })

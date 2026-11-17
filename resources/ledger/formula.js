@@ -641,6 +641,37 @@
     return s
   }
 
+  /** Functions that take one value per argument (a column given to them means "this row"). */
+  const SCALAR_FN = new Set(['IF', 'IFERROR', 'ROUND', 'ROUNDUP', 'ROUNDDOWN', 'INT', 'ABS', 'MOD', 'POWER', 'SQRT', 'LEN', 'LEFT', 'RIGHT', 'MID', 'TRIM', 'UPPER', 'LOWER', 'TEXT', 'VALUE', 'TODAY', 'NOW', 'DATE', 'YEAR', 'MONTH', 'DAY', 'DAYS', 'DATEDIF', 'ISBLANK', 'ISNUMBER', 'ISERROR', 'NOT'])
+  /**
+   * True when the result depends on nothing but the cells of its own row (and today's date):
+   * no A1 addresses, no row number, and no function that reads a whole column. Such a
+   * formula needs computing again only for the rows that changed.
+   */
+  function rowLocal(ast) {
+    switch (ast.k) {
+      case 'num':
+      case 'str':
+      case 'bool':
+      case 'empty':
+      case 'name':
+      case 'col':
+        return true
+      case 'neg':
+      case 'pct':
+        return rowLocal(ast.e)
+      case 'bin':
+        return rowLocal(ast.a) && rowLocal(ast.b)
+      case 'fn':
+        if (ast.name === 'ROW' || ast.name === 'CUMSUM') return false
+        if (SCALAR_FN.has(ast.name)) return ast.args.every(rowLocal)
+        // a function that may read a range: a bare column would be the whole column
+        return ast.args.every((x) => !(x.k === 'col' && !x.row) && rowLocal(x))
+      default:
+        return false
+    }
+  }
+
   const cache = new Map()
   /** Parse once per formula text (formulas repeat for every row of a calculated column). */
   function compile(src) {
@@ -657,5 +688,5 @@
     return c
   }
 
-  g.LedgerFormula = { parse, evaluate, compile, isErr, ERR, FErr, toNum, toStr, toBool, scalar, colIndex, colLetters, dateToSerial, serialToDate, todaySerial, textFormat, FUNCTIONS: Object.keys(FN).concat(['IF', 'IFERROR', 'AND', 'OR', 'ROW', 'CUMSUM']).sort() }
+  g.LedgerFormula = { parse, evaluate, compile, rowLocal, isErr, ERR, FErr, toNum, toStr, toBool, scalar, colIndex, colLetters, dateToSerial, serialToDate, todaySerial, textFormat, FUNCTIONS: Object.keys(FN).concat(['IF', 'IFERROR', 'AND', 'OR', 'ROW', 'CUMSUM']).sort() }
 })(typeof window !== 'undefined' ? window : globalThis)

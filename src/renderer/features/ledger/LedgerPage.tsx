@@ -1,8 +1,24 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import type { MemberDto } from '@shared/schemas/auth'
 import type { PluginRoomDto } from '@shared/schemas/plugins'
-import type { LedgerChangedPayload, LedgerDto, LedgerMeta } from '@shared/schemas/ledger'
+import {
+  LEDGER_CHUNK,
+  type LedgerChange,
+  type LedgerChangedPayload,
+  type LedgerChanges,
+  type LedgerDoc,
+  type LedgerDto,
+  type LedgerExportCell,
+  type LedgerExportColumn,
+  type LedgerExportFormat,
+  type LedgerMeta,
+  type LedgerRow,
+  type LedgerSaveResult,
+  type LedgerVersion,
+  type LocalLedgerDto
+} from '@shared/schemas/ledger'
 import { invoke } from '@renderer/lib/bridge'
 import { api, ApiError, errorMessage } from '@renderer/lib/api'
 import { realtime } from '@renderer/lib/realtime'
@@ -12,27 +28,55 @@ import { usePrefs } from '@renderer/app/prefs-store'
 
 type Msg = { th: 1; id: string; method: string; params: Record<string, unknown> | null }
 
-/** Same id as the former "스마트 대장" plugin: personal ledgers stay under these local keys. */
+/** Same id as the former "스마트 대장" plugin: its settings stay under these local keys. */
 const APP = 'ledger'
 const KEY = (k: string): string => `plugin:${APP}:${k}`
 const ROOMS = `/api/plugins/${APP}/rooms`
+const LEDGERS = '/api/ledgers'
+/** Rows read per request when a ledger is opened. */
+const PAGE = LEDGER_CHUNK * 5
+/** Text one request carries in its rows (the server reads bodies up to 5 MB). */
+const REQUEST_CHARS = 1_500_000
+const OLD_SERVER = '서버 PC의 프로그램이 예전 버전입니다. 서버 PC를 먼저 업데이트하세요.'
+
+/** Rows in requests of at most LEDGER_CHUNK rows and about REQUEST_CHARS of text. */
+function inRequests(rows: LedgerRow[]): LedgerRow[][] {
+  const out: LedgerRow[][] = [[]]
+  let chars = 0
+  for (const r of rows) {
+    const size = JSON.stringify(r.c).length + 60
+    const cur = out[out.length - 1]
+    if (cur.length && (cur.length >= LEDGER_CHUNK || chars + size > REQUEST_CHARS)) {
+      out.push([r])
+      chars = size
+    } else {
+      cur.push(r)
+      chars += size
+    }
+  }
+  return out
+}
+/**
+ * A server PC still on v1.1.0 keeps a ledger in one piece and knows nothing of row saves:
+ * its ledgers are shown read-only until it is updated.
+ */
+const fromOld = <T extends LedgerMeta>(m: T): T => (m.headRev === undefined ? { ...m, headRev: 1, canEdit: false, canManage: false, unseen: false, oldServer: true } : m)
 
 /**
  * 관리대장: the sheet screen (resources/ledger) runs in an isolated frame without network
  * access and asks this page for everything — personal ledgers go to the local DB of this
- * PC, team ledgers to the server.
+ * PC, team ledgers to the server. Large ledgers are read page by page and saved in pieces.
  */
 export function LedgerPage(): React.JSX.Element {
   const [params] = useSearchParams()
   const frame = useRef<HTMLIFrameElement>(null)
+  const qc = useQueryClient()
   const { data: me } = useMe()
   const online = useConn((s) => s.state === 'online')
   const theme = usePrefs((s) => s.theme)
   const room = params.get('room')
   const meRef = useRef(me)
   meRef.current = me
-  /** The team ledger this screen holds the edit lock of, so leaving the screen frees it at once. */
-  const locked = useRef<string | null>(null)
 
   const src = useMemo(() => {
     const dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -49,7 +93,8 @@ export function LedgerPage(): React.JSX.Element {
         if (typeof v !== 'string' || !v || v.length > max) throw new Error(`${k} 값이 올바르지 않습니다.`)
         return v
       }
-      const id = (): string => encodeURIComponent(str('id', 60))
+      const id = (): string => str('id', 60)
+      const url = (): string => `${LEDGERS}/${encodeURIComponent(id())}`
       switch (m.method) {
         case 'online':
           return useConn.getState().state === 'online'
@@ -65,31 +110,103 @@ export function LedgerPage(): React.JSX.Element {
           return invoke('local:kv.get', { key: KEY(str('key', 80)) })
         case 'storage.set':
           if (p.value === null || p.value === undefined) return invoke('local:kv.delete', { key: KEY(str('key', 80)) })
-          if (JSON.stringify(p.value).length > 512 * 1024) throw new Error('저장할 데이터가 너무 큽니다(512KB).')
+          if (JSON.stringify(p.value).length > 64 * 1024) throw new Error('저장할 데이터가 너무 큽니다.')
           return invoke('local:kv.set', { key: KEY(str('key', 80)), value: p.value })
+        /** The sidebar count of ledgers with unseen changes follows what was just opened. */
+        case 'seen':
+          return void qc.invalidateQueries({ queryKey: ['me'] })
+
+        // personal ledgers (local DB of this PC)
+        case 'local.list':
+          return invoke('local:ledger.list')
+        case 'local.trash':
+          return invoke('local:ledger.trash')
+        case 'local.open': {
+          const first = await invoke('local:ledger.get', { id: id(), limit: PAGE })
+          let more = first.more
+          const rows = first.doc.rows
+          while (more) {
+            const last = rows[rows.length - 1]
+            const next: LocalLedgerDto = await invoke('local:ledger.get', { id: id(), limit: PAGE, after: { p: last.p, id: last.id } })
+            for (const r of next.doc.rows) rows.push(r)
+            more = next.more
+          }
+          return first
+        }
+        case 'local.create':
+          return invoke('local:ledger.create', { doc: p.doc as LedgerDoc, icon: typeof p.icon === 'string' ? p.icon : undefined })
+        case 'local.save':
+          return invoke('local:ledger.save', { id: id(), change: p.change as LedgerChange })
+        case 'local.delete':
+          return invoke('local:ledger.delete', { id: id() })
+        case 'local.restore':
+          return invoke('local:ledger.restore', { id: id() })
+        case 'local.purge':
+          return invoke('local:ledger.purge', { id: id() })
+        case 'local.versions':
+          return invoke('local:ledger.versions', { id: id() })
+        case 'local.keep':
+          return invoke('local:ledger.keep', { id: id() })
+        case 'local.version':
+          return invoke('local:ledger.version', { id: id(), versionId: str('versionId', 60) })
+        case 'local.revert':
+          return invoke('local:ledger.revert', { id: id(), versionId: str('versionId', 60) })
+
         // team ledgers (server)
         case 'team.list':
-          return api.get<LedgerMeta[]>('/api/ledgers')
-        case 'team.get':
-          return api.get<LedgerDto>(`/api/ledgers/${id()}`)
-        case 'team.create':
-          return api.post<LedgerDto>('/api/ledgers', { doc: p.doc, scope: p.scope, editMode: p.editMode, icon: p.icon })
-        case 'team.save':
-          return api.put<LedgerMeta>(`/api/ledgers/${id()}`, { doc: p.doc, version: p.version, icon: p.icon })
-        case 'team.lock': {
-          const r = await api.post<LedgerDto>(`/api/ledgers/${id()}/lock`)
-          locked.current = r.id
-          return r
+          return (await api.get<LedgerMeta[]>(LEDGERS)).map(fromOld)
+        case 'team.trash':
+          return api.get<LedgerMeta[]>(`${LEDGERS}/trash`)
+        case 'team.open': {
+          const first = await api.get<LedgerDto>(`${url()}?limit=${PAGE}`)
+          let more = first.more
+          const rows = first.doc.rows
+          while (more) {
+            const last = rows[rows.length - 1]
+            const next = await api.get<LedgerDto>(`${url()}?limit=${PAGE}&p=${encodeURIComponent(String(last.p))}&after=${encodeURIComponent(last.id)}`)
+            for (const r of next.doc.rows) rows.push(r)
+            more = next.more
+          }
+          // rows changed while the pages were read come with the first save or the next event
+          return fromOld(first)
         }
-        case 'team.beat':
-          return api.post<LedgerMeta>(`/api/ledgers/${id()}/lock?brief=1`)
-        case 'team.unlock':
-          if (locked.current === p.id) locked.current = null
-          return api.del<LedgerMeta>(`/api/ledgers/${id()}/lock`)
+        case 'team.create': {
+          // an old server would take the first rows and refuse the rest
+          await api.get(`${LEDGERS}/trash`).catch((e: unknown) => {
+            throw e instanceof ApiError && e.code === 'NOT_FOUND' ? new Error(OLD_SERVER) : e
+          })
+          // a large sheet goes up in pieces: the ledger with its first rows, then the rest
+          const doc = p.doc as LedgerDoc
+          const parts = inRequests(doc.rows.map((r, i) => ({ id: r.id, p: (i + 1) * 1024, c: r.c })))
+          const made = await api.post<LedgerDto>(LEDGERS, { doc: { ...doc, rows: parts[0] }, scope: p.scope, editMode: p.editMode, icon: p.icon })
+          for (const part of parts.slice(1)) {
+            const r = await api.post<LedgerSaveResult>(`${LEDGERS}/${made.id}/changes`, { since: made.version, add: part })
+            for (const x of part) made.doc.rows.push(x)
+            Object.assign(made, r.meta)
+          }
+          return made
+        }
+        case 'team.save':
+          return api.post<LedgerSaveResult>(`${url()}/changes`, p.change)
+        case 'team.pull':
+          return api.get<LedgerChanges>(`${url()}/changes?since=${Number(p.since) || 0}`)
         case 'team.update':
-          return api.patch<LedgerMeta>(`/api/ledgers/${id()}`, { scope: p.scope, editMode: p.editMode })
+          return api.patch<LedgerMeta>(url(), { scope: p.scope, editMode: p.editMode })
         case 'team.delete':
-          return api.del(`/api/ledgers/${id()}`)
+          return api.del(url())
+        case 'team.restore':
+          return api.post<LedgerMeta>(`${url()}/restore`)
+        case 'team.purge':
+          return api.del(`${url()}/purge`)
+        case 'team.versions':
+          return api.get<LedgerVersion[]>(`${url()}/versions`)
+        case 'team.keep':
+          return api.post<LedgerVersion[]>(`${url()}/versions`)
+        case 'team.version':
+          return api.get<LedgerDoc>(`${url()}/versions/${encodeURIComponent(str('versionId', 60))}`)
+        case 'team.revert':
+          return api.post<LedgerMeta>(`${url()}/versions/${encodeURIComponent(str('versionId', 60))}/restore`)
+
         // read-only copies shared before team ledgers existed ("보기 공유")
         case 'rooms.list':
           return api.get<PluginRoomDto[]>(ROOMS)
@@ -102,11 +219,17 @@ export function LedgerPage(): React.JSX.Element {
         case 'rooms.delete':
           return api.del(`${ROOMS}/${encodeURIComponent(str('roomId', 40))}`)
         case 'clipboard.write':
-          return invoke('clipboard:write', { text: str('text', 600_000) })
-        case 'file.save':
-          return invoke('plugins:saveFile', { id: APP, name: str('name', 200), text: str('text', 6_000_000) })
+          return invoke('clipboard:write', { text: str('text', 5_000_000) })
+        case 'file.saveAs':
+          return invoke('ledger:saveAs', {
+            name: str('name', 200),
+            format: p.format as LedgerExportFormat,
+            columns: p.columns as LedgerExportColumn[],
+            rows: p.rows as LedgerExportCell[][],
+            book: p.book
+          })
         case 'file.open':
-          return invoke('plugins:openFile', { id: APP, exts: Array.isArray(p.exts) ? p.exts.filter((x): x is string => typeof x === 'string').slice(0, 6) : [] })
+          return invoke('ledger:open')
         default:
           throw new Error(`알 수 없는 기능: ${m.method}`)
       }
@@ -134,16 +257,7 @@ export function LedgerPage(): React.JSX.Element {
       offLedger()
       offRe()
     }
-  }, [])
-
-  // a reloaded frame (theme change, another room) starts without the lock its predecessor held
-  useEffect(
-    () => () => {
-      if (locked.current) void api.del(`/api/ledgers/${encodeURIComponent(locked.current)}/lock`).catch(() => undefined)
-      locked.current = null
-    },
-    [src]
-  )
+  }, [qc])
 
   // the frame shows whether team ledgers can be reached right now
   useEffect(() => {
