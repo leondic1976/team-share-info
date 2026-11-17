@@ -134,6 +134,7 @@
         <div>
           <div id="ver"><b>최신 버전</b> 확인 중</div>
           <div class="muted" id="meta">Windows 10·11 (64비트) · 관리자 권한 없이 설치</div>
+          <div class="muted" id="count" hidden></div>
         </div>
       </div>
 
@@ -172,6 +173,28 @@
     <script>
       const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
       const mb = (n) => (n / 1024 / 1024).toFixed(1) + ' MB'
+      // Download counter: GitHub Pages is static, so clicks are counted by an external counter
+      // (abacus, CORS *). Shown = START + clicks. If the counter is unreachable the line stays hidden.
+      const COUNTER = 'https://abacus.jasoncameron.dev'
+      const COUNTER_KEY = 'teamhub-lan-app/installer-downloads'
+      const START = 201
+      const showCount = (hits) => {
+        const el = document.getElementById('count')
+        el.textContent = '누적 다운로드 ' + (START + hits).toLocaleString('ko-KR') + '회'
+        el.hidden = false
+      }
+      fetch(COUNTER + '/get/' + COUNTER_KEY, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : r.status === 404 ? { value: 0 } : Promise.reject()))
+        .then((j) => showCount(Number(j.value) || 0))
+        .catch(() => {})
+      document.getElementById('dl').addEventListener('click', (e) => {
+        if (e.currentTarget.getAttribute('aria-disabled') === 'true') return
+        // keepalive: the request finishes even if the browser leaves the page for the download
+        fetch(COUNTER + '/hit/' + COUNTER_KEY, { cache: 'no-store', keepalive: true })
+          .then((r) => (r.ok ? r.json() : Promise.reject()))
+          .then((j) => showCount(Number(j.value) || 0))
+          .catch(() => {})
+      })
       fetch('releases.json', { cache: 'no-store' })
         .then((r) => (r.ok ? r.json() : []))
         .then((list) => {
