@@ -117,3 +117,15 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+      # Only the newest build is kept anywhere: the Pages artifacts of earlier runs still hold
+      # the installers of earlier versions (and count against the artifact storage quota).
+      - name: Delete the build artifacts of earlier runs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" --paginate \
+            --jq '.artifacts[] | select(.workflow_run.id != ${{ github.run_id }}) | .id' | while read -r id; do
+            echo "delete artifact $id"
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id" || true
+          done
