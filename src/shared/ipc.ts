@@ -99,6 +99,8 @@ export interface SetupResult {
   error?: string
   addresses?: string[]
   firewall?: { ok: boolean; message: string }
+  /** Set when the data folder already holds a set-up server: nothing was changed, ask before replacing it. */
+  existing?: { orgName: string; teamName: string; remembered: boolean }
 }
 
 export interface TransferItem {
@@ -174,7 +176,7 @@ export interface IpcMap {
   'conn:forgetSaved': { req: { id: string }; res: void }
   'server:networkInfo': { req: void; res: { interfaces: NetIfaceInfo[]; suggestedDataDir: string; pcName: string; winUser: string } }
   'server:pickFolder': { req: { title: string }; res: string | null }
-  'server:setup': { req: ServerSetupInput; res: SetupResult }
+  'server:setup': { req: ServerSetupInput & { replaceExisting?: boolean }; res: SetupResult }
   'server:status': { req: void; res: ServerStatus }
   'server:restart': { req: void; res: ServerStatus }
   'server:registerFirewall': { req: void; res: { ok: boolean; message: string } }

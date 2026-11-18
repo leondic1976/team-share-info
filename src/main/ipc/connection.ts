@@ -26,7 +26,8 @@ import { createDevice } from '../../server/repos/devices'
 import { getSection, writeSetting } from '../../server/settings'
 import { DatabaseSync } from 'node:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { archiveDataDir, inspectDataDir } from '../../server/dataDir'
 import { winUser } from './app'
 import { restartServer, serverStatus, startServer, stopServer } from '../server-host'
 import { openServerDb } from '../../server/db'
@@ -168,10 +169,27 @@ export function registerConnectionIpc(): void {
     return { ok: st.state === 'running', error: st.state === 'running' ? undefined : st.message, addresses: listIpv4().filter((i) => !i.virtual).map((i) => `http://${i.address}:${port}`) }
   })
 
-  handle('server:setup', serverSetupSchema, async (input) => {
+  handle('server:setup', serverSetupSchema.extend({ replaceExisting: z.boolean().optional() }), async (input) => {
     if (getMode() === 'server' && readCredential()) return { ok: false, error: '이미 서버로 설정되어 있습니다.' }
     let res
     try {
+      // The server DB stays in the data folder when a connection is reset or forgotten, so a
+      // new team in the same folder needs the old data moved aside first (asked in the wizard).
+      const existing = inspectDataDir(input.dataDir)
+      if (existing.initialized) {
+        const remembered = listSaved().filter((s) => s.mode === 'server' && s.dataDir && sameDir(s.dataDir, input.dataDir))
+        if (!input.replaceExisting) {
+          return {
+            ok: false,
+            error: '이 데이터 폴더에는 이미 서버 자료가 있습니다.',
+            existing: { orgName: existing.orgName ?? '', teamName: existing.teamName ?? '', remembered: remembered.length > 0 }
+          }
+        }
+        const moved = archiveDataDir(input.dataDir)
+        log.info('[setup] previous server data moved to', moved)
+        // those remembered connections pointed at the data that was just moved away
+        for (const s of remembered) forgetSaved(s.id)
+      }
       const db = openServerDb(input.dataDir, app.getVersion())
       try {
         res = initializeServer(db, input, { pcName: pcName(), winUser: winUser(), appVersion: app.getVersion() })
@@ -180,7 +198,7 @@ export function registerConnectionIpc(): void {
       }
     } catch (e) {
       log.error('server setup failed', e)
-      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+      return { ok: false, error: setupErrorText(e) }
     }
     const port = input.network.port
     setServerConfig({ dataDir: input.dataDir, port, preventSleep: input.ops.preventSleep })
@@ -220,6 +238,20 @@ export function registerConnectionIpc(): void {
   handle('update:setSettings', z.object({ auto: z.boolean(), source: z.enum(['auto', 'web', 'lan']) }), (s) => setUpdateSettings(s))
   handle('update:getState', null, () => getUpdateState())
   handle('update:install', null, () => installUpdate())
+}
+
+function sameDir(a: string, b: string): boolean {
+  return resolve(a).toLowerCase() === resolve(b).toLowerCase()
+}
+
+function setupErrorText(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e)
+  const code = (e as NodeJS.ErrnoException | null)?.code
+  if (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') {
+    return `데이터 폴더의 기존 자료를 옮기지 못했습니다. 다른 프로그램(탐색기, 백신, 실행 중인 다른 TeamHub)이 폴더를 쓰고 있는지 확인하거나 다른 데이터 폴더를 지정하세요. (${msg})`
+  }
+  if (msg === 'already initialized') return '이 데이터 폴더에는 이미 서버 자료가 있습니다. 다른 데이터 폴더를 지정하세요.'
+  return msg
 }
 
 /** Called on app start: if this PC is the server, start the embedded server. */

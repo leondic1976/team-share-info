@@ -163,7 +163,21 @@ export function ServerWizard({ onBack, onDone }: { onBack: () => void; onDone: (
     setBusy(true)
     setError('')
     try {
-      const r = await invoke('server:setup', toInput(f))
+      let r = await invoke('server:setup', toInput(f))
+      if (!r.ok && r.existing) {
+        // a team was set up in this folder before: nothing is deleted, the old data is moved aside
+        const name = [r.existing.orgName, r.existing.teamName].filter(Boolean).join(' ') || '이전 팀'
+        const q =
+          `데이터 폴더(${f.dataDir})에 이미 "${name}" 서버 자료가 있습니다.\n\n` +
+          '기존 자료는 지우지 않고 같은 폴더 안의 "previous-날짜" 폴더로 옮긴 뒤 새 팀을 만듭니다.' +
+          (r.existing.remembered ? '\n기억해 둔 그 서버 연결은 목록에서 지워집니다.' : '') +
+          '\n\n계속할까요? (기존 팀을 그대로 두려면 취소하고 "저장 위치" 단계에서 다른 폴더를 지정하세요.)'
+        if (!window.confirm(q)) {
+          setError('이 데이터 폴더에는 이미 서버 자료가 있습니다. 다른 폴더를 지정하거나, 설정 완료를 다시 눌러 기존 자료를 옮기고 새로 만드세요.')
+          return
+        }
+        r = await invoke('server:setup', { ...toInput(f), replaceExisting: true })
+      }
       if (!r.ok) setError(r.error ?? '서버를 시작하지 못했습니다.')
       setResult(r)
     } catch (e) {
