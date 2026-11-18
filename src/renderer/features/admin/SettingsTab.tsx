@@ -11,6 +11,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/u
 import { Field } from '@renderer/features/setup/SetupFrame'
 import { Loading } from '@renderer/components/EmptyState'
 import { MENU } from '@renderer/app/menu'
+import { formatSize } from '@renderer/components/Attachments'
+
+const GB = 1024 ** 3
+/** Bytes as a GB figure for an input: 5, 0.5, 1.25 (no trailing zeros). */
+const gbText = (bytes: number): string => String(Number((bytes / GB).toFixed(3)))
 
 export function SettingsTab(): React.JSX.Element {
   const qc = useQueryClient()
@@ -18,14 +23,22 @@ export function SettingsTab(): React.JSX.Element {
   const [s, setS] = useState<AllSettings | null>(null)
   const [cidrs, setCidrs] = useState('')
   const [blocked, setBlocked] = useState('')
+  const [quotaGb, setQuotaGb] = useState('')
+  const [maxFileGb, setMaxFileGb] = useState('')
   const [pin, setPin] = useState('')
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const status = useQuery({
+    queryKey: ['admin', 'status'],
+    queryFn: () => api.get<{ storageUsed: number; disk: { free: number; total: number } | null }>('/api/admin/status')
+  })
 
   useEffect(() => {
     if (q.data && !s) {
       setS(q.data)
       setCidrs(q.data.network.allowedCidrs.join(', '))
       setBlocked(q.data.storage.blockedExtensions.join(', '))
+      setQuotaGb(gbText(q.data.storage.quotaBytes))
+      setMaxFileGb(gbText(q.data.storage.maxFileBytes))
     }
   }, [q.data, s])
 
@@ -52,8 +65,17 @@ export function SettingsTab(): React.JSX.Element {
     upd('ops', { disabledFeatures: [...set] })
   }
 
+  const st = status.data
+  const usage = st
+    ? `지금 ${formatSize(st.storageUsed)} 사용 중${st.disk ? ` · 디스크 여유 ${formatSize(st.disk.free)}` : ''}`
+    : '자료실·첨부 파일을 합친 한도'
+
   const submit = (): void => {
     setMsg(null)
+    const quotaBytes = Math.round(Number(quotaGb) * GB)
+    const maxFileBytes = Math.round(Number(maxFileGb) * GB)
+    if (!(quotaBytes > 0) || !(maxFileBytes > 0)) return setMsg({ ok: false, text: '저장 공간의 용량은 0보다 큰 숫자로 입력하세요.' })
+    if (maxFileBytes > quotaBytes) return setMsg({ ok: false, text: '파일당 최대 크기는 전체 용량 한도보다 클 수 없습니다.' })
     save.mutate({
       org: s.org,
       network: {
@@ -65,6 +87,8 @@ export function SettingsTab(): React.JSX.Element {
       },
       storage: {
         ...s.storage,
+        quotaBytes,
+        maxFileBytes,
         blockedExtensions: blocked
           .split(/[,\s]+/)
           .map((x) => x.replace(/^\./, '').trim())
@@ -129,19 +153,11 @@ export function SettingsTab(): React.JSX.Element {
           <CardTitle>저장 공간</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-3">
-          <Field label="전체 용량 한도 (GB)">
-            <Input
-              aria-label="전체 용량 한도"
-              value={String(Math.round(s.storage.quotaBytes / 1024 ** 3))}
-              onChange={(e) => upd('storage', { quotaBytes: (Number(e.target.value.replace(/\D/g, '')) || 1) * 1024 ** 3 })}
-            />
+          <Field label="전체 용량 한도 (GB)" hint={usage}>
+            <Input aria-label="전체 용량 한도" value={quotaGb} onChange={(e) => setQuotaGb(e.target.value.replace(/[^\d.]/g, ''))} />
           </Field>
-          <Field label="파일당 최대 크기 (MB)">
-            <Input
-              aria-label="파일당 최대 크기"
-              value={String(Math.round(s.storage.maxFileBytes / 1024 ** 2))}
-              onChange={(e) => upd('storage', { maxFileBytes: (Number(e.target.value.replace(/\D/g, '')) || 1) * 1024 ** 2 })}
-            />
+          <Field label="파일당 최대 크기 (GB)" hint="자료실에 올리는 파일 하나의 한도. 소수도 쓸 수 있습니다(예: 0.5).">
+            <Input aria-label="파일당 최대 크기" value={maxFileGb} onChange={(e) => setMaxFileGb(e.target.value.replace(/[^\d.]/g, ''))} />
           </Field>
           <div className="col-span-2">
             <Field label="올릴 수 없는 확장자" hint="쉼표로 구분">

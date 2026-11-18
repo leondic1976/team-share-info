@@ -28,7 +28,14 @@ const webFeed = (): string => (process.env.TEAMHUB_E2E ? process.env.TEAMHUB_E2E
 
 const PROBE_TIMEOUT_MS = 8000
 const STALL_MS = 5 * 60_000
-const FIRST_CHECK_MS = 45_000
+// The program looks for an update right after it starts. One found then is downloaded and
+// installed without asking (after a short notice the user can put off): at that moment nobody
+// is in the middle of work. Updates found later wait for a click or for the program to close.
+const FIRST_CHECK_MS = 5_000
+const STARTUP_WINDOW_MS = 10 * 60_000
+const AUTO_INSTALL_NOTICE_MS = 20_000
+const startedAt = Date.now()
+let autoInstallTimer: NodeJS.Timeout | null = null
 const CHECK_EVERY_MS = 30 * 60_000
 
 let state: UpdateState = { status: active() ? 'idle' : 'disabled' }
@@ -98,7 +105,14 @@ function init(): void {
   })
   autoUpdater.on('update-downloaded', (i) => {
     downloadedFile = i.downloadedFile
-    setState({ status: 'downloaded', version: i.version })
+    if (!E2E_UPDATER && updateSettings().auto && Date.now() - startedAt < STARTUP_WINDOW_MS) {
+      setState({ status: 'downloaded', version: i.version, autoInstallAt: Date.now() + AUTO_INSTALL_NOTICE_MS })
+      autoInstallTimer = setTimeout(() => {
+        autoInstallTimer = null
+        log.info(`update ${i.version} found at start: installing by itself`)
+        void installUpdate()
+      }, AUTO_INSTALL_NOTICE_MS)
+    } else setState({ status: 'downloaded', version: i.version })
   })
   autoUpdater.on('error', (e) => setState({ status: 'error', message: friendlyUpdateError(e), version: state.version }))
 }
@@ -222,6 +236,16 @@ export async function checkForUpdates(serverUrl: string | null, manual = false, 
     checking = null
   })
   return checking
+}
+
+/** "나중에": the update found at start is not installed by itself now; it waits for a click or for the program to close. */
+export function postponeUpdate(): UpdateState {
+  if (autoInstallTimer) {
+    clearTimeout(autoInstallTimer)
+    autoInstallTimer = null
+  }
+  if (state.status === 'downloaded' && state.autoInstallAt) setState({ status: 'downloaded', version: state.version })
+  return state
 }
 
 /** Manual download when automatic download is off. */

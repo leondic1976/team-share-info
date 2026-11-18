@@ -3,6 +3,7 @@
 //   _site/releases.json       version history (previous history + this release)
 //   _site/updates/latest.yml  electron-updater feed (generic provider)
 //   _site/updates/TeamHub-Setup-x.y.z.exe(.blockmap)
+//   _site/feedback.json       board of feature requests and bug reports (scripts/build-feedback-board.mjs)
 // Only the newest installer is hosted (older versions are not kept anywhere; releases.json keeps the notes).
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -27,6 +28,7 @@ if (!existsSync(join(releaseDir, 'latest.yml'))) {
     writeFileSync(join(out, 'releases.json'), '[]')
     writeFileSync(join(out, '.nojekyll'), '')
     execFileSync(process.execPath, [join(root, 'scripts', 'build-plugins.mjs'), join(out, 'plugins')], { stdio: 'inherit' })
+    execFileSync(process.execPath, [join(root, 'scripts', 'build-feedback-board.mjs'), join(out, 'feedback.json')], { stdio: 'inherit' })
     console.log('site built without an installer (no release yet)')
     process.exit(0)
   }
@@ -66,4 +68,6 @@ writeFileSync(join(out, 'releases.json'), JSON.stringify(history, null, 2))
 writeFileSync(join(out, '.nojekyll'), '')
 for (const f of ['latest.yml', file, `${file}.blockmap`]) if (existsSync(join(releaseDir, f))) copyFileSync(join(releaseDir, f), join(out, 'updates', f))
 execFileSync(process.execPath, [join(root, 'scripts', 'build-plugins.mjs'), join(out, 'plugins')], { stdio: 'inherit' })
+// feature requests and bug reports (issues of this repository) as the board page reads them
+execFileSync(process.execPath, [join(root, 'scripts', 'build-feedback-board.mjs'), join(out, 'feedback.json')], { stdio: 'inherit' })
 console.log(`site built for v${version} (${history.length} versions in history)`)

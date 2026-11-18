@@ -32,7 +32,7 @@ export interface AppInfo {
 
 /** 저장 위치 (6.20) */
 export interface StorageInfo {
-  local: { dir: string; isDefault: boolean; defaultDir: string; bytes: number }
+  local: { dir: string; isDefault: boolean; defaultDir: string; bytes: number; /** set while the data is in the app data folder and a D: drive is there */ driveDir: string | null }
   /** only on the server PC */
   server: { dir: string; bytes: number; running: boolean } | null
   /** result of the last change (shown once after the restart) */
@@ -62,6 +62,10 @@ export interface ConnInfo {
   winUser: string
   pcName: string
   appVersion: string
+  /** Server PC or member PC, fixed at the first setup; null until then. */
+  lockedRole: 'server' | 'client' | null
+  /** The unique value of this PC (A1B2-C3D4-E5F6); null until it has been made. */
+  pcUid: string | null
 }
 
 /** A connection this PC used before and can use again (settings: 서버·팀원 PC 전환). No keys. */
@@ -112,13 +116,74 @@ export interface TransferItem {
   mtimeMs?: number
   folderId?: string
   fileId?: string
+  /** Download of one specific version (otherwise the current one). */
+  versionId?: string
   note?: string
   uploadId?: string
+  /** Download: which content the partial file belongs to (sent back as If-Range when continuing). */
+  etag?: string
+  /** Download into a temporary place ("바로 열기"): not continued after a restart. */
+  temp?: boolean
   done: number
   status: 'queued' | 'running' | 'paused' | 'done' | 'error' | 'cancelled'
   error?: string
   newVersion?: boolean
   createdAt: number
+}
+
+/** A feature request or bug report this PC posted to the board (kept on this PC). */
+export interface FeedbackSent {
+  /** Receipt number (TH-XXXXXXXX). */
+  id: string
+  /** Number of the post on the board. */
+  number: number
+  kind: 'feature' | 'bug'
+  title: string
+  at: number
+}
+
+export interface FeedbackInfo {
+  /** false: this build cannot post by itself (no key was built in). */
+  configured: boolean
+  /** The value that stands for this PC on the board (made from its addresses, not reversible). */
+  installId: string
+  /** What is added to a post when the writer allows it: app and Windows version. */
+  environment: string
+  boardUrl: string
+  limits: { titleMin: number; titleMax: number; bodyMin: number; bodyMax: number; authorMax: number }
+  sent: FeedbackSent[]
+}
+
+export interface FeedbackSubmit {
+  kind: 'feature' | 'bug'
+  title: string
+  body: string
+  author: string
+  includeEnv: boolean
+}
+
+export interface FeedbackSubmitResult {
+  ok: boolean
+  id?: string
+  number?: number
+  error?: string
+}
+
+/** Program lock (optional: a 4-digit PIN asked at start and after Windows was locked). */
+export interface LockState {
+  /** The user turned the lock on by making a PIN. */
+  hasPin: boolean
+  locked: boolean
+  /** Too many wrong tries: nothing is accepted for this long. */
+  waitMs: number
+}
+
+export interface LockResult {
+  ok: boolean
+  error?: string
+  waitMs?: number
+  /** Shown once after a PIN was made or replaced. */
+  recovery?: string
 }
 
 export interface ExportResult {
@@ -170,6 +235,7 @@ export interface IpcMap {
   'conn:setPending': { req: { serverUrl: string; requestId: string; pollToken: string; name: string } | null; res: void }
   'conn:updateServerUrl': { req: { serverUrl: string }; res: void }
   'conn:reset': { req: void; res: void }
+  'conn:pcUid': { req: void; res: string }
   'conn:saved': { req: void; res: SavedConnInfo[] }
   'conn:switchOut': { req: void; res: { ok: boolean; error?: string } }
   'conn:activateSaved': { req: { id: string }; res: { ok: boolean; error?: string } }
@@ -189,6 +255,7 @@ export interface IpcMap {
   'update:setSettings': { req: UpdateSettings; res: void }
   'update:getState': { req: void; res: UpdateState }
   'update:install': { req: void; res: void }
+  'update:postpone': { req: void; res: UpdateState }
   'notify:urgent': { req: UrgentPayload; res: void }
   'notify:closeUrgent': { req: { id: string }; res: void }
   'notify:toast': { req: { title: string; body: string; route?: string }; res: void }
@@ -216,6 +283,7 @@ export interface IpcMap {
   'transfer:cancel': { req: { id: string }; res: void }
   'transfer:clearDone': { req: void; res: void }
   'transfer:resume': { req: void; res: void }
+  'transfer:retry': { req: { id: string }; res: void }
   'transfer:pick': { req: { folders: boolean }; res: string[] }
   'transfer:download': { req: { fileId: string; name: string; versionId?: string }; res: ExportResult }
   'transfer:open': { req: { fileId: string; name: string; folderId: string }; res: ExportResult }
@@ -357,6 +425,16 @@ export interface IpcMap {
   'storage:changeLocal': { req: { to: string; mode: 'move' | 'use' }; res: { ok: boolean; error?: string } }
   'storage:checkServer': { req: { to: string }; res: StorageCheck }
   'storage:moveServer': { req: { to: string }; res: { ok: boolean; error?: string; warning?: string } }
+  'lock:state': { req: void; res: LockState }
+  'lock:create': { req: { pin: string }; res: LockResult }
+  'lock:unlock': { req: { pin: string }; res: LockResult }
+  'lock:change': { req: { oldPin: string; newPin: string }; res: LockResult }
+  'lock:recover': { req: { code: string; newPin: string }; res: LockResult }
+  'lock:remove': { req: { pin: string }; res: LockResult }
+  'lock:now': { req: void; res: void }
+  'feedback:open': { req: void; res: void }
+  'feedback:info': { req: void; res: FeedbackInfo }
+  'feedback:submit': { req: FeedbackSubmit; res: FeedbackSubmitResult }
 }
 
 export interface UpdateState {
@@ -364,6 +442,8 @@ export interface UpdateState {
   version?: string
   percent?: number
   message?: string
+  /** Found right after the program started: it installs itself at this time unless put off. */
+  autoInstallAt?: number
   /** where the update comes from: the public download site or the TeamHub server PC */
   source?: 'web' | 'lan'
   checkedAt?: number
@@ -419,6 +499,7 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'conn:setPending',
   'conn:updateServerUrl',
   'conn:reset',
+  'conn:pcUid',
   'conn:saved',
   'conn:switchOut',
   'conn:activateSaved',
@@ -438,6 +519,7 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'update:setSettings',
   'update:getState',
   'update:install',
+  'update:postpone',
   'notify:urgent',
   'notify:closeUrgent',
   'notify:toast',
@@ -465,6 +547,7 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'transfer:cancel',
   'transfer:clearDone',
   'transfer:resume',
+  'transfer:retry',
   'transfer:pick',
   'transfer:download',
   'transfer:open',
@@ -605,7 +688,17 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'storage:checkLocal',
   'storage:changeLocal',
   'storage:checkServer',
-  'storage:moveServer'
+  'storage:moveServer',
+  'lock:state',
+  'lock:create',
+  'lock:unlock',
+  'lock:change',
+  'lock:recover',
+  'lock:remove',
+  'lock:now',
+  'feedback:open',
+  'feedback:info',
+  'feedback:submit'
 ]
 
 /** main -> renderer push events */
@@ -629,9 +722,10 @@ export interface MainEventMap {
   'meeting:closed': { id: string }
   'plugins:changed': { count: number }
   'storage:progress': StorageProgress
+  'lock:changed': LockState
 }
 export type MainEvent = keyof MainEventMap
-export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed', 'storage:progress']
+export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed', 'storage:progress', 'lock:changed']
 
 export interface TeamhubBridge {
   /** Absolute path of a dropped/selected File (Electron webUtils). */

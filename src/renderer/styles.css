@@ -273,7 +273,8 @@ textarea,
 
 /* FullCalendar theming */
 .calendar-wrap .fc {
-  --fc-border-color: var(--border);
+  /* day and weekday lines: a tone between text and background, so they show in both themes */
+  --fc-border-color: color-mix(in srgb, var(--foreground) 28%, var(--background));
   --fc-page-bg-color: var(--background);
   --fc-neutral-bg-color: var(--muted);
   --fc-list-event-hover-bg-color: var(--muted);
@@ -390,4 +391,77 @@ textarea,
   padding: 0.6rem 0.8rem;
   font-family: ui-monospace, Consolas, monospace;
   font-size: 0.9em;
+}
+
+/* Update notice next to the search box: the text slides in and the box glows a few times. */
+@keyframes th-update-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes th-update-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-primary) 0%, transparent);
+  }
+}
+.th-update-chip {
+  animation: th-update-glow 1.6s ease-out 6;
+}
+.th-update-chip > span {
+  animation: th-update-in 0.35s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .th-update-chip,
+  .th-update-chip > span {
+    animation: none;
+  }
+}
+
+/* Calendar grid: days and weekdays must be told apart at a glance, with any wallpaper behind. */
+.calendar-wrap .fc .fc-scrollgrid {
+  border-width: 2px;
+  border-color: color-mix(in srgb, var(--foreground) 40%, var(--background));
+}
+.calendar-wrap .fc .fc-col-header-cell {
+  background: var(--muted);
+  border-bottom: 2px solid color-mix(in srgb, var(--foreground) 40%, var(--background));
+  padding-block: 3px;
+}
+/* half-hour lines in the week and day views stay lighter than the hour lines */
+.calendar-wrap .fc .fc-timegrid-slot-minor {
+  border-top-color: color-mix(in srgb, var(--foreground) 13%, var(--background));
+}
+/* weekend columns get a faint tint so the week is easy to scan */
+.calendar-wrap .fc .fc-daygrid-day.fc-day-sat,
+.calendar-wrap .fc .fc-daygrid-day.fc-day-sun,
+.calendar-wrap .fc .fc-timegrid-col.fc-day-sat,
+.calendar-wrap .fc .fc-timegrid-col.fc-day-sun {
+  background-color: color-mix(in srgb, var(--foreground) 3.5%, transparent);
+}
+/* with a wallpaper the grid sits on a nearly solid sheet: lines and dates keep their contrast */
+.has-wallpaper .calendar-wrap .fc .fc-scrollgrid {
+  background: color-mix(in srgb, var(--background) 90%, transparent);
+}
+.calendar-wrap .fc .fc-daygrid-day.fc-day-today,
+.calendar-wrap .fc .fc-timegrid-col.fc-day-today {
+  background-color: color-mix(in srgb, var(--primary) 13%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--primary) 55%, transparent);
+}
+/* weekend dates on the dark theme: the light-theme red and blue are too dim there */
+.dark .calendar-wrap .fc .fc-day-sun .fc-daygrid-day-number,
+.dark .calendar-wrap .fc .fc-col-header-cell.fc-day-sun {
+  color: #f87171;
+}
+.dark .calendar-wrap .fc .fc-day-sat .fc-daygrid-day-number,
+.dark .calendar-wrap .fc .fc-col-header-cell.fc-day-sat {
+  color: #60a5fa;
 }

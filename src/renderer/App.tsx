@@ -18,6 +18,8 @@ import { QuickMemo, StickyWindow } from './features/memos/StickyWindow'
 import { LauncherBar } from './features/launcher/LauncherBar'
 import { MeetingRoom } from './features/meetings/MeetingRoom'
 import { InvitePopup } from './features/meetings/InvitePopup'
+import { FeedbackWindow } from './features/feedback/FeedbackWindow'
+import { LockedSmall, LockGate } from './features/lock/LockGate'
 
 type Screen = 'loading' | 'first-run' | 'wizard' | 'join' | 'pending' | 'main' | 'import'
 
@@ -56,27 +58,67 @@ export function App(): React.JSX.Element {
   const alarm = /^#\/popup\/alarm\/([\w-]+)/.exec(hash)
   if (alarm) return loaded ? <AlarmPopup pid={alarm[1]} /> : <Loading />
   const sticky = /^#\/popup\/sticky\/([\w-]+)/.exec(hash)
-  if (sticky) return loaded ? <StickyWindow id={sticky[1]} /> : <Loading />
-  if (hash.startsWith('#/popup/quickmemo')) return loaded ? <QuickMemo /> : <Loading />
-  if (hash.startsWith('#/popup/launcher')) return loaded ? <LauncherBar /> : <Loading />
+  // personal content stays hidden while the program is locked; notices, alarms and calls still come through
+  if (sticky)
+    return loaded ? (
+      <LockedSmall>
+        <StickyWindow id={sticky[1]} />
+      </LockedSmall>
+    ) : (
+      <Loading />
+    )
+  if (hash.startsWith('#/popup/quickmemo'))
+    return loaded ? (
+      <LockedSmall>
+        <QuickMemo />
+      </LockedSmall>
+    ) : (
+      <Loading />
+    )
+  if (hash.startsWith('#/popup/launcher'))
+    return loaded ? (
+      <LockedSmall>
+        <LauncherBar />
+      </LockedSmall>
+    ) : (
+      <Loading />
+    )
   const room = /^#\/popup\/meeting\/([\w-]+)/.exec(hash)
   if (room) return loaded ? <MeetingRoom id={room[1]} /> : <Loading />
   const inv = /^#\/popup\/invite\/([\w-]+)/.exec(hash)
   if (inv) return loaded ? <InvitePopup id={inv[1]} /> : <Loading />
+  if (hash.startsWith('#/popup/feedback'))
+    return loaded ? (
+      <LockedSmall>
+        <FeedbackWindow />
+      </LockedSmall>
+    ) : (
+      <Loading />
+    )
 
   if (!loaded || screen === 'loading') return <Loading />
-  switch (screen) {
-    case 'first-run':
-      return <FirstRun onChoose={(m) => setScreen(m === 'server' ? 'wizard' : m === 'import' ? 'import' : 'join')} />
-    case 'import':
-      return <ImportServer onBack={() => setScreen('first-run')} onDone={() => void refresh()} />
-    case 'wizard':
-      return <ServerWizard onBack={() => setScreen('first-run')} onDone={() => void refresh()} />
-    case 'join':
-      return <JoinScreen onBack={() => setScreen('first-run')} onSubmitted={() => setScreen('pending')} />
-    case 'pending':
-      return <PendingScreen onApproved={() => void refresh()} onReset={() => void refresh()} />
-    case 'main':
-      return <MainShell onReset={() => void refresh()} />
+  return <LockGate>{mainScreen()}</LockGate>
+
+  function mainScreen(): React.JSX.Element {
+    switch (screen) {
+      case 'first-run':
+        return (
+          <FirstRun
+            onChoose={(m) => setScreen(m === 'server' ? 'wizard' : m === 'import' ? 'import' : 'join')}
+          />
+        )
+      case 'import':
+        return <ImportServer onBack={() => setScreen('first-run')} onDone={() => void refresh()} />
+      case 'wizard':
+        return <ServerWizard onBack={() => setScreen('first-run')} onDone={() => void refresh()} />
+      case 'join':
+        return <JoinScreen onBack={() => setScreen('first-run')} onSubmitted={() => setScreen('pending')} />
+      case 'pending':
+        return <PendingScreen onApproved={() => void refresh()} onReset={() => void refresh()} />
+      case 'main':
+        return <MainShell onReset={() => void refresh()} />
+      default:
+        return <Loading />
+    }
   }
 }

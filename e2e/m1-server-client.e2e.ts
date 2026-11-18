@@ -72,7 +72,7 @@ describe('M1 server + member', () => {
     const p = a.page
     await p.getByRole('link', { name: '관리', exact: true }).click()
     await p.getByRole('link', { name: '구성원·PC' }).click()
-    await p.getByTestId('device-row-팀원B').getByRole('button', { name: '사용 중지' }).click()
+    await p.getByTestId('device-row-팀원B').getByRole('button', { name: '차단', exact: true }).click()
     await expect.poll(() => b.page.getByRole('heading', { name: '사용이 중지되었습니다' }).isVisible(), { timeout: 10000 }).toBe(true)
   })
 

@@ -426,7 +426,7 @@ describe('관리대장 (built-in ledger: personal, team and designated-people le
     await g.locator('#trashBtn').click()
     await expect.poll(() => g.locator('#trashList').textContent()).not.toContain('불러오는 중')
     expect(await g.locator('#trashList').textContent()).not.toContain('비품 대장E2E')
-    await b.page.keyboard.press('Escape')
+    await g.locator('#trashDialog').press('Escape') // to the dialog itself: a page-level key press misses it when the frame has no focus
     await f.locator('#trashBtn').click()
     const item = f.locator('#trashList li', { hasText: '팀용' }).filter({ hasText: '비품 대장E2E' })
     await expect.poll(() => item.count()).toBe(1)
@@ -434,7 +434,8 @@ describe('관리대장 (built-in ledger: personal, team and designated-people le
     expect(await f.locator('#trashList li', { hasText: '개인용' }).count()).toBeGreaterThanOrEqual(2)
     await item.locator('button[data-restore]').click()
     await expect.poll(() => toastOf(a.page)).toContain('되살렸습니다')
-    await a.page.keyboard.press('Escape')
+    await f.locator('#trashDialog').press('Escape')
+    await expect.poll(() => f.locator('#trashDialog').evaluate((d) => (d as HTMLDialogElement).open)).toBe(false)
     await expect.poll(() => f.locator('#teamBooks').textContent()).toContain('비품 대장E2E')
     await expect.poll(() => g.locator('#teamBooks').textContent(), { timeout: 10000 }).toContain('비품 대장E2E')
   }, 120000)

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import { createHash } from 'node:crypto'
-import { closeSync, existsSync, openSync, readFileSync, rmSync, statSync, writeSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync, readSync, rmSync, statSync, writeSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -32,6 +32,8 @@ describe('M4 files', () => {
   let a: Launched
   let folderId = ''
   let expected = ''
+  let bigFileId = ''
+  let bigName = ''
   afterAll(async () => {
     await a?.close()
     rmSync(bigPath, { force: true })
@@ -62,9 +64,15 @@ describe('M4 files', () => {
   })
 
   it('1GB upload survives an app crash and resumes to a matching hash', async () => {
-    // The default limit is 500MB per file; raise it in the admin settings first.
+    // The server PC changes the limits in the admin settings (GB): 5GB / 200GB by default.
     await go(a.page, '/admin/settings')
-    await a.page.getByLabel('파일당 최대 크기').fill('2048')
+    await expect.poll(() => a.page.getByLabel('파일당 최대 크기').inputValue(), { timeout: 10000 }).toBe('5')
+    expect(await a.page.getByLabel('전체 용량 한도').inputValue()).toBe('200')
+    await a.page.getByLabel('파일당 최대 크기').fill('2.5')
+    await a.page.getByLabel('전체 용량 한도').fill('2')
+    await a.page.getByRole('button', { name: '설정 저장' }).click()
+    await a.page.getByText('파일당 최대 크기는 전체 용량 한도보다 클 수 없습니다.').waitFor({ timeout: 10000 })
+    await a.page.getByLabel('전체 용량 한도').fill('100')
     await a.page.getByRole('button', { name: '설정 저장' }).click()
     await a.page.getByText('저장했습니다.').waitFor({ timeout: 10000 })
     await go(a.page, `/files/${folderId}`)
@@ -98,6 +106,44 @@ describe('M4 files', () => {
     expect(statSync(blob).size).toBe(BIG)
     await go(a.page, `/files/${folderId}`)
     await a.page.getByTestId(`file-row-${after.name}`).waitFor({ timeout: 15000 })
+    bigFileId = after.fileId!
+    bigName = after.name
+  }, 600000)
+
+  const mainLog = (): string => readFileSync(join(a.userData, 'logs', 'main.log'), 'utf8')
+  const restartServer = (): Promise<unknown> => a.page.evaluate(() => window.teamhub.invoke('server:restart', undefined as never))
+
+  it('an upload cut off by the server going away continues by itself from where it stopped', async () => {
+    await a.page.evaluate(() => window.teamhub.invoke('transfer:clearDone', undefined as never))
+    await a.page.evaluate(([p, f]) => window.teamhub.invoke('transfer:upload', { paths: [p], folderId: f }), [bigPath, folderId])
+    const item = async (): Promise<TransferItem | undefined> => (await transfers(a)).find((t) => t.direction === 'up' && t.name === bigName)
+    await expect.poll(async () => (await item())?.done ?? 0, { timeout: 120000, interval: 200 }).toBeGreaterThan(100 * 1024 * 1024)
+    await restartServer()
+    await expect.poll(async () => (await item())?.status, { timeout: 300000, interval: 1000 }).toBe('done')
+    const done = (await item())!
+    expect(done.done).toBe(BIG)
+    expect(done.newVersion).toBe(true) // same name in the same folder
+    expect(mainLog()).toContain('[transfer] upload failed') // it really was interrupted
+  }, 600000)
+
+  it('a download cut off in the middle continues and the file matches', async () => {
+    const dest = join(a.userData, 'downloads', bigName)
+    const result = a.page.evaluate(([id, n]) => window.teamhub.invoke('transfer:download', { fileId: id, name: n }), [bigFileId, bigName])
+    const item = async (): Promise<TransferItem | undefined> => (await transfers(a)).find((t) => t.direction === 'down' && t.name === bigName)
+    await expect.poll(async () => (await item())?.done ?? 0, { timeout: 60000, interval: 50 }).toBeGreaterThan(20 * 1024 * 1024)
+    await restartServer()
+    expect(await result).toMatchObject({ ok: true, path: dest })
+    expect((await item())!.status).toBe('done')
+    expect(mainLog()).toContain('[transfer] download interrupted') // it really was interrupted
+    expect(existsSync(`${dest}.teamhub-part`)).toBe(false)
+    expect(statSync(dest).size).toBe(BIG)
+    // the current version is the one the interrupted upload above sent: both directions are checked by this hash
+    const hash = createHash('sha256')
+    const fd = openSync(dest, 'r')
+    const buf = Buffer.alloc(4 * 1024 * 1024)
+    for (let n = readSync(fd, buf, 0, buf.length, null); n > 0; n = readSync(fd, buf, 0, buf.length, null)) hash.update(buf.subarray(0, n))
+    closeSync(fd)
+    expect(hash.digest('hex')).toBe(expected)
   }, 600000)
 
   it('delete -> trash -> restore', async () => {

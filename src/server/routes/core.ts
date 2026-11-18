@@ -9,7 +9,8 @@ import { AppError, notFound } from '../errors'
 import { randomKey, safeEqualHex, sha256Hex } from '../crypto'
 import { parse, ok } from '../validate'
 import { getSection, isInitialized, readSetting } from '../settings'
-import { getMember, listDepartments, listMembers, toMemberDto, updateMember } from '../repos/members'
+import { adminFieldsOf, getMember, listDepartments, listMembers, toMemberDto, updateMember } from '../repos/members'
+import { blockedPc } from '../repos/devices'
 import { logActivity } from '../activity'
 import { approveJoinRequest } from './admin'
 import { myGroups } from '../repos/groups'
@@ -36,13 +37,17 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
     const ip = normalizeIp(req.ip)
     const net = getSection(ctx.db, 'network')
     if (!ipAllowed(ip, net.allowedCidrs)) throw new AppError('IP_NOT_ALLOWED', '허용되지 않은 IP 대역에서의 신청입니다.', 403)
+    // a PC shut out for good cannot even ask; the admin has to take it off the list first
+    if (blockedPc(ctx.db, input)) throw new AppError('PC_BLOCKED', '이 PC는 관리자가 영구 차단했습니다. 사용하려면 관리자에게 차단 해제를 요청하세요.', 403)
     const id = newId()
     const token = randomKey(24)
     const t = Date.now()
+    // one PC, one open request: asking again replaces the request that is still waiting
+    if (input.pcUid) ctx.db.run(`UPDATE join_requests SET state = 'rejected', decided_at = ?, decided_by = 'replaced', updated_at = ? WHERE pc_uid = ? AND state = 'pending'`, [t, t, input.pcUid])
     ctx.db.run(
-      `INSERT INTO join_requests (id, poll_token_hash, name, dept_name, title, ext, pc_name, win_user, ip, app_version, state, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-      [id, sha256Hex(token), input.name, input.deptName || null, input.title || null, input.ext || null, input.pcName, input.winUser, ip, input.appVersion || null, t, t]
+      `INSERT INTO join_requests (id, poll_token_hash, name, dept_name, title, ext, pc_name, win_user, ip, app_version, state, created_at, updated_at, pc_uid)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
+      [id, sha256Hex(token), input.name, input.deptName || null, input.title || null, input.ext || null, input.pcName, input.winUser, ip, input.appVersion || null, t, t, input.pcUid ?? null]
     )
     logActivity(ctx, null, 'join.request', { type: 'join_request', id }, { name: input.name, ip, pcName: input.pcName })
     // Auto approval only inside configured ranges (3.2).
@@ -102,7 +107,10 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
   })
 
   app.patch('/api/me', { preHandler: requireAuth }, async (req) => {
-    const patch = parse(mePatchSchema, req.body)
+    const patch: Record<string, string | null | undefined> = parse(mePatchSchema, req.body)
+    // what an admin set stays: the member's own change to those details is not taken
+    for (const f of adminFieldsOf(req.member)) delete patch[f]
+    if (patch.nickname === '') patch.nickname = null
     updateMember(ctx.db, req.member.id, patch)
     logActivity(ctx, req, 'member.update.self', { type: 'member', id: req.member.id })
     ctx.hub.broadcast('member.changed', { id: req.member.id })

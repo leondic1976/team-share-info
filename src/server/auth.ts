@@ -1,10 +1,10 @@
 import type { FastifyRequest, preHandlerAsyncHookHandler } from 'fastify'
-import { MIN_CLIENT_PROTOCOL } from '../shared/constants'
+import { MIN_CLIENT_PROTOCOL, PC_UID_RE } from '../shared/constants'
 import { ipAllowed, normalizeIp } from '../shared/net'
 import type { ServerContext } from './context'
 import { AppError } from './errors'
 import { safeEqualHex, sha256Hex, verifyPin } from './crypto'
-import { getDevice, touchDevice, type DeviceRow } from './repos/devices'
+import { getDevice, learnPcUid, touchDevice, type DeviceRow } from './repos/devices'
 import { getMember, type MemberRow } from './repos/members'
 import { getSection, readSetting } from './settings'
 
@@ -71,6 +71,8 @@ export function makeRequireAuth(ctx: ServerContext): preHandlerAsyncHookHandler 
     const r = authenticate(ctx, { ...cred, winUser, ip: req.ip, protocol, appVersion })
     req.member = r.member
     req.device = r.device
+    const uid = req.headers['x-pc-uid']
+    if (!r.device.pc_uid && typeof uid === 'string' && PC_UID_RE.test(uid)) learnPcUid(ctx.db, r.device.id, uid)
     req.clientIp = normalizeIp(req.ip)
   }
 }

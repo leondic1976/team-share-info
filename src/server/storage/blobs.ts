@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, renameSync, rmSync, statfsSync } from 'node:fs'
 import { join } from 'node:path'
 import { Transform, type Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -33,13 +33,32 @@ export function extOf(name: string): string {
   return m ? m[1].toLowerCase() : ''
 }
 
+/** "5GB", "1.5GB", "500MB" for limit messages. */
+export function sizeLabel(bytes: number): string {
+  const gb = bytes / 1024 ** 3
+  if (gb >= 1) return `${Number(gb.toFixed(1))}GB`
+  return `${Math.max(1, Math.round(bytes / 1024 ** 2))}MB`
+}
+
+/** Room the disk must keep after an upload, so the DB and other writes do not fail. */
+const DISK_RESERVE = 200 * 1024 * 1024
+
 /** Reject blocked extensions and over-size files before receiving data. */
 export function checkUploadAllowed(ctx: ServerContext, name: string, declaredSize?: number): void {
   const st = getSection(ctx.db, 'storage')
   if (st.blockedExtensions.includes(extOf(name))) throw new AppError('EXTENSION_BLOCKED', `.${extOf(name)} 파일은 올릴 수 없습니다.`, 400)
   if (declaredSize !== undefined) {
-    if (declaredSize > st.maxFileBytes) throw new AppError('FILE_TOO_LARGE', `파일이 너무 큽니다(최대 ${Math.round(st.maxFileBytes / 1024 / 1024)}MB).`, 413)
+    if (declaredSize > st.maxFileBytes) throw new AppError('FILE_TOO_LARGE', `파일이 너무 큽니다(최대 ${sizeLabel(st.maxFileBytes)}).`, 413)
     if (usedBytes(ctx) + declaredSize > st.quotaBytes) throw new AppError('QUOTA_EXCEEDED', '서버 저장 공간이 부족합니다. 관리자에게 문의하세요.', 507)
+    // the limit may be larger than what the drive really has left
+    let free: number | null = null
+    try {
+      const s = statfsSync(ctx.dataDir)
+      free = s.bavail * s.bsize
+    } catch {
+      // unknown: let the upload try
+    }
+    if (free !== null && declaredSize + DISK_RESERVE > free) throw new AppError('QUOTA_EXCEEDED', '서버 PC의 디스크 여유 공간이 부족합니다. 관리자에게 문의하세요.', 507)
   }
 }
 
@@ -59,7 +78,7 @@ export async function storeStream(ctx: ServerContext, stream: Readable): Promise
     transform(chunk: Buffer, _e, cb) {
       size += chunk.length
       if (size > st.maxFileBytes) {
-        cb(new AppError('FILE_TOO_LARGE', `파일이 너무 큽니다(최대 ${Math.round(st.maxFileBytes / 1024 / 1024)}MB).`, 413))
+        cb(new AppError('FILE_TOO_LARGE', `파일이 너무 큽니다(최대 ${sizeLabel(st.maxFileBytes)}).`, 413))
         return
       }
       hash.update(chunk)

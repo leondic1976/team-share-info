@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TeamHub 기능요청 · 오류신고</title>
+    <meta name="description" content="TeamHub에 필요한 기능과 오류를 알리고 처리 상황을 보는 게시판" />
+    <style>
+      :root {
+        --bg: #f8fafc;
+        --card: #ffffff;
+        --fg: #0f172a;
+        --muted: #64748b;
+        --line: #e2e8f0;
+        --primary: #2563eb;
+        --bug: #dc2626;
+        --ok: #16a34a;
+        --wait: #b45309;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b1220;
+          --card: #111a2e;
+          --fg: #e2e8f0;
+          --muted: #94a3b8;
+          --line: #1e293b;
+          --primary: #60a5fa;
+          --bug: #f87171;
+          --ok: #4ade80;
+          --wait: #fbbf24;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.6 'Pretendard', 'Malgun Gothic', system-ui, sans-serif;
+      }
+      main {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 40px 16px 64px;
+      }
+      a {
+        color: var(--primary);
+      }
+      h1 {
+        font-size: 26px;
+        margin: 0 0 4px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .note {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin-top: 20px;
+        font-size: 14px;
+      }
+      .note ol {
+        margin: 6px 0 0;
+        padding-left: 20px;
+      }
+      .bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin: 24px 0 12px;
+      }
+      .tab {
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--fg);
+        border-radius: 999px;
+        padding: 5px 14px;
+        font: inherit;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      .tab[aria-pressed='true'] {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
+        font-weight: 700;
+      }
+      .tab:focus-visible,
+      summary:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+      }
+      #q {
+        margin-left: auto;
+        min-width: 0;
+        width: 220px;
+        max-width: 100%;
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--fg);
+        border-radius: 8px;
+        padding: 6px 10px;
+        font: inherit;
+        font-size: 14px;
+      }
+      .post {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        margin-bottom: 8px;
+      }
+      .post summary {
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+        padding: 12px 16px;
+        cursor: pointer;
+        list-style: none;
+      }
+      .post summary::-webkit-details-marker {
+        display: none;
+      }
+      .tag {
+        flex: none;
+        font-size: 12px;
+        font-weight: 700;
+        border-radius: 6px;
+        padding: 1px 8px;
+        border: 1px solid currentColor;
+      }
+      .feature {
+        color: var(--primary);
+      }
+      .bug {
+        color: var(--bug);
+      }
+      .title {
+        flex: 1;
+        min-width: 0;
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+      .meta {
+        flex: none;
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .state {
+        flex: none;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .s-open {
+        color: var(--wait);
+      }
+      .s-answered {
+        color: var(--primary);
+      }
+      .s-done {
+        color: var(--ok);
+      }
+      .s-declined {
+        color: var(--muted);
+      }
+      .content {
+        border-top: 1px solid var(--line);
+        padding: 14px 16px;
+      }
+      .text {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        margin: 0;
+      }
+      .answer {
+        margin-top: 14px;
+        border-left: 3px solid var(--primary);
+        padding: 2px 0 2px 12px;
+      }
+      .answer b {
+        font-size: 13px;
+      }
+      .small {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 10px 0 0;
+      }
+      @media (max-width: 560px) {
+        .post summary {
+          flex-wrap: wrap;
+        }
+        .title {
+          flex-basis: 100%;
+          order: 3;
+        }
+        #q {
+          width: 100%;
+          margin-left: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p><a href="./">← TeamHub 다운로드</a></p>
+      <h1>💬 기능요청 · 오류신고</h1>
+      <p class="muted">TeamHub에 필요한 기능과 잘못 동작하는 부분을 알리고, 처리 상황을 보는 게시판입니다.</p>
+      <div class="note">
+        <b>글 쓰는 방법</b>
+        <ol>
+          <li>TeamHub 프로그램에서 <b>설정</b>을 열고 맨 아래 <b>기능요청 및 오류신고</b>를 누릅니다.</li>
+          <li>새 창에서 분류를 고르고 제목과 내용을 쓴 뒤 <b>보내기</b>를 누릅니다. 로그인이나 가입은 필요 없습니다.</li>
+          <li>등록된 글은 몇 분 뒤 이 게시판에 나타나고, 답변이 달리면 여기에서 볼 수 있습니다.</li>
+        </ol>
+        <p class="small">누구나 볼 수 있는 게시판입니다. 개인정보와 기관 내부 정보는 쓰지 마세요. 인터넷에 연결된 PC에서만 보낼 수 있습니다.</p>
+      </div>
+
+      <div class="bar">
+        <button class="tab" data-kind="" aria-pressed="true">전체 <span id="n-all"></span></button>
+        <button class="tab" data-kind="feature" aria-pressed="false">기능요청 <span id="n-feature"></span></button>
+        <button class="tab" data-kind="bug" aria-pressed="false">오류신고 <span id="n-bug"></span></button>
+        <input id="q" type="search" placeholder="제목·내용·접수번호 검색" aria-label="검색" />
+      </div>
+      <div id="list"><p class="muted">불러오는 중…</p></div>
+      <p class="small" id="updated"></p>
+    </main>
+    <script>
+      const STATE = { open: '접수', answered: '답변', done: '완료', declined: '보류' }
+      const KIND = { feature: '기능요청', bug: '오류신고' }
+      const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+      const day = (t) => (t ? new Date(t).toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' }) : '')
+      // text is shown as written (escaped); only plain web addresses become links
+      const text = (s) => esc(s).replace(/https?:\/\/[^\s<]+/g, (u) => `<a href="${u}" rel="noopener nofollow" target="_blank">${u}</a>`)
+      let items = []
+      let kind = ''
+
+      function render() {
+        const q = document.getElementById('q').value.trim().toLowerCase()
+        const open = Number(location.hash.slice(1)) || 0
+        const shown = items.filter((i) => (!kind || i.kind === kind) && (!q || `${i.title}\n${i.body}\n${i.receipt ?? ''}\n${i.number}`.toLowerCase().includes(q)))
+        document.getElementById('list').innerHTML = shown.length
+          ? shown
+              .map(
+                (i) => `<details class="post" id="p${i.number}" ${i.number === open ? 'open' : ''}>
+                  <summary>
+                    <span class="tag ${i.kind}">${KIND[i.kind]}</span>
+                    <span class="title">${esc(i.title)}</span>
+                    <span class="state s-${i.state}">${STATE[i.state] ?? ''}${i.answers.length ? ` · 답변 ${i.answers.length}` : ''}</span>
+                    <span class="meta">${day(i.createdAt)}</span>
+                  </summary>
+                  <div class="content">
+                    <p class="text">${text(i.body)}</p>
+                    ${i.answers.map((a) => `<div class="answer"><b>답변</b> <span class="meta">${day(a.at)}</span><p class="text">${text(a.body)}</p></div>`).join('')}
+                    <p class="small">${[`${i.number}번`, esc(i.author), i.receipt ? `접수번호 ${esc(i.receipt)}` : '', esc(i.version ?? ''), i.closedAt ? `${day(i.closedAt)} ${STATE[i.state]}` : ''].filter(Boolean).join(' · ')}</p>
+                  </div>
+                </details>`
+              )
+              .join('')
+          : `<p class="muted">${items.length ? '찾는 글이 없습니다.' : '아직 등록된 글이 없습니다.'}</p>`
+        if (open) document.getElementById(`p${open}`)?.scrollIntoView({ block: 'center' })
+      }
+
+      for (const b of document.querySelectorAll('.tab'))
+        b.addEventListener('click', () => {
+          kind = b.dataset.kind
+          for (const x of document.querySelectorAll('.tab')) x.setAttribute('aria-pressed', String(x === b))
+          render()
+        })
+      document.getElementById('q').addEventListener('input', render)
+      addEventListener('hashchange', render)
+
+      fetch('feedback.json', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : { items: [] }))
+        .catch(() => ({ items: [] }))
+        .then((board) => {
+          items = board.items ?? []
+          document.getElementById('n-all').textContent = items.length
+          document.getElementById('n-feature').textContent = items.filter((i) => i.kind === 'feature').length
+          document.getElementById('n-bug').textContent = items.filter((i) => i.kind === 'bug').length
+          if (board.updatedAt) document.getElementById('updated').textContent = `마지막 갱신: ${new Date(board.updatedAt).toLocaleString('ko-KR')}`
+          render()
+        })
+    </script>
+  </body>
+</html>

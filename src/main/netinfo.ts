@@ -1,5 +1,5 @@
 import { networkInterfaces, hostname, homedir } from 'node:os'
-import { existsSync } from 'node:fs'
+import { existsSync, statfsSync } from 'node:fs'
 import { join } from 'node:path'
 import { cidrOf } from '../shared/net'
 
@@ -44,8 +44,21 @@ export function pcName(): string {
   return process.env.COMPUTERNAME || hostname()
 }
 
+/** A drive that exists and can take data (an empty card reader or a disc in D: does not count). */
+export function driveUsable(root: string): boolean {
+  try {
+    if (!existsSync(root)) return false
+    const s = statfsSync(root)
+    return s.bavail * s.bsize > 0
+  } catch {
+    return false
+  }
+}
+
+/** Server data goes to D: by default, to C: when there is no usable D: drive. */
 export function suggestedDataDir(): string {
   if (process.env.TEAMHUB_USERDATA) return join(process.env.TEAMHUB_USERDATA, 'server-data')
-  if (existsSync('D:\\')) return 'D:\\TeamHubData'
+  if (driveUsable('D:\\')) return 'D:\\TeamHubData'
+  if (driveUsable('C:\\')) return 'C:\\TeamHubData'
   return join(homedir(), 'TeamHubData')
 }

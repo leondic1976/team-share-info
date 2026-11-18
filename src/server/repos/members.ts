@@ -15,6 +15,8 @@ export interface MemberRow {
   status: 'active' | 'suspended'
   status_message: string | null
   last_seen_at: number | null
+  nickname: string | null
+  admin_fields: string
 }
 
 const SELECT = `SELECT m.*, d.name AS dept_name FROM members m LEFT JOIN departments d ON d.id = m.dept_id`
@@ -33,8 +35,24 @@ export function toMemberDto(r: MemberRow, presence: Presence = 'offline'): Membe
     status: r.status,
     statusMessage: r.status_message,
     lastSeenAt: r.last_seen_at,
-    presence
+    presence,
+    nickname: r.nickname,
+    adminFields: adminFieldsOf(r)
   }
+}
+
+/** Details an admin set for this member (they win over what the member types). */
+export function adminFieldsOf(r: Pick<MemberRow, 'admin_fields'>): string[] {
+  try {
+    const v = JSON.parse(r.admin_fields || '[]') as unknown
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+export function setAdminFields(db: Db, id: string, fields: string[]): void {
+  db.run('UPDATE members SET admin_fields = ? WHERE id = ?', [JSON.stringify([...new Set(fields)]), id])
 }
 
 export function getMember(db: Db, id: string): MemberRow | undefined {
@@ -82,7 +100,8 @@ export function updateMember(db: Db, id: string, patch: Record<string, string | 
     ext: 'ext',
     mobile: 'mobile',
     duty: 'duty',
-    statusMessage: 'status_message'
+    statusMessage: 'status_message',
+    nickname: 'nickname'
   }
   const sets: string[] = []
   const vals: (string | number | null)[] = []

@@ -1,15 +1,22 @@
-# Plugins or the download page changed (no new app version): rebuild the site with the
-# installer that is already online and deploy it.
+# Plugins or the download page changed (no new app version), or a feature request / bug report
+# was posted, answered or closed: rebuild the site with the installer that is already online
+# and deploy it. The board page (feedback.html) shows feedback.json, exported from the issues
+# here because the page cannot read the issues of a private repository itself.
 name: site
 
 on:
   push:
     branches: [main]
     paths: ['plugins/**', 'site/**', 'scripts/build-site.mjs', 'scripts/build-plugins.mjs']
+  issues:
+    types: [opened, edited, closed, reopened, labeled, unlabeled, deleted]
+  issue_comment:
+    types: [created, edited, deleted]
   workflow_dispatch:
 
 permissions:
   contents: read
+  issues: read
   pages: write
   id-token: write
 
@@ -26,6 +33,8 @@ jobs:
         with:
           node-version: 24
       - run: node scripts/build-site.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site

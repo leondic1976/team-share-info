@@ -76,11 +76,13 @@ export function JoinScreen({ onBack, onSubmitted }: { onBack: () => void; onSubm
     setBusy(true)
     setError('')
     try {
+      // the unique value of this PC lets the server give the same account back when the PC asks again
+      const pcUid = await invoke('conn:pcUid')
       const r = await request<{ requestId: string; pollToken: string }>('/api/join', {
         method: 'POST',
         baseUrl: url,
         noAuth: true,
-        body: { name: name.trim(), deptName: dept, title, ext, pcName: conn.pcName, winUser: conn.winUser, appVersion: conn.appVersion }
+        body: { name: name.trim(), deptName: dept, title, ext, pcName: conn.pcName, winUser: conn.winUser, appVersion: conn.appVersion, pcUid }
       })
       await invoke('conn:setPending', { serverUrl: url, requestId: r.requestId, pollToken: r.pollToken, name: name.trim() })
       await invoke('local:kv.set', { key: 'consentAt', value: Date.now() })

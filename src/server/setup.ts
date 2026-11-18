@@ -18,7 +18,7 @@ export interface SetupResult {
 export function initializeServer(
   db: Db,
   input: ServerSetupInput,
-  local: { pcName: string; winUser: string; appVersion: string }
+  local: { pcName: string; winUser: string; appVersion: string; pcUid?: string }
 ): SetupResult {
   if (isInitialized(db)) throw new Error('already initialized')
   return db.tx(() => {
@@ -36,7 +36,7 @@ export function initializeServer(
     writeSetting(db, 'dataDir', input.dataDir)
     if (input.adminPin) writeSetting(db, 'adminPinHash', hashPin(input.adminPin))
     const memberId = createMember(db, { ...input.admin, role: 'admin' })
-    const dev = createDevice(db, { memberId, pcName: local.pcName, winUser: local.winUser, ip: '127.0.0.1', appVersion: local.appVersion })
+    const dev = createDevice(db, { memberId, pcName: local.pcName, winUser: local.winUser, ip: '127.0.0.1', appVersion: local.appVersion, pcUid: local.pcUid })
     writeSetting(db, 'initialized', true)
     writeSetting(db, 'serverDeviceId', dev.deviceId)
     return { memberId, ...dev }

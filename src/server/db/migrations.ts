@@ -748,5 +748,45 @@ INSERT INTO ledger_seen (ledger_id, member_id, version) SELECT l.id, m.id, l.ver
 ALTER TABLE tasks ADD COLUMN done_mode TEXT NOT NULL DEFAULT 'any' CHECK (done_mode IN ('any','each'));
 ALTER TABLE task_assignees ADD COLUMN done_at INTEGER;
 `
+  },
+  {
+    id: 15,
+    name: 'storage-defaults-5gb-200gb',
+    sql: `
+-- servers still on the former defaults (500MB per file, 50GB in all) move to the new ones;
+-- limits an admin set to anything else are kept
+UPDATE settings SET value = json_set(value, '$.maxFileBytes', 5368709120)
+  WHERE key = 'storage' AND json_valid(value) AND json_extract(value, '$.maxFileBytes') = 524288000;
+UPDATE settings SET value = json_set(value, '$.quotaBytes', 214748364800)
+  WHERE key = 'storage' AND json_valid(value) AND json_extract(value, '$.quotaBytes') = 53687091200;
+`
+  },
+  {
+    id: 16,
+    name: 'pc-unique-value',
+    sql: `
+-- the unique value of the PC a device or a join request belongs to: a PC that asks again is
+-- recognised and gets its account back instead of a second one
+ALTER TABLE devices ADD COLUMN pc_uid TEXT;
+ALTER TABLE join_requests ADD COLUMN pc_uid TEXT;
+CREATE INDEX idx_devices_pc_uid ON devices(pc_uid);
+CREATE INDEX idx_join_pc_uid ON join_requests(pc_uid);
+-- PCs shut out for good: a request from one of them is refused until it is taken off this list
+CREATE TABLE blocked_pcs (
+  id TEXT PRIMARY KEY,
+  pc_uid TEXT,
+  pc_name TEXT NOT NULL,
+  win_user TEXT NOT NULL,
+  member_name TEXT,
+  reason TEXT NOT NULL,
+  blocked_by TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_blocked_pc_uid ON blocked_pcs(pc_uid);
+-- member details: what an admin set wins over what the member typed (admin_fields lists those
+-- fields); the nickname belongs to the member alone
+ALTER TABLE members ADD COLUMN nickname TEXT;
+ALTER TABLE members ADD COLUMN admin_fields TEXT NOT NULL DEFAULT '[]';
+`
   }
 ]

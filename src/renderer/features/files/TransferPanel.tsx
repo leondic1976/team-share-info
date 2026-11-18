@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowDown, ArrowUp, X, ChevronDown, ChevronUp, Check, AlertCircle, Pause } from 'lucide-react'
+import { ArrowDown, ArrowUp, X, ChevronDown, ChevronUp, Check, AlertCircle, Pause, RotateCw } from 'lucide-react'
 import type { TransferItem } from '@shared/ipc'
 import { invoke, onMain } from '@renderer/lib/bridge'
 import { formatSize } from '@renderer/components/Attachments'
@@ -30,10 +30,11 @@ export function TransferPanel(): React.JSX.Element | null {
   }, [qc])
   if (!items.length) return null
   const active = items.filter((i) => i.status === 'running' || i.status === 'queued').length
+  const waiting = items.filter((i) => i.status === 'paused').length
   return (
     <div className="fixed right-4 bottom-16 z-40 w-96 rounded-lg border border-border bg-card shadow-xl" data-testid="transfer-panel">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-sm font-semibold">
-        전송 {active > 0 ? `${active}개 진행 중` : '완료'}
+        전송 {active > 0 ? `${active}개 진행 중` : waiting > 0 ? `${waiting}개 연결 대기 중` : '완료'}
         <Button size="icon-sm" variant="ghost" className="ml-auto" aria-label={open ? '접기' : '펼치기'} onClick={() => setOpen(!open)}>
           {open ? <ChevronDown /> : <ChevronUp />}
         </Button>
@@ -66,6 +67,11 @@ export function TransferPanel(): React.JSX.Element | null {
                         `${pct}%`
                       )}
                     </span>
+                    {(i.status === 'paused' || i.status === 'error' || i.status === 'cancelled') && (
+                      <button className="cursor-pointer" aria-label={`${i.name} 다시 시도`} title="다시 시도 (멈춘 곳부터 이어서)" onClick={() => void invoke('transfer:retry', { id: i.id })}>
+                        <RotateCw className="size-3.5" />
+                      </button>
+                    )}
                     {(i.status === 'running' || i.status === 'queued' || i.status === 'paused') && (
                       <button className="cursor-pointer" aria-label={`${i.name} 전송 취소`} onClick={() => void invoke('transfer:cancel', { id: i.id })}>
                         <X className="size-3.5" />

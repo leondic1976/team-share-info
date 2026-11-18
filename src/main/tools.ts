@@ -22,7 +22,7 @@ export function broadcast<E extends MainEvent>(event: E, payload: MainEventMap[E
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send(event, payload)
 }
 
-function toolWindow(opts: Electron.BrowserWindowConstructorOptions, hash: string): BrowserWindow {
+export function toolWindow(opts: Electron.BrowserWindowConstructorOptions, hash: string): BrowserWindow {
   const win = new BrowserWindow({
     icon: resourcePath('icon.png'),
     autoHideMenuBar: true,

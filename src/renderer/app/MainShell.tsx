@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
+import { UpdateChip } from './UpdateChip'
 import { OrgBadge } from './OrgBadge'
 import { SearchPalette } from './SearchPalette'
 import { Search } from 'lucide-react'
@@ -133,10 +134,13 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
       <TopBar
         left={<OrgBadge />}
         center={
-          <button className="no-drag flex h-8 w-full max-w-md cursor-pointer items-center gap-2 rounded-md border border-border bg-muted/60 px-2.5 text-sm text-muted-foreground hover:bg-muted" onClick={() => setSearchOpen(true)} data-testid="open-search">
-            <Search className="size-4" aria-hidden />
-            <span>검색 (Ctrl+K)</span>
-          </button>
+          <div className="flex w-full max-w-2xl items-center justify-center gap-2">
+            <button className="no-drag flex h-8 w-full max-w-md cursor-pointer items-center gap-2 rounded-md border border-border bg-muted/60 px-2.5 text-sm text-muted-foreground hover:bg-muted" onClick={() => setSearchOpen(true)} data-testid="open-search">
+              <Search className="size-4" aria-hidden />
+              <span>검색 (Ctrl+K)</span>
+            </button>
+            <UpdateChip />
+          </div>
         }
       />
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />

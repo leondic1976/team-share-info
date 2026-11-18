@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Download, Upload, Lock, Monitor, Sun, Moon } from 'lucide-react'
+import { Download, Upload, Lock, Monitor, Sun, Moon, MessageSquarePlus, ExternalLink } from 'lucide-react'
+import { DOWNLOAD_SITE } from '@shared/constants'
 import { Input } from '@renderer/components/ui/input'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
@@ -13,6 +14,7 @@ import { UpdateCard } from './UpdateCard'
 import { MenuCard } from './MenuCard'
 import { StorageCard } from './StorageCard'
 import { WallpaperCard } from './WallpaperCard'
+import { LockCard } from './LockCard'
 import type { ReactNode } from 'react'
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }): React.JSX.Element {
@@ -159,6 +161,8 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
           </CardContent>
         </Card>
 
+        <LockCard />
+
         <StorageCard kind="local" />
 
         {extra}
@@ -180,6 +184,25 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
             <span>{app?.winUser}</span>
             <span className="text-muted-foreground">데이터 폴더</span>
             <span className="break-all">{app?.userDataPath}</span>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>기능요청 및 오류신고</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              필요한 기능이나 잘못 동작하는 부분을 개발자에게 알려 주세요. 새 창에서 글을 쓰면 공개 게시판에 등록되고, 처리 상황은 게시판에서 볼 수 있습니다. 인터넷에 연결된 PC에서만 보낼 수 있습니다.
+            </p>
+            <div className="flex gap-2">
+              <Button onClick={() => void invoke('feedback:open')} data-testid="feedback-open">
+                <MessageSquarePlus /> 기능요청 및 오류신고
+              </Button>
+              <Button variant="outline" onClick={() => void invoke('app:openExternal', { url: `${DOWNLOAD_SITE}feedback.html` })}>
+                <ExternalLink /> 게시판 보기
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

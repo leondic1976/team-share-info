@@ -11,14 +11,17 @@ export const PROTOCOL_VERSION = 1
 /** Oldest client protocol the server still accepts. */
 export const MIN_CLIENT_PROTOCOL = 1
 
+/** The unique value of an installed PC, e.g. A1B2-C3D4-E5F6 (made in the main process, src/main/pcid.ts). */
+export const PC_UID_RE = /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/
+
 export const DEFAULT_NOTICE_TEXT = '중요 보안 내용, 개인정보, 비공개 정보는 공유할 수 없습니다.'
 
 export const LIMITS = {
   pageDefault: 50,
   pageMax: 200,
   uploadChunkBytes: 8 * 1024 * 1024,
-  defaultMaxFileBytes: 500 * 1024 * 1024,
-  defaultQuotaBytes: 50 * 1024 * 1024 * 1024,
+  defaultMaxFileBytes: 5 * 1024 * 1024 * 1024,
+  defaultQuotaBytes: 200 * 1024 * 1024 * 1024,
   meetingMaxVideo: 8,
   meetingRecommendedVideo: 6,
   awayAfterMs: 5 * 60 * 1000
@@ -38,6 +41,7 @@ export const ERROR_CODES = {
   QUOTA_EXCEEDED: 'QUOTA_EXCEEDED',
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
   EXTENSION_BLOCKED: 'EXTENSION_BLOCKED',
+  PC_BLOCKED: 'PC_BLOCKED',
   LOCKED: 'LOCKED',
   INTERNAL: 'INTERNAL'
 } as const

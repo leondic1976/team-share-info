@@ -10,11 +10,16 @@ import { PresenceDot } from '@renderer/components/PresenceDot'
 import { Loading } from '@renderer/components/EmptyState'
 import { useConn } from '@renderer/app/conn-store'
 import { DepartmentsCard } from './DepartmentsCard'
+import { BanDialog, BlockedPcsCard, type BanTarget } from './PcBlock'
+import { MemberEditDialog } from './MemberEditDialog'
+import { displayName } from '@shared/schemas/auth'
 
 export function MembersTab(): React.JSX.Element {
   const qc = useQueryClient()
   const myDevice = useConn((s) => s.deviceId)
   const [err, setErr] = useState('')
+  const [ban, setBan] = useState<BanTarget | null>(null)
+  const [editing, setEditing] = useState<MemberDto | null>(null)
   const members = useQuery({ queryKey: ['admin', 'members'], queryFn: () => api.get<MemberDto[]>('/api/admin/members') })
   const devices = useQuery({ queryKey: ['admin', 'devices'], queryFn: () => api.get<DeviceDto[]>('/api/admin/devices') })
   const done = {
@@ -43,7 +48,7 @@ export function MembersTab(): React.JSX.Element {
               <th>부서·직위</th>
               <th>역할</th>
               <th>상태</th>
-              <th className="w-48" />
+              <th className="w-64" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -51,13 +56,16 @@ export function MembersTab(): React.JSX.Element {
               <tr key={m.id} data-testid={`member-row-${m.name}`}>
                 <td className="px-4 py-2">
                   <span className="flex items-center gap-2">
-                    <PresenceDot presence={m.presence} /> {m.name}
+                    <PresenceDot presence={m.presence} /> {displayName(m)}
                   </span>
                 </td>
                 <td className="text-muted-foreground">{[m.deptName, m.title].filter(Boolean).join(' · ')}</td>
                 <td>{m.role === 'admin' ? <Badge>관리자</Badge> : <span className="text-muted-foreground">일반</span>}</td>
                 <td>{m.status === 'active' ? <Badge variant="success">사용 중</Badge> : <Badge variant="urgent">중지</Badge>}</td>
                 <td className="space-x-1 pr-4 text-right">
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(m)}>
+                    정보 수정
+                  </Button>
                   <Button size="sm" variant="ghost" onClick={() => patchMember.mutate({ id: m.id, body: { role: m.role === 'admin' ? 'member' : 'admin' } })}>
                     {m.role === 'admin' ? '관리자 해제' : '관리자 지정'}
                   </Button>
@@ -90,7 +98,7 @@ export function MembersTab(): React.JSX.Element {
               <th>IP</th>
               <th>버전</th>
               <th>마지막 접속</th>
-              <th className="w-40" />
+              <th className="w-56" />
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -104,6 +112,7 @@ export function MembersTab(): React.JSX.Element {
                 </td>
                 <td className="text-muted-foreground">
                   {d.pcName} / {d.winUser}
+                  {d.pcUid && <span className="ml-2 text-xs text-muted-foreground">고유값 {d.pcUid}</span>}
                 </td>
                 <td>
                   {d.lastIp ?? d.approvedIp}
@@ -123,20 +132,32 @@ export function MembersTab(): React.JSX.Element {
                   )}
                   {d.id !== myDevice &&
                     (d.revokedAt ? (
-                      <Button size="sm" variant="ghost" onClick={() => patchDevice.mutate({ id: d.id, action: 'restore' })}>
-                        다시 허용
+                      <Button size="sm" variant="ghost" title="이 PC가 이전 승인 그대로 다시 접속할 수 있게 합니다" onClick={() => patchDevice.mutate({ id: d.id, action: 'restore' })}>
+                        차단 해제
                       </Button>
                     ) : (
-                      <Button size="sm" variant="ghost" className="text-urgent" onClick={() => patchDevice.mutate({ id: d.id, action: 'revoke' })}>
-                        사용 중지
+                      <Button size="sm" variant="ghost" className="text-urgent" title="접속을 끊습니다. 이 PC는 다시 사용 신청을 할 수 있습니다" onClick={() => patchDevice.mutate({ id: d.id, action: 'revoke' })}>
+                        차단
                       </Button>
                     ))}
+                  {d.id !== myDevice && !d.isServer && (
+                    <Button size="sm" variant="ghost" className="text-urgent" title="다시 신청도 할 수 없게 막습니다" onClick={() => setBan({ deviceId: d.id, who: d.memberName, pc: `${d.pcName} / ${d.winUser}` })}>
+                      영구 차단
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        <p className="px-4 py-2 text-xs text-muted-foreground">
+          <b>차단</b>: 접속을 끊습니다. 그 PC는 다시 사용 신청을 할 수 있고, 승인하면 같은 계정으로 연결됩니다. <b>영구 차단</b>: 신청 자체를 받지 않습니다(아래 목록에서 해제할 때까지).
+        </p>
       </Card>
+
+      <BlockedPcsCard />
+      {ban && <BanDialog target={ban} onClose={() => setBan(null)} />}
+      {editing && <MemberEditDialog member={editing} onClose={() => setEditing(null)} />}
     </div>
   )
 }

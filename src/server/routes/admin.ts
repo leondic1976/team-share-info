@@ -1,7 +1,7 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from 'fastify'
 import { statfsSync } from 'node:fs'
 import { z } from 'zod'
-import { adminMemberPatchSchema, type DeviceDto, type JoinRequestDto } from '../../shared/schemas/auth'
+import { ADMIN_SET_FIELDS, adminMemberPatchSchema, blockPcSchema, type BlockedPcDto, type DeviceDto, type JoinRequestDto } from '../../shared/schemas/auth'
 import { settingsPatchSchema } from '../../shared/schemas/settings'
 import { ipAllowed } from '../../shared/net'
 import type { ServerContext } from '../context'
@@ -9,9 +9,11 @@ import { badRequest, notFound } from '../errors'
 import { hashPin } from '../crypto'
 import { parse, ok } from '../validate'
 import { getAllSettings, getSection, patchSection, writeSetting } from '../settings'
-import { countAdmins, createMember, getMember, toMemberDto, updateMember, listMembers } from '../repos/members'
-import { createDevice, listDevices, setDeviceRevoked } from '../repos/devices'
+import { adminFieldsOf, countAdmins, createMember, getMember, setAdminFields, toMemberDto, updateMember, listMembers } from '../repos/members'
+import { blockedPc, createDevice, devicesOfPc, findPc, getDevice, listDevices, serverDeviceId, setDeviceRevoked } from '../repos/devices'
+import { newId } from '../../node/sqlite'
 import { logActivity } from '../activity'
+import { usedBytes } from '../storage/blobs'
 import type { FastifyRequest } from 'fastify'
 
 interface JoinRow {
@@ -27,17 +29,48 @@ interface JoinRow {
   state: JoinRequestDto['state']
   created_at: number
   decided_at: number | null
+  pc_uid: string | null
 }
 
-/** Approve a join request: create member + device and keep the key for one-time pickup. */
+/**
+ * Approve a join request: create member + device and keep the key for one-time pickup.
+ * A PC that already has an account (same unique value) gets that account back with a new key;
+ * its former keys stop working. No second account for one PC.
+ */
 export function approveJoinRequest(ctx: ServerContext, id: string, req: FastifyRequest | null): string {
   const row = ctx.db.get<JoinRow>('SELECT * FROM join_requests WHERE id = ?', [id])
   if (!row) throw notFound('신청')
   if (row.state !== 'pending') throw badRequest('이미 처리된 신청입니다.')
+  if (blockedPc(ctx.db, { pcUid: row.pc_uid, pcName: row.pc_name, winUser: row.win_user })) throw badRequest('영구 차단한 PC입니다. 차단 목록에서 해제한 뒤 승인하세요.')
+  let reused: string | null = null
+  const replaced: string[] = []
+  const suspended: string[] = []
   const deviceId = ctx.db.tx(() => {
-    const memberId = createMember(ctx.db, { name: row.name, deptName: row.dept_name ?? '', title: row.title ?? '', ext: row.ext ?? '' })
+    const known = findPc(ctx.db, { pcUid: row.pc_uid, pcName: row.pc_name, winUser: row.win_user })
+    reused = known?.member.id ?? null
+    if (known) {
+      // the PC's former entries stop working; it continues with the new key only
+      for (const d of known.devices) {
+        if (d.revoked_at) continue
+        setDeviceRevoked(ctx.db, d.id, true)
+        replaced.push(d.id)
+      }
+      // accounts that existed only because this same PC had asked before (one PC shown as
+      // several people) are put out of use; nothing of theirs is deleted
+      for (const other of new Set(known.devices.map((d) => d.member_id))) {
+        if (other === known.member.id) continue
+        const m = getMember(ctx.db, other)
+        if (!m || m.role === 'admin' || m.status !== 'active') continue
+        const elsewhere = ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM devices WHERE member_id = ? AND revoked_at IS NULL`, [other])?.n ?? 0
+        if (elsewhere > 0) continue
+        updateMember(ctx.db, other, { status: 'suspended' })
+        suspended.push(other)
+      }
+    }
+    const memberId = known?.member.id ?? createMember(ctx.db, { name: row.name, deptName: row.dept_name ?? '', title: row.title ?? '', ext: row.ext ?? '' })
     const dev = createDevice(ctx.db, {
       memberId,
+      pcUid: row.pc_uid,
       pcName: row.pc_name,
       winUser: row.win_user,
       ip: row.ip,
@@ -50,7 +83,15 @@ export function approveJoinRequest(ctx: ServerContext, id: string, req: FastifyR
     )
     return dev.deviceId
   })
-  logActivity(ctx, req, req ? 'join.approve' : 'join.auto-approve', { type: 'join_request', id }, { name: row.name, ip: row.ip })
+  for (const d of replaced) ctx.hub.kick({ deviceId: d })
+  for (const m of suspended) ctx.hub.kick({ memberId: m }, 'MEMBER_SUSPENDED')
+  logActivity(
+    ctx,
+    req,
+    req ? 'join.approve' : 'join.auto-approve',
+    { type: 'join_request', id },
+    { name: row.name, ip: row.ip, ...(reused ? { sameAccount: reused, replacedDevices: replaced.length } : {}), ...(suspended.length ? { duplicatesSuspended: suspended } : {}) }
+  )
   ctx.hub.broadcast('member.changed', { joinRequestId: id })
   return deviceId
 }
@@ -81,7 +122,9 @@ export function registerAdminRoutes(
       state: r.state,
       inAllowedRange: net.allowedCidrs.length === 0 || ipAllowed(r.ip, net.allowedCidrs),
       createdAt: r.created_at,
-      decidedAt: r.decided_at
+      decidedAt: r.decided_at,
+      pcUid: r.pc_uid,
+      knownMember: r.state === 'pending' ? (findPc(ctx.db, { pcUid: r.pc_uid, pcName: r.pc_name, winUser: r.win_user })?.member ?? null) : null
     }))
     return ok(list)
   })
@@ -104,7 +147,73 @@ export function registerAdminRoutes(
     return ok({ id, action })
   })
 
+  // ---- PCs shut out for good ----
+  app.get('/api/admin/blocked-pcs', pre, async () => {
+    const rows = ctx.db.all<{ id: string; pc_uid: string | null; pc_name: string; win_user: string; member_name: string | null; reason: string; by_name: string | null; created_at: number }>(
+      `SELECT b.*, m.name AS by_name FROM blocked_pcs b LEFT JOIN members m ON m.id = b.blocked_by ORDER BY b.created_at DESC`
+    )
+    const list: BlockedPcDto[] = rows.map((r) => ({ id: r.id, pcUid: r.pc_uid, pcName: r.pc_name, winUser: r.win_user, memberName: r.member_name, reason: r.reason, blockedByName: r.by_name, createdAt: r.created_at }))
+    return ok(list)
+  })
+
+  /**
+   * Shut a PC out for good: its connections end, what it has asked for is refused and it cannot
+   * ask again until it is taken off the list. The account and everything it wrote stay.
+   */
+  app.post('/api/admin/blocked-pcs', pre, async (req) => {
+    const input = parse(blockPcSchema, req.body)
+    let pc: { pcUid: string | null; pcName: string; winUser: string }
+    let memberName: string | null = null
+    if (input.deviceId) {
+      const d = getDevice(ctx.db, input.deviceId)
+      if (!d) throw notFound('PC')
+      if (d.id === req.device.id) throw badRequest('지금 사용 중인 PC는 차단할 수 없습니다.')
+      if (d.id === serverDeviceId(ctx.db)) throw badRequest('서버 PC는 차단할 수 없습니다.')
+      const m = getMember(ctx.db, d.member_id)
+      if (m?.role === 'admin') throw badRequest('관리자의 PC는 영구 차단할 수 없습니다. 먼저 관리자 권한을 해제하세요.')
+      pc = { pcUid: d.pc_uid, pcName: d.pc_name, winUser: d.win_user }
+      memberName = m?.name ?? null
+    } else {
+      const r = ctx.db.get<JoinRow>('SELECT * FROM join_requests WHERE id = ?', [input.requestId!])
+      if (!r) throw notFound('신청')
+      pc = { pcUid: r.pc_uid, pcName: r.pc_name, winUser: r.win_user }
+      memberName = r.name
+    }
+    if (blockedPc(ctx.db, pc)) throw badRequest('이미 영구 차단한 PC입니다.')
+    const id = newId()
+    const t = Date.now()
+    const cut: string[] = []
+    ctx.db.tx(() => {
+      ctx.db.run('INSERT INTO blocked_pcs (id, pc_uid, pc_name, win_user, member_name, reason, blocked_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [id, pc.pcUid, pc.pcName, pc.winUser, memberName, input.reason, req.member.id, t])
+      for (const d of devicesOfPc(ctx.db, pc)) {
+        if (d.revoked_at) continue
+        setDeviceRevoked(ctx.db, d.id, true)
+        cut.push(d.id)
+      }
+      ctx.db.run(
+        `UPDATE join_requests SET state = 'rejected', decided_at = ?, decided_by = ?, updated_at = ?
+         WHERE state = 'pending' AND ((? IS NOT NULL AND pc_uid = ?) OR (lower(pc_name) = lower(?) AND lower(win_user) = lower(?)))`,
+        [t, req.member.id, t, pc.pcUid, pc.pcUid, pc.pcName, pc.winUser]
+      )
+    })
+    for (const d of cut) ctx.hub.kick({ deviceId: d })
+    logActivity(ctx, req, 'pc.block', { type: 'pc', id }, { pcName: pc.pcName, winUser: pc.winUser, pcUid: pc.pcUid, reason: input.reason })
+    ctx.hub.broadcast('member.changed', { blockedPc: id })
+    return ok({ id })
+  })
+
+  /** Off the list: the PC may ask for access again, and the request can be approved. */
+  app.delete('/api/admin/blocked-pcs/:id', pre, async (req) => {
+    const { id } = req.params as { id: string }
+    const row = ctx.db.get<{ pc_name: string; win_user: string; pc_uid: string | null }>('SELECT pc_name, win_user, pc_uid FROM blocked_pcs WHERE id = ?', [id])
+    if (!row) throw notFound('차단한 PC')
+    ctx.db.run('DELETE FROM blocked_pcs WHERE id = ?', [id])
+    logActivity(ctx, req, 'pc.unblock', { type: 'pc', id }, { pcName: row.pc_name, winUser: row.win_user, pcUid: row.pc_uid })
+    return ok({ id })
+  })
+
   app.get('/api/admin/devices', pre, async () => {
+    const server = serverDeviceId(ctx.db)
     const list: DeviceDto[] = listDevices(ctx.db).map((d) => ({
       id: d.id,
       memberId: d.member_id,
@@ -118,7 +227,9 @@ export function registerAdminRoutes(
       approvedAt: d.approved_at,
       revokedAt: d.revoked_at,
       lastSeenAt: d.last_seen_at,
-      online: ctx.hub.isDeviceOnline(d.id)
+      online: ctx.hub.isDeviceOnline(d.id),
+      pcUid: d.pc_uid,
+      isServer: d.id === server
     }))
     return ok(list)
   })
@@ -126,7 +237,11 @@ export function registerAdminRoutes(
   app.patch('/api/admin/devices/:id', pre, async (req) => {
     const { id } = req.params as { id: string }
     const { action } = parse(z.object({ action: z.enum(['revoke', 'restore', 'accept-ip']) }), req.body)
-    if (id === req.device.id && action === 'revoke') throw badRequest('지금 사용 중인 PC는 중지할 수 없습니다.')
+    if (id === req.device.id && action === 'revoke') throw badRequest('지금 사용 중인 PC는 차단할 수 없습니다.')
+    if (action === 'restore') {
+      const d = getDevice(ctx.db, id)
+      if (d && blockedPc(ctx.db, { pcUid: d.pc_uid, pcName: d.pc_name, winUser: d.win_user })) throw badRequest('영구 차단한 PC입니다. 차단 목록에서 먼저 해제하세요.')
+    }
     if (action === 'accept-ip') {
       ctx.db.run('UPDATE devices SET approved_ip = COALESCE(last_ip, approved_ip), updated_at = ? WHERE id = ?', [Date.now(), id])
     } else {
@@ -150,6 +265,9 @@ export function registerAdminRoutes(
     const losingAdmin = m.role === 'admin' && (patch.role === 'member' || patch.status === 'suspended')
     if (losingAdmin && countAdmins(ctx.db) <= 1) throw badRequest('관리자가 최소 1명은 있어야 합니다.')
     updateMember(ctx.db, id, patch)
+    // details set here take priority from now on: the member's own edits no longer change them
+    const set = ADMIN_SET_FIELDS.filter((f) => patch[f] !== undefined)
+    if (set.length) setAdminFields(ctx.db, id, [...adminFieldsOf(m), ...set])
     if (patch.status === 'suspended') ctx.hub.kick({ memberId: id }, 'MEMBER_SUSPENDED')
     logActivity(ctx, req, 'member.update', { type: 'member', id }, patch)
     ctx.hub.broadcast('member.changed', { id })
@@ -196,6 +314,7 @@ export function registerAdminRoutes(
       members: listMembers(ctx.db).length,
       pendingJoins: ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM join_requests WHERE state = 'pending'`)?.n ?? 0,
       disk,
+      storageUsed: usedBytes(ctx),
       recentErrors: ctx.recentErrors.slice(0, 20)
     })
   })

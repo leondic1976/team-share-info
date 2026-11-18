@@ -16,7 +16,8 @@ import {
   LOCAL_ENTRIES,
   localDir,
   removeOldServerData,
-  stageLocalChange
+  stageLocalChange,
+  driveLocalDir
 } from '../storage'
 
 const path = z.string().min(3).max(500)
@@ -27,7 +28,14 @@ export function registerStorageIpc(): void {
   handle('storage:info', null, () => {
     const cfg = getMode() === 'server' ? getServerConfig() : null
     return {
-      local: { dir: localDir(), isDefault: localDir() === defaultLocalDir(), defaultDir: defaultLocalDir(), bytes: treeSize(localDir(), LOCAL_ENTRIES).bytes },
+      local: {
+        dir: localDir(),
+        isDefault: localDir() === defaultLocalDir(),
+        defaultDir: defaultLocalDir(),
+        bytes: treeSize(localDir(), LOCAL_ENTRIES).bytes,
+        // data still in the app data folder (C:) while the PC has a D: drive: offer to move it there
+        driveDir: localDir() === defaultLocalDir() ? driveLocalDir() : null
+      },
       server: cfg ? { dir: cfg.dataDir, bytes: treeSize(cfg.dataDir).bytes, running: serverStatus().state === 'running' } : null,
       last: lastStorageResult()
     }

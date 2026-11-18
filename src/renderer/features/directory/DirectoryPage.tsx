@@ -15,7 +15,7 @@ import { api, errorMessage } from '@renderer/lib/api'
 import { useMembers, useMe } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
-import type { MemberDto } from '@shared/schemas/auth'
+import { displayName, type MemberDto } from '@shared/schemas/auth'
 import type { ContactDto } from '@shared/schemas/work'
 import type { ScopeInput } from '@shared/schemas/scope'
 import { CONTACT_COLUMNS, csvToContacts, parseCsv, toCsv } from '@shared/csv'
@@ -42,7 +42,7 @@ function MemberCard({ m, onClose }: { m: MemberDto; onClose: () => void }): Reac
     navigate(`/chat/${c.id}`)
   }
   return (
-    <Dialog open onClose={onClose} title={m.name} width="max-w-md">
+    <Dialog open onClose={onClose} title={displayName(m)} width="max-w-md">
       <div className="space-y-3 text-sm">
         <div className="flex items-center gap-2">
           <PresenceDot presence={m.presence} /> {PRESENCE_LABEL[m.presence]}
@@ -84,7 +84,7 @@ function MembersTab(): React.JSX.Element {
   const { data: depts } = useDepartments()
   const [q, setQ] = useState('')
   const [card, setCard] = useState<MemberDto | null>(null)
-  const list = (members ?? []).filter((m) => !q.trim() || `${m.name} ${m.deptName ?? ''} ${m.title ?? ''} ${m.duty ?? ''} ${m.ext ?? ''}`.includes(q.trim()))
+  const list = (members ?? []).filter((m) => !q.trim() || `${m.name} ${m.nickname ?? ''} ${m.deptName ?? ''} ${m.title ?? ''} ${m.duty ?? ''} ${m.ext ?? ''}`.includes(q.trim()))
   // Org chart: department tree order, members under each department.
   const tree = useMemo(() => {
     const out: { dept: Dept | null; depth: number; members: MemberDto[] }[] = []
@@ -118,7 +118,7 @@ function MembersTab(): React.JSX.Element {
                   <PresenceDot presence={m.presence} />
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold">
-                      {m.name} <span className="font-normal text-muted-foreground">{m.title}</span>
+                      {displayName(m)} <span className="font-normal text-muted-foreground">{m.title}</span>
                     </div>
                     <div className="truncate text-xs text-muted-foreground">{[m.ext && `내선 ${m.ext}`, m.duty].filter(Boolean).join(' · ') || ' '}</div>
                   </div>
@@ -138,10 +138,10 @@ function ProfileTab(): React.JSX.Element {
   const { data: depts } = useDepartments()
   const [f, setF] = useState<Record<string, string> | null>(null)
   const [msg, setMsg] = useState('')
-  const cur = f ?? { name: me?.name ?? '', deptId: me?.deptId ?? '', title: me?.title ?? '', ext: me?.ext ?? '', mobile: me?.mobile ?? '', duty: me?.duty ?? '', statusMessage: me?.statusMessage ?? '' }
+  const cur = f ?? { nickname: me?.nickname ?? '', name: me?.name ?? '', deptId: me?.deptId ?? '', title: me?.title ?? '', ext: me?.ext ?? '', mobile: me?.mobile ?? '', duty: me?.duty ?? '', statusMessage: me?.statusMessage ?? '' }
   const set = (k: string, v: string): void => setF({ ...cur, [k]: v })
   const save = useMutation({
-    mutationFn: () => api.patch('/api/me', { ...cur, deptId: cur.deptId || null, statusMessage: cur.statusMessage || null }),
+    mutationFn: () => api.patch('/api/me', { ...cur, deptId: cur.deptId || null, statusMessage: cur.statusMessage || null, nickname: cur.nickname || null }),
     onSuccess: () => {
       setMsg('저장했습니다.')
       void qc.invalidateQueries({ queryKey: ['me'] })
@@ -150,15 +150,21 @@ function ProfileTab(): React.JSX.Element {
     onError: (e) => setMsg(errorMessage(e))
   })
   if (!me) return <OfflineState />
+  // details the admin (server PC) set are shown but cannot be changed here
+  const fixed = (k: string): boolean => me.adminFields.includes(k)
+  const fixedHint = (k: string): string | undefined => (fixed(k) ? '관리자가 정한 항목' : undefined)
   return (
     <Card className="max-w-xl">
       <CardContent className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="이름">
-            <Input aria-label="내 이름" value={cur.name} onChange={(e) => set('name', e.target.value)} />
+          <Field label="이름" hint={fixedHint('name')}>
+            <Input aria-label="내 이름" value={cur.name} disabled={fixed('name')} onChange={(e) => set('name', e.target.value)} />
           </Field>
-          <Field label="부서">
-            <Select aria-label="내 부서" value={cur.deptId} onChange={(e) => set('deptId', e.target.value)}>
+          <Field label="별명 (선택)" hint="자유롭게 정하는 이름. 나만 바꿀 수 있고 이름 옆에 함께 표시됩니다.">
+            <Input aria-label="내 별명" value={cur.nickname} maxLength={20} onChange={(e) => set('nickname', e.target.value)} />
+          </Field>
+          <Field label="부서" hint={fixedHint('deptId')}>
+            <Select aria-label="내 부서" value={cur.deptId} disabled={fixed('deptId')} onChange={(e) => set('deptId', e.target.value)}>
               <option value="">미지정</option>
               {(depts ?? []).map((d) => (
                 <option key={d.id} value={d.id}>
@@ -167,21 +173,21 @@ function ProfileTab(): React.JSX.Element {
               ))}
             </Select>
           </Field>
-          <Field label="직위">
-            <Input aria-label="내 직위" value={cur.title} onChange={(e) => set('title', e.target.value)} />
+          <Field label="직위" hint={fixedHint('title')}>
+            <Input aria-label="내 직위" value={cur.title} disabled={fixed('title')} onChange={(e) => set('title', e.target.value)} />
           </Field>
-          <Field label="내선번호">
-            <Input aria-label="내 내선번호" value={cur.ext} onChange={(e) => set('ext', e.target.value)} />
+          <Field label="내선번호" hint={fixedHint('ext')}>
+            <Input aria-label="내 내선번호" value={cur.ext} disabled={fixed('ext')} onChange={(e) => set('ext', e.target.value)} />
           </Field>
-          <Field label="휴대폰 (선택)">
-            <Input aria-label="내 휴대폰" value={cur.mobile} onChange={(e) => set('mobile', e.target.value)} />
+          <Field label="휴대폰 (선택)" hint={fixedHint('mobile')}>
+            <Input aria-label="내 휴대폰" value={cur.mobile} disabled={fixed('mobile')} onChange={(e) => set('mobile', e.target.value)} />
           </Field>
           <Field label="상태 메시지">
             <Input aria-label="상태 메시지" value={cur.statusMessage} onChange={(e) => set('statusMessage', e.target.value)} placeholder="예: 회의 중, 외근" />
           </Field>
         </div>
-        <Field label="담당 업무">
-          <Textarea aria-label="담당 업무" value={cur.duty} onChange={(e) => set('duty', e.target.value)} />
+        <Field label="담당 업무" hint={fixedHint('duty')}>
+          <Textarea aria-label="담당 업무" value={cur.duty} disabled={fixed('duty')} onChange={(e) => set('duty', e.target.value)} />
         </Field>
         <p className="text-xs text-muted-foreground">휴대폰 번호는 팀원 모두에게 보입니다. 원하지 않으면 비워 두세요.</p>
         <div className="flex items-center gap-3">

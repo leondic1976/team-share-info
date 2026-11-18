@@ -14,6 +14,8 @@ import { registerPersonalIpc } from './ipc/personal'
 import { startScheduler, stopScheduler } from './scheduler'
 import { registerTransferIpc } from './ipc/transfer'
 import { registerToolsIpc } from './ipc/tools'
+import { registerFeedbackIpc } from './ipc/feedback'
+import { registerLockIpc } from './ipc/lock'
 import { startTools, stopTools } from './tools'
 import { registerLauncherIpc } from './ipc/launcher'
 import { startLauncher } from './launcher'
@@ -73,6 +75,8 @@ if (!app.requestSingleInstanceLock()) {
     registerPersonalIpc()
     registerTransferIpc()
     registerToolsIpc()
+    registerFeedbackIpc()
+    registerLockIpc()
     registerLauncherIpc()
     registerFilesIpc()
     registerMeetingIpc()

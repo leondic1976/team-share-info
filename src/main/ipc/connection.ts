@@ -34,10 +34,15 @@ import { openServerDb } from '../../server/db'
 import { initializeServer } from '../../server/setup'
 import { registerFirewallRules } from '../firewall'
 import { setAutostart } from '../autostart'
+import { ensurePcUid, lockedRole, lockRole, pcUid, roleRefusal } from '../pcid'
 import { discoverServers } from '../discovery'
-import { checkForUpdates, downloadUpdate, getUpdateState, installUpdate, setUpdateSettings, updateSettings } from '../updater'
+import { checkForUpdates, downloadUpdate, getUpdateState, installUpdate, postponeUpdate, setUpdateSettings, updateSettings } from '../updater'
 
 export function registerConnectionIpc(): void {
+  // PCs set up before roles were fixed: what they are now is what they stay
+  const now = getMode()
+  if (now && readCredential()) lockRole(now)
+
   handle('conn:get', null, () => {
     const cred = readCredential()
     return {
@@ -49,14 +54,19 @@ export function registerConnectionIpc(): void {
       pending: getPendingJoin(),
       winUser: winUser(),
       pcName: pcName(),
-      appVersion: app.getVersion()
+      appVersion: app.getVersion(),
+      lockedRole: lockedRole(),
+      pcUid: pcUid()
     }
   })
+  // the unique value is needed to ask a server for access: wait for it there
+  handle('conn:pcUid', null, () => ensurePcUid())
 
   handle(
     'conn:saveDevice',
     z.object({ serverUrl: z.string().url(), deviceId: z.string().min(1), deviceKey: z.string().min(10), memberId: z.string().min(1) }),
     (c) => {
+      if (lockedRole() === 'server') throw new Error(roleRefusal('client'))
       writeCredential(c)
       setPendingJoin(null)
       if (!getMode()) setMode('client')
@@ -67,6 +77,7 @@ export function registerConnectionIpc(): void {
     'conn:setPending',
     z.object({ serverUrl: z.string().url(), requestId: z.string(), pollToken: z.string(), name: z.string() }).nullable(),
     (p) => {
+      if (p && lockedRole() === 'server') throw new Error(roleRefusal('client'))
       setPendingJoin(p)
       if (p) setMode('client')
     }
@@ -93,7 +104,10 @@ export function registerConnectionIpc(): void {
     // cached server data belongs to the old connection
     localDb().db.run('DELETE FROM query_cache')
   }
+  // Switching between server PC and member PC was removed: the role is fixed at the first setup.
+  const SWITCH_REMOVED = '서버용 PC와 일반용 PC는 처음 설정한 대로만 쓸 수 있어 전환할 수 없습니다.'
   handle('conn:switchOut', null, async () => {
+    if (lockedRole()) return { ok: false, error: SWITCH_REMOVED }
     try {
       await putAway()
       return { ok: true }
@@ -105,6 +119,7 @@ export function registerConnectionIpc(): void {
     }
   })
   handle('conn:activateSaved', z.object({ id: z.string().min(1).max(200) }), async ({ id }) => {
+    if (lockedRole()) return { ok: false, error: SWITCH_REMOVED }
     try {
       if (readCredential()) await putAway()
       else {
@@ -144,6 +159,8 @@ export function registerConnectionIpc(): void {
   handle('server:inspectBackup', z.object({ dir: z.string().min(1).max(1000) }), ({ dir }) => inspectBackup(dir))
   handle('server:importBackup', z.object({ dir: z.string().min(1).max(1000), dataDir: z.string().min(1).max(1000), adminId: z.string() }), async ({ dir, dataDir, adminId }) => {
     if (getMode() === 'server' && readCredential()) return { ok: false, error: '이미 서버로 설정되어 있습니다.' }
+    if (lockedRole() === 'client') return { ok: false, error: roleRefusal('server') }
+    const uid = await ensurePcUid()
     let cred: { deviceId: string; deviceKey: string }
     let port: number
     try {
@@ -152,7 +169,7 @@ export function registerConnectionIpc(): void {
       try {
         const m = db.get<{ id: string }>(`SELECT id FROM members WHERE id = ? AND role = 'admin' AND status = 'active'`, [adminId])
         if (!m) throw new Error('관리자를 찾을 수 없습니다.')
-        cred = createDevice(db, { memberId: adminId, pcName: pcName(), winUser: winUser(), ip: '127.0.0.1', appVersion: app.getVersion() })
+        cred = createDevice(db, { memberId: adminId, pcName: pcName(), winUser: winUser(), ip: '127.0.0.1', appVersion: app.getVersion(), pcUid: uid })
         writeSetting(db, 'serverDeviceId', cred.deviceId)
         port = getSection(db, 'network').port
       } finally {
@@ -171,6 +188,8 @@ export function registerConnectionIpc(): void {
 
   handle('server:setup', serverSetupSchema.extend({ replaceExisting: z.boolean().optional() }), async (input) => {
     if (getMode() === 'server' && readCredential()) return { ok: false, error: '이미 서버로 설정되어 있습니다.' }
+    if (lockedRole() === 'client') return { ok: false, error: roleRefusal('server') }
+    const uid = await ensurePcUid()
     let res
     try {
       // The server DB stays in the data folder when a connection is reset or forgotten, so a
@@ -192,7 +211,7 @@ export function registerConnectionIpc(): void {
       }
       const db = openServerDb(input.dataDir, app.getVersion())
       try {
-        res = initializeServer(db, input, { pcName: pcName(), winUser: winUser(), appVersion: app.getVersion() })
+        res = initializeServer(db, input, { pcName: pcName(), winUser: winUser(), appVersion: app.getVersion(), pcUid: uid })
       } finally {
         db.close()
       }
@@ -238,6 +257,7 @@ export function registerConnectionIpc(): void {
   handle('update:setSettings', z.object({ auto: z.boolean(), source: z.enum(['auto', 'web', 'lan']) }), (s) => setUpdateSettings(s))
   handle('update:getState', null, () => getUpdateState())
   handle('update:install', null, () => installUpdate())
+  handle('update:postpone', null, () => postponeUpdate())
 }
 
 function sameDir(a: string, b: string): boolean {

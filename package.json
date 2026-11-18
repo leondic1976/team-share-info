@@ -8,7 +8,7 @@
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
-    "plugins:builtin": "node scripts/build-plugins.mjs resources/plugins",
+    "plugins:builtin": "node scripts/build-plugins.mjs resources/plugins && node scripts/build-feedback.mjs",
     "dev": "pnpm plugins:builtin && electron-vite dev",
     "dev:b": "pnpm plugins:builtin && cross-env TEAMHUB_PROFILE=b electron-vite dev",
     "build": "pnpm plugins:builtin && electron-vite build",

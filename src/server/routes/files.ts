@@ -311,11 +311,41 @@ export function registerFileRoutes(app: FastifyInstance, ctx: ServerContext, gua
     return ok({ id, received: 0, size: input.size, chunkSize: LIMITS.uploadChunkBytes })
   })
 
-  const loadUpload = (req: FastifyRequest, id: string) => {
-    const u = db.get<{ id: string; name: string; size: number; folder_id: string; file_id: string | null; note: string | null; received_bytes: number; temp_path: string; state: string; created_by: string }>(
-      'SELECT * FROM uploads WHERE id = ?',
-      [id]
-    )
+  interface UploadRow {
+    id: string
+    name: string
+    size: number
+    folder_id: string
+    file_id: string | null
+    note: string | null
+    received_bytes: number
+    temp_path: string
+    state: string
+    created_by: string
+  }
+  interface UploadResult {
+    file: FileDto
+    sha256: string
+    newVersion: boolean
+  }
+  /** The chunk being written for an upload right now. */
+  const writing = new Map<string, { done: Promise<void>; abort: () => void }>()
+  /** Uploads being hashed and registered; a repeated "complete" waits for the first one. */
+  const completing = new Map<string, Promise<UploadResult>>()
+  /**
+   * A client that asks for the position or sends another chunk has given up on the chunk it was
+   * sending (timeout, dropped connection). End that request and wait until its bytes are on disk,
+   * so the position we report is final and two requests never append to the same file.
+   */
+  const settle = async (id: string): Promise<void> => {
+    for (let cur = writing.get(id); cur; cur = writing.get(id)) {
+      cur.abort()
+      await cur.done
+    }
+  }
+
+  const loadUpload = (req: FastifyRequest, id: string): UploadRow => {
+    const u = db.get<UploadRow>('SELECT * FROM uploads WHERE id = ?', [id])
     if (!u || u.created_by !== req.member.id || u.state !== 'active') throw notFound('업로드')
     // The file on disk is the source of truth for the received size.
     const onDisk = existsSync(u.temp_path) ? statSync(u.temp_path).size : 0
@@ -326,20 +356,33 @@ export function registerFileRoutes(app: FastifyInstance, ctx: ServerContext, gua
     return u
   }
 
+  /** Where to continue. Also answers for an upload that finished while the client was cut off. */
   app.get('/api/uploads/:id', auth, async (req) => {
-    const u = loadUpload(req, (req.params as { id: string }).id)
-    return ok({ id: u.id, received: u.received_bytes, size: u.size, chunkSize: LIMITS.uploadChunkBytes })
+    const { id } = req.params as { id: string }
+    await settle(id)
+    await completing.get(id)?.catch(() => undefined)
+    const row = db.get<UploadRow>('SELECT * FROM uploads WHERE id = ?', [id])
+    if (row && row.created_by === req.member.id && row.state === 'done' && row.file_id) {
+      return ok({ id, state: 'done', received: row.size, size: row.size, chunkSize: LIMITS.uploadChunkBytes, fileId: row.file_id })
+    }
+    const u = loadUpload(req, id)
+    return ok({ id: u.id, state: 'active', received: u.received_bytes, size: u.size, chunkSize: LIMITS.uploadChunkBytes })
   })
 
   void app.register(async (scoped) => {
     scoped.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload))
     scoped.put('/api/uploads/:id', { ...auth, bodyLimit: LIMITS.uploadChunkBytes + 1024 }, async (req) => {
-      const u = loadUpload(req, (req.params as { id: string }).id)
+      const { id } = req.params as { id: string }
+      await settle(id)
+      const u = loadUpload(req, id)
       const { offset } = parse(z.object({ offset: z.coerce.number().int().min(0) }), req.query)
       if (offset !== u.received_bytes) throw new AppError('CONFLICT', `offset mismatch: server has ${u.received_bytes}`, 409)
       let written = 0
-      await pipeline(
-        req.body as Readable,
+      const body = req.body as Readable
+      const out = createWriteStream(u.temp_path, { flags: 'a' })
+      const closed = new Promise<void>((r) => out.once('close', () => r()))
+      const work = pipeline(
+        body,
         async function* (src: AsyncIterable<Buffer>) {
           for await (const chunk of src) {
             written += chunk.length
@@ -347,27 +390,41 @@ export function registerFileRoutes(app: FastifyInstance, ctx: ServerContext, gua
             yield chunk
           }
         },
-        createWriteStream(u.temp_path, { flags: 'a' })
+        out
       )
+      const entry = { done: work.then(() => closed, () => closed), abort: () => void body.destroy(new Error('superseded')) }
+      writing.set(id, entry)
+      try {
+        await work
+      } catch (e) {
+        if (e instanceof AppError) throw e
+        // The connection dropped in the middle of a chunk: what arrived stays, the client continues from there.
+        throw new AppError('CONFLICT', '전송이 끊겼습니다. 이어서 보내 주세요.', 409)
+      } finally {
+        await entry.done
+        if (writing.get(id) === entry) writing.delete(id)
+      }
       const received = u.received_bytes + written
       db.run('UPDATE uploads SET received_bytes = ?, updated_at = ? WHERE id = ?', [received, Date.now(), u.id])
       return ok({ id: u.id, received, size: u.size })
     })
   })
 
-  app.post('/api/uploads/:id/complete', auth, async (req) => {
-    const u = loadUpload(req, (req.params as { id: string }).id)
-    if (u.received_bytes !== u.size) throw badRequest(`아직 다 받지 못했습니다 (${u.received_bytes}/${u.size}).`)
+  const finishUpload = async (req: FastifyRequest, u: UploadRow): Promise<UploadResult> => {
     const folder = loadFolder(req, u.folder_id)
+    // Same name in the same folder = new version of that file (6.6).
+    const findTarget = (): FileRow | undefined =>
+      (u.file_id ? db.get<FileRow>(`${FILE_SELECT} WHERE x.id = ? AND x.deleted_at IS NULL`, [u.file_id]) : undefined) ||
+      db.get<FileRow>(`${FILE_SELECT} WHERE x.folder_id = ? AND x.name = ? AND x.deleted_at IS NULL`, [folder.id, u.name])
+    // checked before the received file is moved into the store, so a refused upload can be completed later
+    const locked = findTarget()
+    if (locked?.locked_by && locked.locked_by !== req.member.id) throw new AppError('LOCKED', `${locked.locked_by_name}님이 편집 중입니다.`, 423)
     const hash = createHash('sha256')
     for await (const c of createReadStream(u.temp_path)) hash.update(c as Buffer)
     const sha = hash.digest('hex')
     const blob = adoptFile(ctx, u.temp_path, sha, u.size)
     const t = Date.now()
-    // Same name in the same folder = new version of that file (6.6).
-    const target =
-      (u.file_id && db.get<FileRow>(`${FILE_SELECT} WHERE x.id = ? AND x.deleted_at IS NULL`, [u.file_id])) ||
-      db.get<FileRow>(`${FILE_SELECT} WHERE x.folder_id = ? AND x.name = ? AND x.deleted_at IS NULL`, [folder.id, u.name])
+    const target = findTarget()
     let fileId: string
     db.tx(() => {
       if (target) {
@@ -387,14 +444,29 @@ export function registerFileRoutes(app: FastifyInstance, ctx: ServerContext, gua
         db.run('INSERT INTO file_versions (id, file_id, version_no, blob_id, size, note, created_by, created_at) VALUES (?, ?, 1, ?, ?, ?, ?, ?)', [vid, fileId, blob.id, u.size, u.note, req.member.id, t])
       }
       addRef(ctx, blob.id, 1)
-      db.run(`UPDATE uploads SET state = 'done', updated_at = ? WHERE id = ?`, [t, u.id])
+      // file_id now names the resulting file, for a client that lost the answer and asks again
+      db.run(`UPDATE uploads SET state = 'done', file_id = ?, updated_at = ? WHERE id = ?`, [fileId, t, u.id])
     })
     logActivity(ctx, req, target ? 'file.version' : 'file.upload', { type: 'file', id: fileId! }, { name: u.name, size: u.size })
     notifyRoot(folder.root_id)
-    return ok({ file: toFile(db.get<FileRow>(`${FILE_SELECT} WHERE x.id = ?`, [fileId!])!), sha256: sha, newVersion: !!target })
+    return { file: toFile(db.get<FileRow>(`${FILE_SELECT} WHERE x.id = ?`, [fileId!])!), sha256: sha, newVersion: !!target }
+  }
+
+  app.post('/api/uploads/:id/complete', auth, async (req) => {
+    const { id } = req.params as { id: string }
+    await settle(id)
+    // hashing a large file takes a while; a retry joins the run that is already going
+    const running = completing.get(id)
+    if (running) return ok(await running)
+    const u = loadUpload(req, id)
+    if (u.received_bytes !== u.size) throw badRequest(`아직 다 받지 못했습니다 (${u.received_bytes}/${u.size}).`)
+    const p = finishUpload(req, u).finally(() => completing.delete(id))
+    completing.set(id, p)
+    return ok(await p)
   })
 
   app.delete('/api/uploads/:id', auth, async (req) => {
+    await settle((req.params as { id: string }).id)
     const u = loadUpload(req, (req.params as { id: string }).id)
     rmSync(u.temp_path, { force: true })
     db.run(`UPDATE uploads SET state = 'aborted', updated_at = ? WHERE id = ?`, [Date.now(), u.id])
@@ -411,9 +483,18 @@ export function registerFileRoutes(app: FastifyInstance, ctx: ServerContext, gua
     if (!v) throw notFound('버전')
     const blob = db.get<BlobRow>('SELECT * FROM blobs WHERE id = ?', [v.blob_id])
     if (!blob || !existsSync(blobAbsPath(ctx, blob))) throw notFound('파일')
-    return sendRange(req, reply, blobAbsPath(ctx, blob), v.size, f.name, q.inline === '1', () => {
-      db.run('INSERT INTO file_downloads (id, file_id, file_version_id, member_id, at) VALUES (?, ?, ?, ?, ?)', [newId(), id, v.id, req.member.id, Date.now()])
-    })
+    return sendRange(
+      req,
+      reply,
+      blobAbsPath(ctx, blob),
+      v.size,
+      f.name,
+      q.inline === '1',
+      () => {
+        db.run('INSERT INTO file_downloads (id, file_id, file_version_id, member_id, at) VALUES (?, ?, ?, ?, ?)', [newId(), id, v.id, req.member.id, Date.now()])
+      },
+      `"${blob.sha256}"`
+    )
   })
 
   app.get('/api/files/:id/downloads', auth, async (req) => {
@@ -579,10 +660,17 @@ export function runFileJobs(ctx: ServerContext, now = Date.now()): void {
   sweepUnreferenced(ctx, 24 * 3600 * 1000, now)
 }
 
-/** Stream a file with optional Range (206 Partial Content). */
-export function sendRange(req: FastifyRequest, reply: FastifyReply, path: string, size: number, name: string, inline: boolean, onFull?: () => void): FastifyReply {
-  const range = req.headers.range
+/**
+ * Stream a file with optional Range (206 Partial Content).
+ * With an etag, a client resuming a download sends it back as If-Range: when the content is no
+ * longer the same (a new version was uploaded meanwhile) it gets the whole file instead of a
+ * piece that would not fit what it already has.
+ */
+export function sendRange(req: FastifyRequest, reply: FastifyReply, path: string, size: number, name: string, inline: boolean, onFull?: () => void, etag?: string): FastifyReply {
+  const ifRange = req.headers['if-range']
+  const range = !ifRange || (etag && ifRange === etag) ? req.headers.range : undefined
   void reply.header('Accept-Ranges', 'bytes').header('Content-Disposition', contentDisposition(name, inline)).header('Content-Type', 'application/octet-stream')
+  if (etag) void reply.header('ETag', etag)
   const m = range ? /^bytes=(\d*)-(\d*)$/.exec(range) : null
   if (m && (m[1] || m[2])) {
     let start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]))

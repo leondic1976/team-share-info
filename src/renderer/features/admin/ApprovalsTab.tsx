@@ -8,10 +8,12 @@ import { Badge } from '@renderer/components/ui/badge'
 import { Card } from '@renderer/components/ui/card'
 import { EmptyState, ErrorState, Loading } from '@renderer/components/EmptyState'
 import { useState } from 'react'
+import { BanDialog, type BanTarget } from './PcBlock'
 
 export function ApprovalsTab(): React.JSX.Element {
   const qc = useQueryClient()
   const [err, setErr] = useState('')
+  const [ban, setBan] = useState<BanTarget | null>(null)
   const q = useQuery({ queryKey: ['admin', 'join-requests'], queryFn: () => api.get<JoinRequestDto[]>('/api/admin/join-requests') })
   const act = useMutation({
     mutationFn: ({ id, action }: { id: string; action: 'approve' | 'reject' }) => api.patch(`/api/admin/join-requests/${id}`, { action }),
@@ -47,8 +49,14 @@ export function ApprovalsTab(): React.JSX.Element {
                 <span>PC {r.pcName}</span>
                 <span>계정 {r.winUser}</span>
                 <span>{format(r.createdAt, 'M/d HH:mm')}</span>
+                {r.pcUid && <span>고유값 {r.pcUid}</span>}
                 {!r.inAllowedRange && <Badge variant="urgent">허용 대역 밖</Badge>}
               </div>
+              {r.knownMember && (
+                <div className="mt-1 text-xs text-important" data-testid="join-known">
+                  이미 등록된 PC입니다. 승인하면 새 계정을 만들지 않고 <b>{r.knownMember.name}</b> 계정으로 다시 연결하며, 이 PC의 이전 연결은 끊깁니다.
+                </div>
+              )}
             </div>
             <Button size="sm" onClick={() => act.mutate({ id: r.id, action: 'approve' })} disabled={act.isPending}>
               <Check /> 승인
@@ -56,9 +64,13 @@ export function ApprovalsTab(): React.JSX.Element {
             <Button size="sm" variant="outline" onClick={() => act.mutate({ id: r.id, action: 'reject' })} disabled={act.isPending}>
               <X /> 거절
             </Button>
+            <Button size="sm" variant="ghost" className="text-urgent" title="이 PC의 신청을 앞으로 받지 않습니다" onClick={() => setBan({ requestId: r.id, who: r.name, pc: `${r.pcName} / ${r.winUser}` })}>
+              영구 차단
+            </Button>
           </div>
         ))}
       </Card>
+      {ban && <BanDialog target={ban} onClose={() => setBan(null)} />}
     </div>
   )
 }

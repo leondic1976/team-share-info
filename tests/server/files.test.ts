@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { createHash, randomBytes } from 'node:crypto'
 import { createTestServer, type Cred, type TestServer } from './helpers'
 import { runFileJobs } from '../../src/server/routes/files'
+import { SERVER_MIGRATIONS } from '../../src/server/db/migrations'
 
 let s: TestServer | null = null
 afterEach(async () => {
@@ -136,6 +137,72 @@ describe('files (M4)', () => {
     await s.req(s.admin, { method: 'PUT', url: '/api/admin/settings', payload: { storage: { maxFileBytes: 1000 } } })
     expect((await s.req(s.admin, { method: 'POST', url: '/api/uploads', payload: { name: 'big.zip', size: 5000, folderId: root } })).json().error.code).toBe('FILE_TOO_LARGE')
     expect((await s.req(s.admin, { method: 'POST', url: '/api/uploads', payload: { name: 'run.exe', size: 10, folderId: root } })).json().error.code).toBe('EXTENSION_BLOCKED')
+  })
+
+  it('defaults: 5GB per file, 200GB in all; servers on the former defaults are raised, custom limits kept', async () => {
+    s = await createTestServer()
+    const GB = 1024 ** 3
+    const storage = async (): Promise<{ maxFileBytes: number; quotaBytes: number }> => (await s!.req(s!.admin, { method: 'GET', url: '/api/admin/settings' })).json().data.storage
+    expect(await storage()).toMatchObject({ maxFileBytes: 5 * GB, quotaBytes: 200 * GB })
+    const m15 = SERVER_MIGRATIONS.find((m) => m.id === 15)!
+    // a server set up before: 500MB / 50GB
+    await s.req(s.admin, { method: 'PUT', url: '/api/admin/settings', payload: { storage: { maxFileBytes: 500 * 1024 ** 2, quotaBytes: 50 * GB } } })
+    s.ctx.db.exec(m15.sql)
+    expect(await storage()).toMatchObject({ maxFileBytes: 5 * GB, quotaBytes: 200 * GB })
+    // an admin's own choice is not touched
+    await s.req(s.admin, { method: 'PUT', url: '/api/admin/settings', payload: { storage: { maxFileBytes: 2 * GB, quotaBytes: 80 * GB } } })
+    s.ctx.db.exec(m15.sql)
+    expect(await storage()).toMatchObject({ maxFileBytes: 2 * GB, quotaBytes: 80 * GB })
+    const root = await rootFolder(s, s.admin, '공용')
+    const tooBig = (await s.req(s.admin, { method: 'POST', url: '/api/uploads', payload: { name: 'big.zip', size: 3 * GB, folderId: root } })).json().error
+    expect(tooBig).toMatchObject({ code: 'FILE_TOO_LARGE', message: '파일이 너무 큽니다(최대 2GB).' })
+  })
+
+  it('an upload completed while the client was cut off is reported as done; a repeated complete does not add a version', async () => {
+    s = await createTestServer()
+    const root = await rootFolder(s, s.admin, '공용')
+    const data = randomBytes(200_000)
+    const id = (await s.req(s.admin, { method: 'POST', url: '/api/uploads', payload: { name: 'cut.bin', size: data.length, folderId: root } })).json().data.id
+    expect((await s.req(s.admin, { method: 'GET', url: `/api/uploads/${id}` })).json().data).toMatchObject({ state: 'active', received: 0 })
+    await s.req(s.admin, { method: 'PUT', url: `/api/uploads/${id}?offset=0`, headers: { 'content-type': 'application/octet-stream' }, payload: data })
+    // the client retries "complete" while the first one is still running
+    const [a, b] = await Promise.all([
+      s.req(s.admin, { method: 'POST', url: `/api/uploads/${id}/complete` }),
+      s.req(s.admin, { method: 'POST', url: `/api/uploads/${id}/complete` })
+    ])
+    expect(a.statusCode).toBe(200)
+    expect(b.statusCode).toBe(200)
+    const fileId = a.json().data.file.id
+    expect(b.json().data.file.id).toBe(fileId)
+    expect(a.json().data.file.versionCount).toBe(1)
+    // the answer got lost: the client asks where the upload is
+    expect((await s.req(s.admin, { method: 'GET', url: `/api/uploads/${id}` })).json().data).toMatchObject({ state: 'done', received: data.length, fileId })
+    // nobody else may ask
+    const other = await s.join('B')
+    expect((await s.req(other, { method: 'GET', url: `/api/uploads/${id}`, ip: IP })).statusCode).toBe(404)
+  })
+
+  it('resumed download: If-Range continues the same content and restarts when a new version replaced it', async () => {
+    s = await createTestServer()
+    const root = await rootFolder(s, s.admin, '공용')
+    const v1 = randomBytes(50_000)
+    const v2 = randomBytes(60_000)
+    const f = (await upload(s, s.admin, root, 'big.bin', v1)).json().data.file
+    const first = await s.req(s.admin, { method: 'GET', url: `/api/files/${f.id}/download` })
+    const etag = first.headers.etag as string
+    expect(etag).toBe(`"${createHash('sha256').update(v1).digest('hex')}"`)
+    const rest = await s.req(s.admin, { method: 'GET', url: `/api/files/${f.id}/download`, headers: { range: 'bytes=20000-', 'if-range': etag } })
+    expect(rest.statusCode).toBe(206)
+    expect(rest.headers['content-range']).toBe(`bytes 20000-49999/50000`)
+    expect(Buffer.compare(rest.rawPayload, v1.subarray(20000))).toBe(0)
+    // a new version arrives before the client continues: it must get the whole new file, not its tail
+    await upload(s, s.admin, root, 'big.bin', v2)
+    const changed = await s.req(s.admin, { method: 'GET', url: `/api/files/${f.id}/download`, headers: { range: 'bytes=20000-', 'if-range': etag } })
+    expect(changed.statusCode).toBe(200)
+    expect(Buffer.compare(changed.rawPayload, v2)).toBe(0)
+    // a partial file that is already as long as the content
+    const past = await s.req(s.admin, { method: 'GET', url: `/api/files/${f.id}/download`, headers: { range: 'bytes=60000-', 'if-range': changed.headers.etag as string } })
+    expect(past.statusCode).toBe(416)
   })
 
   it('records download history visible to the uploader', async () => {

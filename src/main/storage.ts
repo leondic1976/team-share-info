@@ -1,11 +1,14 @@
 import { app } from 'electron'
 import log from 'electron-log/main'
-import { existsSync, readFileSync, readdirSync, rmdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, writeFileSync } from 'node:fs'
+import { userInfo } from 'node:os'
 import { join, relative } from 'node:path'
 import { checkTarget, copyEntries, isInside, removeEntries, samePath, treeSize, verifyCopy, verifySqlite, type MoveProgress, type TargetCheck } from '../node/datamove'
 import { Db } from '../node/sqlite'
 import { readSetting, writeSetting } from '../server/settings'
 import { isProtected } from './files/fm'
+import { driveUsable } from './netinfo'
+import { PROFILE } from './paths'
 
 /**
  * Where data lives (6.20 저장 위치 변경).
@@ -38,6 +41,43 @@ function write(s: StorageFile): void {
 }
 
 export const defaultLocalDir = (): string => app.getPath('userData')
+
+/**
+ * Where personal data is put on the D: drive: D:\\TeamHub\\<Windows account> (one folder per
+ * account, so two people sharing a PC do not share personal data). null when there is no
+ * usable D: drive, and in test runs with their own data folder.
+ */
+export function driveLocalDir(): string | null {
+  if (process.env.TEAMHUB_USERDATA || !driveUsable('D:\\')) return null
+  let user = 'user'
+  try {
+    user = userInfo().username.replace(/[\\/:*?"<>|.]+/g, '_').trim() || 'user'
+  } catch {
+    // keep the generic name
+  }
+  return join('D:\\', PROFILE ? `TeamHub-${PROFILE}` : 'TeamHub', user)
+}
+
+/** A new installation keeps personal data on the D: drive when there is one, else in the app data folder. */
+function firstLocalDir(): string {
+  const d = app.isPackaged ? driveLocalDir() : null
+  if (!d) return defaultLocalDir()
+  try {
+    mkdirSync(d, { recursive: true })
+    // the folder has to take files (a read-only or full drive falls back to the app data folder)
+    const probe = join(d, '.teamhub-write-test')
+    writeFileSync(probe, '')
+    rmSync(probe, { force: true })
+    const s = read()
+    s.localDir = d
+    write(s)
+    log.info(`storage: new installation, personal data in ${d}`)
+    return d
+  } catch (e) {
+    log.warn(`storage: cannot use ${d}, using the app data folder`, e)
+    return defaultLocalDir()
+  }
+}
 let resolved: string | null = null
 /** Fixed for the life of the process (decided at start, see `resolveLocalDir`). */
 export function localDir(): string {
@@ -50,8 +90,11 @@ export function localDir(): string {
  */
 export function resolveLocalDir(): string {
   const d = read().localDir
-  if (!d) return (resolved = defaultLocalDir())
-  if (existsSync(join(d, 'local.db'))) return (resolved = d)
+  const fresh = !existsSync(join(defaultLocalDir(), 'local.db'))
+  // installations that already have data in the app data folder stay there until the user moves them
+  if (!d) return (resolved = fresh ? firstLocalDir() : defaultLocalDir())
+  // (a folder chosen at the first start may still be empty if that start did not get far)
+  if (existsSync(join(d, 'local.db')) || (fresh && existsSync(d))) return (resolved = d)
   const s = read()
   s.last = { ok: false, message: `설정한 저장 위치(${d})를 찾을 수 없어 기본 위치를 씁니다. 드라이브가 연결되어 있는지 확인하고 프로그램을 다시 시작하세요.`, at: Date.now() }
   write(s)

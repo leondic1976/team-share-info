@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  issues: read
   pages: write
   id-token: write
   actions: write
@@ -51,7 +52,12 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      # the key of the feedback GitHub App is sealed into the installer (scripts/build-feedback.mjs)
       - run: pnpm build
+        env:
+          FEEDBACK_APP_ID: ${{ secrets.FEEDBACK_APP_ID }}
+          FEEDBACK_APP_KEY: ${{ secrets.FEEDBACK_APP_KEY }}
+          FEEDBACK_INSTALLATION_ID: ${{ secrets.FEEDBACK_INSTALLATION_ID }}
       - run: pnpm exec electron-builder --win --publish never
       - name: Release notes from the tag message
         shell: bash
@@ -93,6 +99,8 @@ jobs:
         run: gh workflow run release.yml --ref main
       - if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         run: node scripts/build-site.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
       - if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-pages-artifact@v5
         with:

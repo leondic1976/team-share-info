@@ -4,6 +4,7 @@ import { dpapiProtect, dpapiUnprotect } from './dpapi'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { userDataPath } from './paths'
 import { localDb } from './localdb'
+import { lockRole } from './pcid'
 import type { SavedConnInfo } from '../shared/ipc'
 
 /**
@@ -41,6 +42,8 @@ export function getMode(): AppMode | null {
 }
 
 export function setMode(mode: AppMode | null): void {
+  // the first setup decides whether this is a server PC or a member PC, for good (pcid.ts)
+  if (mode && !lockRole(mode)) throw new Error('role of this PC is fixed')
   if (mode) localDb().kv.set('mode', mode)
   else localDb().kv.delete('mode')
 }

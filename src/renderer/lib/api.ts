@@ -44,6 +44,7 @@ export function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { 'X-Protocol': String(PROTOCOL_VERSION), 'X-App-Version': c.appVersion }
   if (c.deviceId && c.deviceKey) h.Authorization = `Bearer ${c.deviceId}.${c.deviceKey}`
   if (c.winUser) h['X-Win-User'] = encodeURIComponent(c.winUser)
+  if (c.pcUid) h['X-PC-Uid'] = c.pcUid
   if (adminPin) h['X-Admin-Pin'] = adminPin
   return h
 }

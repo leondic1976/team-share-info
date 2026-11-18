@@ -11,4 +11,8 @@ coverage/
 _site/
 # packed from plugins/ by scripts/build-plugins.mjs at build time
 resources/plugins/
+# key of the feedback GitHub App: sealed into resources/feedback.bin at build time, never committed
+resources/feedback.bin
+feedback-key.local.json
+*.pem
 notes.txt

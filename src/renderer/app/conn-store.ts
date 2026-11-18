@@ -13,6 +13,8 @@ interface ConnStore {
   winUser: string
   pcName: string
   appVersion: string
+  pcUid: string | null
+  lockedRole: ConnInfo['lockedRole']
   state: ConnState
   message: string
   me: MeDto | null
@@ -30,6 +32,8 @@ export const useConn = create<ConnStore>((set) => ({
   winUser: '',
   pcName: '',
   appVersion: '',
+  pcUid: null,
+  lockedRole: null,
   state: 'loading',
   message: '',
   me: null,
@@ -43,6 +47,8 @@ export const useConn = create<ConnStore>((set) => ({
       winUser: info.winUser,
       pcName: info.pcName,
       appVersion: info.appVersion,
+      pcUid: info.pcUid,
+      lockedRole: info.lockedRole,
       state: !info.mode ? 'unconfigured' : info.deviceId ? 'connecting' : info.pending ? 'pending' : 'unconfigured'
     }),
   setState: (state, message = '') => set({ state, message }),

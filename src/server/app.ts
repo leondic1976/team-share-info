@@ -61,8 +61,8 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   await app.register(cors, {
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Authorization', 'Content-Type', 'X-Protocol', 'X-Win-User', 'X-App-Version', 'X-Admin-Pin', 'X-File-Name', 'Range'],
-    exposedHeaders: ['Content-Disposition', 'Content-Range', 'Accept-Ranges']
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Protocol', 'X-Win-User', 'X-App-Version', 'X-Admin-Pin', 'X-File-Name', 'Range', 'If-Range', 'X-PC-Uid'],
+    exposedHeaders: ['Content-Disposition', 'Content-Range', 'Accept-Ranges', 'ETag']
   })
 
   app.setErrorHandler((err, req, reply) => {

@@ -6,7 +6,7 @@ import { Input, Textarea } from '@renderer/components/ui/input'
 import { Switch } from '@renderer/components/ui/switch'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { invoke } from '@renderer/lib/bridge'
-import { DEFAULT_NOTICE_TEXT, DEFAULT_PORT } from '@shared/constants'
+import { DEFAULT_NOTICE_TEXT, DEFAULT_PORT, LIMITS } from '@shared/constants'
 import type { NetIfaceInfo, SetupResult } from '@shared/ipc'
 import { serverSetupSchema, type ServerSetupInput } from '@shared/schemas/settings'
 import { cn } from '@renderer/lib/utils'
@@ -27,7 +27,7 @@ interface Form {
   approval: 'manual' | 'auto-in-cidr'
   dataDir: string
   quotaGb: string
-  maxFileMb: string
+  maxFileGb: string
   backupDir: string
   backupTime: string
   backupKeep: string
@@ -51,7 +51,7 @@ function toInput(f: Form): ServerSetupInput {
       reapproveOnIpChange: false
     },
     dataDir: f.dataDir,
-    storage: { quotaBytes: Math.round(Number(f.quotaGb) * 1024 ** 3), maxFileBytes: Math.round(Number(f.maxFileMb) * 1024 ** 2) },
+    storage: { quotaBytes: Math.round(Number(f.quotaGb) * 1024 ** 3), maxFileBytes: Math.round(Number(f.maxFileGb) * 1024 ** 3) },
     backup: { dir: f.backupDir, time: f.backupTime, keep: Number(f.backupKeep) },
     ops: { autostart: f.autostart, preventSleep: f.preventSleep, registerFirewall: f.firewall }
   })
@@ -77,7 +77,8 @@ function stepError(step: number, f: Form): string {
     }
     case 3:
       if (f.dataDir.trim().length < 3) return '데이터 폴더를 지정하세요.'
-      if (!(Number(f.quotaGb) > 0) || !(Number(f.maxFileMb) > 0)) return '용량은 0보다 커야 합니다.'
+      if (!(Number(f.quotaGb) > 0) || !(Number(f.maxFileGb) > 0)) return '용량은 0보다 커야 합니다.'
+      if (Number(f.maxFileGb) > Number(f.quotaGb)) return '파일당 최대 크기는 전체 용량 한도보다 클 수 없습니다.'
       return ''
     case 4:
       if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(f.backupTime)) return '백업 시각 형식: 12:30'
@@ -109,8 +110,8 @@ export function ServerWizard({ onBack, onDone }: { onBack: () => void; onDone: (
     cidr: '',
     approval: 'manual',
     dataDir: '',
-    quotaGb: '50',
-    maxFileMb: '500',
+    quotaGb: String(LIMITS.defaultQuotaBytes / 1024 ** 3),
+    maxFileGb: String(LIMITS.defaultMaxFileBytes / 1024 ** 3),
     backupDir: '',
     backupTime: '12:30',
     backupKeep: '14',
@@ -314,7 +315,7 @@ export function ServerWizard({ onBack, onDone }: { onBack: () => void; onDone: (
           )}
           {step === 3 && (
             <>
-              <Field label="데이터 폴더" hint="DB와 자료실 파일이 저장됩니다. 여유 공간이 충분한 드라이브를 고르세요.">
+              <Field label="데이터 폴더" hint="DB와 자료실 파일이 저장됩니다. 기본은 D 드라이브(없으면 C 드라이브)입니다. 여유 공간이 충분한 드라이브를 고르세요.">
                 <div className="flex gap-2">
                   <Input aria-label="데이터 폴더" value={f.dataDir} onChange={(e) => set('dataDir', e.target.value)} />
                   <Button
@@ -332,10 +333,11 @@ export function ServerWizard({ onBack, onDone }: { onBack: () => void; onDone: (
                 <Field label="전체 용량 한도 (GB)">
                   <Input aria-label="전체 용량 한도" value={f.quotaGb} onChange={(e) => set('quotaGb', e.target.value.replace(/[^\d.]/g, ''))} />
                 </Field>
-                <Field label="파일당 최대 크기 (MB)">
-                  <Input aria-label="파일당 최대 크기" value={f.maxFileMb} onChange={(e) => set('maxFileMb', e.target.value.replace(/\D/g, ''))} />
+                <Field label="파일당 최대 크기 (GB)">
+                  <Input aria-label="파일당 최대 크기" value={f.maxFileGb} onChange={(e) => set('maxFileGb', e.target.value.replace(/[^\d.]/g, ''))} />
                 </Field>
               </div>
+              <p className="text-xs text-muted-foreground">두 한도는 나중에 서버 PC의 관리 → 설정 → 저장 공간에서 바꿀 수 있습니다. 소수도 쓸 수 있습니다(예: 0.5).</p>
             </>
           )}
           {step === 4 && (
