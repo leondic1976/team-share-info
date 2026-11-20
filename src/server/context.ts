@@ -1,5 +1,7 @@
 import type { Db } from '../node/sqlite'
 import type { Hub } from './ws/hub'
+import type { FeedbackRelayConfig } from '../shared/server-host'
+import type { FeedbackCreds } from '../node/feedback'
 
 export interface ServerContext {
   db: Db
@@ -8,6 +10,8 @@ export interface ServerContext {
   startedAt: number
   hub: Hub
   recentErrors: { at: number; message: string }[]
+  /** Passing feedback posts of members on to the public board (routes/feedback.ts). */
+  feedback?: FeedbackRelayConfig & { creds?: FeedbackCreds }
   /** Called when settings that affect the running process change (port, discovery...). */
   onSettingsChanged?: () => void
   /** Ask the host (Electron main) to restart the server process, e.g. after staging a restore. */

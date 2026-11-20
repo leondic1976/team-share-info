@@ -1,13 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { Globe, ListChecks, Plus, Star, Trash2 } from 'lucide-react'
+import { Globe, ListChecks, Star, Trash2 } from 'lucide-react'
 import type { TaskDto } from '@shared/schemas/work'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
-import { Input, Label } from '@renderer/components/ui/input'
-import { Dialog } from '@renderer/components/Dialog'
 import { api } from '@renderer/lib/api'
 import { invoke } from '@renderer/lib/bridge'
 import { startOfDay, DAY } from '@renderer/lib/dates'
@@ -44,7 +42,7 @@ export function TodayWorkWidget(): React.JSX.Element {
   const reminders = useQuery({ queryKey: ['local', 'upcoming-today'], queryFn: todayReminders, networkMode: 'always', refetchInterval: 60_000 })
 
   const rows: Row[] = [
-    ...(server.data ?? []).filter((e) => e.kind !== 'busy' && e.kind !== 'absence').map((e) => ({ key: `e${e.id}${e.key}`, at: e.allDay ? null : e.start, kind: '일정', title: e.title, route: '/calendar' })),
+    ...(server.data ?? []).filter((e) => e.kind !== 'busy').map((e) => ({ key: `e${e.id}${e.key}`, at: e.allDay ? null : e.start, kind: e.kind === 'absence' ? '부재' : '일정', title: e.kind === 'absence' ? `[${e.absenceType}] ${e.authorName}` : e.title, route: '/calendar' })),
     ...(personal.data ?? []).map((e) => ({ key: `p${e.id}${e.key}`, at: e.allDay ? null : e.start, kind: '개인 일정', title: e.title, route: '/calendar' })),
     ...(tasks.data ?? []).filter((t) => t.state !== 'done').map((t) => ({ key: `t${t.id}`, at: t.dueAt, kind: '할 일 마감', title: t.title, route: '/tasks', overdue: (t.dueAt ?? 0) < range.from })),
     ...(ptasks.data ?? []).filter((t) => t.dueAt !== null && t.dueAt < range.to).map((t) => ({ key: `pt${t.id}`, at: t.dueAt, kind: '개인 할 일', title: t.title, route: '/tasks', overdue: (t.dueAt ?? 0) < range.from })),
@@ -58,9 +56,14 @@ export function TodayWorkWidget(): React.JSX.Element {
         <CardTitle className="flex items-center gap-1.5">
           <ListChecks className="size-4" /> 오늘의 업무
         </CardTitle>
-        <Button size="sm" variant="ghost" onClick={() => navigate('/alarms')}>
-          오늘 울릴 알림
-        </Button>
+        <div className="flex">
+          <Button size="sm" variant="ghost" onClick={() => navigate('/calendar')}>
+            달력 보기
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => navigate('/alarms')}>
+            오늘 울릴 알림
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="max-h-80 space-y-0.5 overflow-y-auto p-2">
         {!rows.length ? (
@@ -88,23 +91,19 @@ export function openFavorite(route: string, navigate: (p: string) => void): void
 export function FavoritesWidget(): React.JSX.Element {
   const navigate = useNavigate()
   const favs = useFavorites()
-  const [open, setOpen] = useState(false)
-  const [title, setTitle] = useState('')
-  const [url, setUrl] = useState('https://')
-  const validUrl = /^https?:\/\/[^\s]+\.[^\s]+/i.test(url)
   return (
     <Card data-testid="widget-favorites">
       <CardHeader>
         <CardTitle className="flex items-center gap-1.5">
           <Star className="size-4" /> 즐겨찾기
         </CardTitle>
-        <Button size="sm" variant="ghost" onClick={() => setOpen(true)}>
-          <Plus /> 업무 사이트
+        <Button size="sm" variant="ghost" title="자주 가는 웹 사이트는 런처의 사이트 모음에서 관리합니다" onClick={() => navigate('/launcher', { state: { tab: 'sites' } })}>
+          <Globe /> 사이트 모음
         </Button>
       </CardHeader>
       <CardContent className="max-h-80 space-y-0.5 overflow-y-auto p-2">
         {!favs.data?.length ? (
-          <p className="px-2 py-4 text-center text-sm text-muted-foreground">기록·게시글·자료·공지의 ☆를 누르면 여기에 모입니다.</p>
+          <p className="px-2 py-4 text-center text-sm text-muted-foreground">기록·게시글·자료·공지의 ☆를 누르면 여기에 모입니다. 웹 사이트는 [사이트 모음]에 등록하세요.</p>
         ) : (
           favs.data.map((f) => (
             <div key={f.id} className="group flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted">
@@ -123,32 +122,6 @@ export function FavoritesWidget(): React.JSX.Element {
           ))
         )}
       </CardContent>
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        title="업무 사이트 추가"
-        footer={
-          <Button
-            disabled={!title.trim() || !validUrl}
-            onClick={() => {
-              void invoke('local:favorites.toggle', { itemType: 'url', itemId: url.trim(), title: title.trim(), route: url.trim() }).then(() => {
-                setOpen(false)
-                setTitle('')
-                setUrl('https://')
-              })
-            }}
-          >
-            추가
-          </Button>
-        }
-      >
-        <div className="space-y-2">
-          <Label htmlFor="fav-title">이름</Label>
-          <Input id="fav-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예: 전자결재" />
-          <Label htmlFor="fav-url">주소</Label>
-          <Input id="fav-url" value={url} onChange={(e) => setUrl(e.target.value)} />
-        </div>
-      </Dialog>
     </Card>
   )
 }

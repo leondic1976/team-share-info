@@ -7,6 +7,7 @@ import { api, errorMessage } from '@renderer/lib/api'
 import { useMe } from '@renderer/lib/queries'
 import { Button } from './ui/button'
 import { Textarea } from './ui/input'
+import { confirmPii } from '@renderer/lib/pii'
 
 /** Comment thread for tasks and posts (6.8, 6.9). */
 export function Comments({ type, id }: { type: 'task' | 'post'; id: string }): React.JSX.Element {
@@ -49,7 +50,7 @@ export function Comments({ type, id }: { type: 'task' | 'post'; id: string }): R
       ))}
       <div className="flex gap-2">
         <Textarea aria-label="댓글 입력" className="min-h-10" rows={2} value={body} onChange={(e) => setBody(e.target.value)} placeholder="댓글을 입력하세요" />
-        <Button size="icon" aria-label="댓글 등록" onClick={() => add.mutate()} disabled={!body.trim() || add.isPending}>
+        <Button size="icon" aria-label="댓글 등록" onClick={() => confirmPii([body], '이 글을 보는 모든 사람이 보게 되며,') && add.mutate()} disabled={!body.trim() || add.isPending}>
           <Send />
         </Button>
       </div>

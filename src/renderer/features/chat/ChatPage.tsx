@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { format, isToday } from 'date-fns'
-import { MessageSquarePlus, MessagesSquare, Mail, Search, Send, Trash2, Inbox, BellOff } from 'lucide-react'
+import { AlarmClock, MessageSquarePlus, MessagesSquare, Mail, Search, Send, StickyNote, Trash2, Inbox, BellOff } from 'lucide-react'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Textarea } from '@renderer/components/ui/input'
@@ -15,7 +15,10 @@ import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
 import type { ConversationDto, NoteDto } from '@shared/schemas/chat'
 import { ConversationView } from './ConversationView'
+import { SharedMemosView } from './SharedMemos'
+import { TeamAlarmsView } from './TeamAlarms'
 import { cn } from '@renderer/lib/utils'
+import { confirmPii } from '@renderer/lib/pii'
 
 const when = (t: number | null): string => (!t ? '' : isToday(t) ? format(t, 'HH:mm') : format(t, 'M/d'))
 
@@ -53,13 +56,28 @@ function NewChatDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
   )
 }
 
-function NotesView(): React.JSX.Element {
+type Tab = 'chat' | 'notes' | 'memos' | 'alarms'
+
+/** Everything sent to other people lives here; the hint tells the four ways apart. */
+const TABS: { key: Tab; label: string; icon: typeof Mail; hint: string }[] = [
+  { key: 'chat', label: '대화', icon: MessagesSquare, hint: '실시간으로 주고받는 1:1 대화와 대화방' },
+  { key: 'notes', label: '쪽지', icon: Mail, hint: '한 사람씩 받는 전달 글. 누가 읽었는지 보입니다' },
+  { key: 'memos', label: '공유 메모', icon: StickyNote, hint: '팀·그룹이 함께 보는 전달 메모판' },
+  { key: 'alarms', label: '팀원 알람', icon: AlarmClock, hint: '정한 시각에 팀원 PC에서 울리는 알람' }
+]
+
+/** `composeKey` goes up each time the page's [쪽지 쓰기] button is pressed. */
+function NotesView({ composeKey, to }: { composeKey: number; to: string | null }): React.JSX.Element {
   const qc = useQueryClient()
   const [box, setBox] = useState<'inbox' | 'sent'>('inbox')
   const [open, setOpen] = useState<NoteDto | null>(null)
   const [composing, setComposing] = useState<null | { to: string[] }>(null)
   const [body, setBody] = useState('')
   const [err, setErr] = useState('')
+  useEffect(() => {
+    if (composeKey > 0) setComposing({ to: to ? [to] : [] })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- opens once per button press
+  }, [composeKey])
   const q = useQuery({ queryKey: ['chat', 'notes', box], queryFn: () => api.get<NoteDto[]>('/api/notes', { box }) })
   const send = useMutation({
     mutationFn: () => api.post('/api/notes', { toIds: composing!.to, body }),
@@ -84,15 +102,12 @@ function NotesView(): React.JSX.Element {
         <Button size="sm" variant={box === 'sent' ? 'secondary' : 'ghost'} onClick={() => setBox('sent')}>
           <Send /> 보낸 쪽지
         </Button>
-        <Button size="sm" className="ml-auto" onClick={() => setComposing({ to: [] })}>
-          <Mail /> 쪽지 쓰기
-        </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {q.isLoading ? (
           <Loading />
         ) : !rows.length ? (
-          <EmptyState icon={Mail} title="쪽지가 없습니다" description="쪽지는 받는 사람이 꺼져 있어도 다음에 켤 때 받습니다." />
+          <EmptyState icon={Mail} title="쪽지가 없습니다" description="위의 [쪽지 쓰기]를 눌러 받는 사람을 고르고 보내세요. 받는 사람이 꺼져 있어도 다음에 켤 때 받습니다." />
         ) : (
           rows.map((g) => {
             const n = g[0]
@@ -168,7 +183,7 @@ function NotesView(): React.JSX.Element {
           onClose={() => setComposing(null)}
           title="쪽지 쓰기"
           footer={
-            <Button onClick={() => send.mutate()} disabled={!composing.to.length || !body.trim()}>
+            <Button onClick={() => confirmPii([body]) && send.mutate()} disabled={!composing.to.length || !body.trim()}>
               <Send /> 보내기
             </Button>
           }
@@ -193,9 +208,21 @@ export function ChatPage(): React.JSX.Element {
   const navigate = useNavigate()
   const online = useConn((s) => s.state === 'online')
   const space = useSpace((s) => s.space)
-  const [tab, setTab] = useState<'chat' | 'notes'>(id === 'notes' ? 'notes' : 'chat')
+  const location = useLocation()
+  const [tab, setTab] = useState<Tab>(id === 'notes' ? 'notes' : 'chat')
+  // "쪽지" on a member card (주소록) opens the compose dialog with that member chosen.
+  const [noteTo, setNoteTo] = useState<string | null>(null)
+  useEffect(() => {
+    const st = location.state as { noteTo?: string } | null
+    if (!st?.noteTo) return
+    setTab('notes')
+    setNoteTo(st.noteTo)
+    setComposeKey((k) => k + 1)
+    navigate('/chat/notes', { replace: true, state: null })
+  }, [location.state, navigate])
   const [q, setQ] = useState('')
   const [creating, setCreating] = useState(false)
+  const [composeKey, setComposeKey] = useState(0)
   const list = useQuery({ queryKey: ['chat', 'list'], queryFn: () => api.get<ConversationDto[]>('/api/conversations'), enabled: online, placeholderData: (p) => p })
   const search = useQuery({
     queryKey: ['chat', 'search', q],
@@ -212,32 +239,55 @@ export function ChatPage(): React.JSX.Element {
     <div className="flex h-full flex-col">
       <PageHeader
         title="메신저"
+        description="팀원에게 보내는 것은 모두 여기에 있습니다. [새 대화]나 [쪽지 쓰기]를 누르고 받는 사람을 고르세요."
         actions={
-          <div className="flex gap-1">
-            <Button size="sm" variant={tab === 'chat' ? 'default' : 'outline'} onClick={() => setTab('chat')}>
-              <MessagesSquare /> 대화
+          <>
+            <Button
+              size="sm"
+              disabled={!online}
+              onClick={() => {
+                setTab('chat')
+                setCreating(true)
+              }}
+            >
+              <MessageSquarePlus /> 새 대화
             </Button>
-            <Button size="sm" variant={tab === 'notes' ? 'default' : 'outline'} onClick={() => setTab('notes')}>
-              <Mail /> 쪽지
+            <Button
+              size="sm"
+              disabled={!online}
+              onClick={() => {
+                setTab('notes')
+                setNoteTo(null)
+                setComposeKey((k) => k + 1)
+              }}
+            >
+              <Send /> 쪽지 쓰기
             </Button>
-          </div>
+          </>
         }
       />
-      {!online && !list.data ? (
+      <div className="flex shrink-0 gap-1 border-b border-border px-5 py-2">
+        {TABS.map((t) => (
+          <Button key={t.key} size="sm" variant={tab === t.key ? 'default' : 'ghost'} title={t.hint} onClick={() => setTab(t.key)}>
+            <t.icon /> {t.label}
+          </Button>
+        ))}
+        <span className="ml-auto self-center truncate text-xs text-muted-foreground">{TABS.find((t) => t.key === tab)?.hint}</span>
+      </div>
+      {tab === 'memos' ? (
+        <SharedMemosView />
+      ) : tab === 'alarms' ? (
+        <TeamAlarmsView />
+      ) : !online && !list.data ? (
         <OfflineState />
       ) : tab === 'notes' ? (
-        <NotesView />
+        <NotesView composeKey={composeKey} to={noteTo} />
       ) : (
         <div className="flex min-h-0 flex-1">
           <div className="flex w-80 shrink-0 flex-col border-r border-border">
-            <div className="flex gap-2 border-b border-border p-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-2 top-2.5 size-4 text-muted-foreground" />
-                <Input aria-label="대화 검색" className="pl-8" value={q} onChange={(e) => setQ(e.target.value)} placeholder="대화방·메시지 검색" />
-              </div>
-              <Button size="icon" aria-label="새 대화" title="새 대화" onClick={() => setCreating(true)} disabled={!online}>
-                <MessageSquarePlus />
-              </Button>
+            <div className="relative border-b border-border p-2">
+              <Search className="absolute left-4 top-4.5 size-4 text-muted-foreground" />
+              <Input aria-label="대화 검색" className="pl-8" value={q} onChange={(e) => setQ(e.target.value)} placeholder="대화방·메시지 검색" />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto" data-testid="conv-list">
               {filtered.map((c) => (
@@ -273,11 +323,11 @@ export function ChatPage(): React.JSX.Element {
                   ))}
                 </div>
               )}
-              {!filtered.length && !q && <EmptyState icon={MessagesSquare} title="대화가 없습니다" description="[새 대화]로 시작하세요." />}
+              {!filtered.length && !q && <EmptyState icon={MessagesSquare} title="대화가 없습니다" description="위의 [새 대화]를 눌러 대화할 사람을 고르세요." />}
             </div>
           </div>
           <div className="min-w-0 flex-1">
-            {id && id !== 'notes' ? <ConversationView key={id} id={id} onLeft={() => navigate('/chat')} /> : <EmptyState icon={MessagesSquare} title="대화를 선택하세요" />}
+            {id && id !== 'notes' ? <ConversationView key={id} id={id} onLeft={() => navigate('/chat')} /> : <EmptyState icon={MessagesSquare} title="대화를 선택하세요" description="새로 시작하려면 위의 [새 대화]를 누르세요." />}
           </div>
         </div>
       )}

@@ -11,6 +11,7 @@ import { realtime } from '@renderer/lib/realtime'
 import { useMe } from '@renderer/lib/queries'
 import { usePrefs } from '@renderer/app/prefs-store'
 import { Puzzle } from 'lucide-react'
+import { detectPii, PII_LABEL } from '@shared/pii'
 
 type Msg = { th: 1; id: string; method: string; params: Record<string, unknown> | null }
 
@@ -31,6 +32,9 @@ const NEEDS: Record<string, PluginPermission | null> = {
   'clipboard.write': 'clipboard',
   'file.save': 'files',
   'file.open': 'files',
+  'ocr.recognize': 'ocr',
+  'copilot.open': 'copilot',
+  'pii.scan': null,
   openRoute: null
 }
 
@@ -107,6 +111,14 @@ export function PluginHost(): React.JSX.Element {
           return invoke('plugins:saveFile', { id, name: str('name', 200), text: str('text', 6_000_000) })
         case 'file.open':
           return invoke('plugins:openFile', { id, exts: Array.isArray(p.exts) ? p.exts.filter((x): x is string => typeof x === 'string').slice(0, 6) : [] })
+        case 'ocr.recognize':
+          // image: a PNG/JPEG data URL made by the plugin; '' asks only for the languages of this PC
+          return invoke('plugins:ocr', { id, image: typeof p.image === 'string' ? str('image', 17_000_000) : '', lang: typeof p.lang === 'string' ? str('lang', 20) : undefined })
+        case 'copilot.open':
+          return invoke('plugins:openCopilot', { id })
+        case 'pii.scan':
+          // what looks like personal information in a text (nothing is sent anywhere)
+          return detectPii(str('text', 200_000)).map((f) => ({ kind: f.kind, label: PII_LABEL[f.kind], count: f.count, samples: f.samples }))
         case 'openRoute':
           // only routes of this plugin (e.g. another room)
           navigate(`/plugins/${id}${typeof p.room === 'string' && /^[\w-]{1,40}$/.test(p.room) ? `?room=${p.room}` : ''}`)

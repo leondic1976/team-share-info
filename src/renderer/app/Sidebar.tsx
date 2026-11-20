@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { invoke, onMain } from '@renderer/lib/bridge'
 import { NavLink } from 'react-router-dom'
 import { ChevronsLeft, ChevronsRight, Lock } from 'lucide-react'
-import { BOTTOM_MENU, orderMenu, type MenuItem } from './menu'
+import { BOTTOM_MENU, subMenu, topMenu, type MenuItem } from './menu'
 import { usePrefs } from './prefs-store'
 import { cn } from '@renderer/lib/utils'
 import { SpaceSwitcher } from './SpaceSwitcher'
@@ -16,7 +16,7 @@ interface SidebarProps {
 
 export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps): React.JSX.Element {
   const { sidebarCollapsed: collapsed, update, menuOrder, hiddenMenus } = usePrefs()
-  const items = orderMenu(menuOrder).filter((m) => !hiddenMenus.includes(m.key) && !disabledFeatures.includes(m.key))
+  const items = topMenu(menuOrder).filter((m) => !hiddenMenus.includes(m.key) && !disabledFeatures.includes(m.key))
   const bottom = BOTTOM_MENU.filter((m) => !m.adminOnly || isAdmin)
   // one line between the shared menus and the personal ones, when they are not mixed
   const firstPersonal = items.findIndex((m) => m.personal)
@@ -75,6 +75,24 @@ export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps
             {renderItem(m)}
           </Fragment>
         ))}
+        {subMenu('plugins')
+          .filter((m) => !hiddenMenus.includes('plugins') && !disabledFeatures.includes('plugins') && !disabledFeatures.includes(m.key))
+          .map((m) => {
+            const count = badges[m.key] ?? 0
+            return (
+              <NavLink
+                key={m.key}
+                to={m.path}
+                title={m.label}
+                aria-label={count > 0 ? `${m.label} (${count})` : m.label}
+                className={({ isActive }) => cn('relative flex h-8 items-center gap-2.5 rounded-md text-sm', collapsed ? 'px-2.5' : 'pl-5 pr-2.5', isActive ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground/70 hover:bg-muted')}
+              >
+                <m.icon className="size-[1.15rem] shrink-0" aria-hidden />
+                {!collapsed && <span className="truncate">{m.label}</span>}
+                {count > 0 && <span className={cn('rounded-full bg-urgent px-1.5 text-[0.7rem] font-bold leading-4 text-white', collapsed ? 'absolute right-0.5 top-0.5' : 'ml-auto')}>{count > 99 ? '99+' : count}</span>}
+              </NavLink>
+            )
+          })}
         {(plugins.data ?? [])
           .filter((p) => p.enabled && !hiddenMenus.includes('plugins'))
           .map((p) => (

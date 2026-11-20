@@ -26,6 +26,8 @@ import { registerLauncherRoutes } from './routes/launcher'
 import { leaveAllMeetings, registerMeetingRoutes } from './routes/meetings'
 import { registerBackupRoutes } from './routes/backup'
 import { registerPluginRoutes } from './routes/plugins'
+import { registerFeedbackRoutes } from './routes/feedback'
+import type { FeedbackRelayConfig } from '../shared/server-host'
 import { registerLedgerRoutes } from './routes/ledgers'
 import { registerSearchRoutes } from './routes/search'
 import { runBackupJob } from './backup'
@@ -34,6 +36,7 @@ export interface BuildOptions {
   db: Db
   dataDir: string
   version: string
+  feedback?: FeedbackRelayConfig
   logger?: boolean
   /** Run periodic jobs (scheduled publish, re-notify). Tests call the job functions directly. */
   jobs?: boolean
@@ -55,7 +58,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   // eslint-disable-next-line prefer-const
   let ctx: ServerContext
   const hub = new Hub(() => ctx)
-  ctx = { db: opts.db, dataDir: opts.dataDir, version: opts.version, startedAt: Date.now(), hub, recentErrors: [] }
+  ctx = { db: opts.db, dataDir: opts.dataDir, version: opts.version, startedAt: Date.now(), hub, recentErrors: [], feedback: opts.feedback }
 
   // Header-based auth (no cookies), so allowing any origin is safe (13.3).
   await app.register(cors, {
@@ -105,6 +108,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   registerMeetingRoutes(app, ctx, { requireAuth })
   registerBackupRoutes(app, ctx, { requireAuth, requireAdmin })
   registerPluginRoutes(app, ctx, { requireAuth })
+  registerFeedbackRoutes(app, ctx, { requireAuth })
   registerLedgerRoutes(app, ctx, { requireAuth })
   registerSearchRoutes(app, ctx, { requireAuth })
   hub.onMemberOffline = (memberId) => leaveAllMeetings(ctx, memberId)

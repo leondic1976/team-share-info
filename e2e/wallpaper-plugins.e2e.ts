@@ -138,7 +138,7 @@ describe('wallpaper and built-in plugins', () => {
     await expect.poll(() => a.page.getByTestId('installed-plugin').count(), { timeout: 15000 }).toBe(1)
     expect(await a.page.getByTestId('installed-plugin').textContent()).toContain('기본 제공')
     await expect.poll(() => a.page.getByRole('navigation', { name: '주 메뉴' }).getByRole('link', { name: '사다리타기' }).count()).toBe(1)
-    // 관리대장 (the former 스마트 대장 plugin) is part of the app now: not offered as a plugin, always in the menu
+    // 관리대장 (the former 스마트 대장 plugin) is part of the app now: not offered as a plugin, always in the menu (under 확장 기능)
     expect(await cards.filter({ hasText: '스마트 대장' }).count()).toBe(0)
     expect(await a.page.getByRole('navigation', { name: '주 메뉴' }).getByRole('link', { name: '관리대장' }).count()).toBe(1)
   }, 120000)

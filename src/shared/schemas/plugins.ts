@@ -13,7 +13,9 @@ export const PLUGIN_PERMISSIONS = {
   rooms: '팀원과 함께하는 방 만들기·참여(서버에 저장)',
   notify: 'Windows 알림 보내기',
   clipboard: '클립보드에 글자 복사',
-  files: '내가 고른 파일로 저장·내가 고른 파일 열기'
+  files: '내가 고른 파일로 저장·내가 고른 파일 열기',
+  ocr: '내가 넣은 이미지의 글자 읽기(이 PC의 Windows 글자 인식, 인터넷 사용 안 함)',
+  copilot: 'Windows의 Copilot 열기(Microsoft의 AI 서비스, 인터넷 필요)'
 } as const
 export type PluginPermission = keyof typeof PLUGIN_PERMISSIONS
 

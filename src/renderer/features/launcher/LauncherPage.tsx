@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { AppWindow, ChevronDown, ChevronUp, FileText, Folder, FolderOpen, Globe, History, Pencil, Pin, PinOff, Plus, RefreshCw, Rocket, Search, Trash2, Users, Zap } from 'lucide-react'
@@ -313,7 +314,9 @@ function RecentTab({ notify }: { notify: (s: string) => void }): React.JSX.Eleme
 type Tab = 'personal' | 'sites' | 'team' | 'recent'
 
 export function LauncherPage(): React.JSX.Element {
-  const [tab, setTab] = useState<Tab>('personal')
+  // The home favorites widget links straight to the site collection.
+  const location = useLocation()
+  const [tab, setTab] = useState<Tab>((location.state as { tab?: Tab } | null)?.tab ?? 'personal')
   const [msg, setMsg] = useState('')
   const notify = (s: string): void => {
     setMsg(s)

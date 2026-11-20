@@ -16,6 +16,7 @@ import type { BookmarkDto, BookmarkInput, CollectionDto, SmartFolderDto, SmartQu
 import type { CellValue, DbProps, NoteDto, NoteKind, NoteRow, NoteTreeItem } from './notes'
 import type { MeetingInvitePayload } from './schemas/meetings'
 import type { CatalogPlugin, InstalledPlugin, PluginManifest } from './schemas/plugins'
+import type { OcrResult } from './ocr'
 import type { AlarmDto, AlarmFirePayload, AlarmInput, AlarmPopupPayload, ClipboardItemDto, ClipboardSettings, FavoriteDto, FocusState, MemoDto, MemoInput, SnippetDto, UpcomingReminder } from './schemas/tools'
 
 export interface AppInfo {
@@ -166,6 +167,8 @@ export interface FeedbackSubmitResult {
   ok: boolean
   id?: string
   number?: number
+  /** This PC had no internet: the server PC posted it. */
+  viaServer?: boolean
   error?: string
 }
 
@@ -418,6 +421,8 @@ export interface IpcMap {
   'plugins:setEnabled': { req: { id: string; enabled: boolean }; res: void }
   'plugins:saveFile': { req: { id: string; name: string; text: string }; res: { ok: boolean; path?: string; error?: string } }
   'plugins:openFile': { req: { id: string; exts: string[] }; res: { ok: boolean; name?: string; text?: string; error?: string } }
+  'plugins:ocr': { req: { id: string; image: string; lang?: string }; res: OcrResult }
+  'plugins:openCopilot': { req: { id: string }; res: { ok: boolean; where?: 'app' | 'web'; error?: string } }
   'storage:info': { req: void; res: StorageInfo }
   'storage:clearLast': { req: void; res: void }
   'storage:pick': { req: { kind: 'local' | 'server' }; res: string | null }
@@ -682,6 +687,8 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'plugins:setEnabled',
   'plugins:saveFile',
   'plugins:openFile',
+  'plugins:ocr',
+  'plugins:openCopilot',
   'storage:info',
   'storage:clearLast',
   'storage:pick',

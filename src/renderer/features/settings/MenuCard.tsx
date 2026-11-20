@@ -1,14 +1,14 @@
 import { ChevronDown, ChevronUp, Eye, EyeOff, RotateCcw } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
-import { orderMenu } from '@renderer/app/menu'
+import { topMenu } from '@renderer/app/menu'
 import { usePrefs } from '@renderer/app/prefs-store'
 import { cn } from '@renderer/lib/utils'
 
 /** Settings: hide menus and change their order (this PC only, 5.2 메뉴 편집). */
 export function MenuCard(): React.JSX.Element {
   const { menuOrder, hiddenMenus, update } = usePrefs()
-  const order = orderMenu(menuOrder)
+  const order = topMenu(menuOrder)
   const move = (i: number, d: -1 | 1): void => {
     const keys = order.map((m) => m.key)
     const j = i + d

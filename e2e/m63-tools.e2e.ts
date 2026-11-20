@@ -75,8 +75,8 @@ describe('M6-3 personal tools: memos, alarms, shared memos, team alarms', () => 
   }, 60000)
 
   it('team alarm: admin sends, member gets a popup and confirms; sender sees it', async () => {
-    await go(a.page, '/alarms')
-    await a.page.getByRole('tab', { name: '팀원 알람' }).click()
+    await go(a.page, '/chat')
+    await a.page.getByRole('button', { name: '팀원 알람' }).click()
     await a.page.getByRole('checkbox', { name: '팀원B' }).check()
     await a.page.getByLabel('알람 내용').fill('14시 회의 자료 지참E2E')
     await a.page.getByRole('button', { name: '지금' }).click()
@@ -91,15 +91,15 @@ describe('M6-3 personal tools: memos, alarms, shared memos, team alarms', () => 
   }, 70000)
 
   it('shared memo: left for the team and checked by the member', async () => {
-    await go(a.page, '/memos')
-    await a.page.getByRole('tab', { name: '공유 메모' }).click()
+    await go(a.page, '/chat')
+    await a.page.getByRole('button', { name: '공유 메모', exact: true }).click()
     await a.page.getByRole('button', { name: '공유 메모 남기기' }).click()
     const dlg = a.page.getByRole('dialog', { name: '공유 메모 남기기' })
     await dlg.getByLabel('공유 메모 내용').fill('민원실 전화 왔음E2E')
     await dlg.getByRole('button', { name: '남기기' }).click()
     await dlg.waitFor({ state: 'detached' })
-    await go(b.page, '/memos')
-    await b.page.getByRole('tab', { name: '공유 메모' }).click()
+    await go(b.page, '/chat')
+    await b.page.getByRole('button', { name: '공유 메모', exact: true }).click()
     const card = b.page.getByTestId('shared-memo').filter({ hasText: '민원실 전화 왔음E2E' })
     await card.getByRole('button', { name: '확인' }).click()
     await expect.poll(() => a.page.getByTestId('shared-memo').filter({ hasText: '민원실 전화 왔음E2E' }).textContent(), { timeout: 15000 }).toContain('팀원B 확인')

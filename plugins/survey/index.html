@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>설문조사</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="__sdk.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>📊 설문조사</h1>
+      <nav role="tablist">
+        <button role="tab" data-tab="open" aria-selected="true">진행 중</button>
+        <button role="tab" data-tab="closed">끝난 설문</button>
+        <button role="tab" data-tab="mine">내가 만든 설문</button>
+      </nav>
+      <span class="grow"></span>
+      <button id="newBtn" class="primary">＋ 새 설문 만들기</button>
+    </header>
+
+    <main id="main" aria-live="polite"></main>
+
+    <dialog id="builder">
+      <form id="builderForm" method="dialog">
+        <h2>새 설문 만들기</h2>
+        <label for="bTitle">설문 제목</label>
+        <input id="bTitle" maxlength="100" required placeholder="예: 워크숍 날짜와 장소" />
+        <label for="bDesc">안내 글 <small>(선택)</small></label>
+        <textarea id="bDesc" rows="2" maxlength="500" placeholder="설문 목적이나 참고할 내용을 적어 주세요."></textarea>
+
+        <div id="bQuestions"></div>
+        <button type="button" id="bAdd">＋ 문항 추가</button>
+
+        <div class="row">
+          <div>
+            <label for="bDeadline">마감 일시 <small>(선택)</small></label>
+            <input id="bDeadline" type="datetime-local" />
+          </div>
+          <div>
+            <label for="bResults">결과를 볼 수 있는 사람</label>
+            <select id="bResults"></select>
+          </div>
+        </div>
+        <label class="inline"><input type="checkbox" id="bAnon" /> 이름 숨김 <small>(결과 화면과 저장 파일에 누가 답했는지 표시하지 않음)</small></label>
+
+        <label>받는 사람</label>
+        <label class="inline"><input type="radio" name="bScope" value="team" checked /> 팀 전체</label>
+        <label class="inline"><input type="radio" name="bScope" value="members" /> 지정한 사람 <small>(초대 알림이 갑니다)</small></label>
+        <div id="bMembers" class="members hidden"></div>
+
+        <p id="bError" class="error" role="alert"></p>
+        <div class="btns">
+          <span class="grow"></span>
+          <button type="button" id="bCancel">취소</button>
+          <button type="submit" class="primary">설문 시작</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" role="status"></div>
+    <script src="survey.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

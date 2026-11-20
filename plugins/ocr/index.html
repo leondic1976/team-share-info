@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>이미지 글자 읽기</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="__sdk.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>🔎 이미지 글자 읽기</h1>
+      <span class="muted small">인터넷을 쓰지 않고 이 PC의 Windows 글자 인식으로 처리합니다. 이미지는 저장하지 않습니다.</span>
+      <span class="grow"></span>
+      <button id="historyBtn">최근 결과</button>
+    </header>
+
+    <main>
+      <section class="panel" id="left">
+        <div id="drop" tabindex="0" role="button" aria-label="이미지 넣기">
+          <div class="big">🖼️</div>
+          <p><b>여기에 이미지를 붙여넣거나(Ctrl+V) 끌어다 놓으세요</b></p>
+          <p class="muted small">화면 일부는 <b>Windows 키 + Shift + S</b>로 캡처한 뒤 붙여넣으면 됩니다. PNG·JPG·BMP·GIF·WebP, 여러 장 가능</p>
+          <button type="button" id="pick" class="primary">이미지 파일 고르기</button>
+          <input type="file" id="file" accept="image/*" multiple hidden />
+        </div>
+        <div id="stage" class="hidden">
+          <div id="canvasWrap"><canvas id="canvas"></canvas><div id="sel" class="hidden"></div></div>
+          <p class="muted small" id="hint">이미지 위를 끌면 그 부분만 읽습니다. 한 번 누르면 선택이 풀립니다.</p>
+          <div id="thumbs"></div>
+        </div>
+        <div class="opts">
+          <label>언어 <select id="lang"></select></label>
+          <label class="inline"><input type="checkbox" id="enlarge" checked /> 작은 글자 키우기</label>
+          <label class="inline"><input type="checkbox" id="contrast" /> 흑백 대비 높이기</label>
+          <span class="grow"></span>
+          <button type="button" id="another">다른 이미지</button>
+          <button type="button" id="run" class="primary" disabled>글자 읽기</button>
+        </div>
+      </section>
+
+      <section class="panel" id="right">
+        <div class="bar">
+          <h2>읽은 글자</h2>
+          <span id="status" class="muted small" role="status"></span>
+          <span class="grow"></span>
+          <button type="button" id="joinLines" title="줄 끝에서 끊긴 문장을 한 문단으로 잇습니다">줄바꿈 정리</button>
+          <button type="button" id="save">파일로 저장</button>
+          <button type="button" id="copy" class="primary">복사</button>
+        </div>
+        <textarea id="text" spellcheck="false" placeholder="이미지를 넣고 [글자 읽기]를 누르면 여기에 나옵니다. 틀린 글자는 바로 고칠 수 있습니다."></textarea>
+        <p class="muted small">인식 결과는 틀릴 수 있습니다. 숫자·이름·금액은 원본과 꼭 맞춰 보세요.</p>
+      </section>
+    </main>
+
+    <dialog id="history">
+      <div class="bar"><h2>최근 결과</h2><span class="muted small">이 PC에만 보관(20개)</span><span class="grow"></span><button type="button" id="historyClear">모두 지우기</button><button type="button" id="historyClose">닫기</button></div>
+      <div id="historyList"></div>
+    </dialog>
+
+    <div id="toast" role="status"></div>
+    <script src="ocrtext.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>맛집 추천</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="__sdk.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>🍜 우리 사무실 맛집</h1>
+      <nav role="tablist">
+        <button role="tab" data-tab="feed" aria-selected="true">추천 글</button>
+        <button role="tab" data-tab="rank">맛집 랭킹</button>
+        <button role="tab" data-tab="mine">내 글</button>
+      </nav>
+      <span class="grow"></span>
+      <button id="pickBtn">🎲 오늘 뭐 먹지?</button>
+      <button id="writeBtn" class="primary">✏️ 맛집 추천하기</button>
+    </header>
+
+    <div id="filters">
+      <div id="cats" role="radiogroup" aria-label="종류"></div>
+      <span class="grow"></span>
+      <input id="q" type="search" placeholder="가게·메뉴·글쓴이 검색" aria-label="검색" />
+      <select id="sort" aria-label="정렬">
+        <option value="new">최신순</option>
+        <option value="likes">인기순</option>
+        <option value="rating">별점순</option>
+      </select>
+    </div>
+
+    <main id="list" aria-live="polite"></main>
+
+    <dialog id="editor">
+      <form id="editorForm" method="dialog">
+        <h2 id="editorTitle">맛집 추천하기</h2>
+        <label for="fName">가게 이름</label>
+        <input id="fName" maxlength="40" required placeholder="예: 할매순대국" />
+        <div class="row">
+          <div>
+            <label for="fCat">종류</label>
+            <select id="fCat"></select>
+          </div>
+          <div>
+            <label>별점</label>
+            <div id="fRating" class="rating" role="radiogroup" aria-label="별점"></div>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="fMenu">대표 메뉴 <small>(선택)</small></label>
+            <input id="fMenu" maxlength="60" placeholder="예: 순대국 특" />
+          </div>
+          <div>
+            <label for="fPrice">1인 가격대 <small>(선택)</small></label>
+            <select id="fPrice"></select>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="fWalk">걸어서 몇 분 <small>(선택)</small></label>
+            <input id="fWalk" type="number" min="0" max="120" placeholder="예: 5" />
+          </div>
+          <div>
+            <label>이런 곳이에요 <small>(선택)</small></label>
+            <div id="fTags" class="tags"></div>
+          </div>
+        </div>
+        <label for="fText">한 줄 평 <small>(선택, 500자)</small></label>
+        <textarea id="fText" rows="4" maxlength="500" placeholder="무엇이 맛있는지, 언제 가면 좋은지 적어 주세요."></textarea>
+        <p class="muted small">팀 전체가 보는 글입니다. 개인정보나 업무상 비공개 내용은 적지 마세요.</p>
+        <div class="btns">
+          <span class="grow"></span>
+          <button type="button" id="editorCancel">취소</button>
+          <button type="submit" class="primary" id="editorSave">올리기</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="picker">
+      <h2>🎲 오늘은 여기 어때요?</h2>
+      <div id="pickResult"></div>
+      <div class="btns">
+        <span class="grow"></span>
+        <button type="button" id="pickAgain">다시 뽑기</button>
+        <button type="button" id="pickClose" class="primary">좋아요</button>
+      </div>
+    </dialog>
+
+    <div id="toast" role="status"></div>
+    <script src="matjip.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

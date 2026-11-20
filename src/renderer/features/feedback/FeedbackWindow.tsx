@@ -6,6 +6,7 @@ import { Button } from '@renderer/components/ui/button'
 import { Input, Textarea } from '@renderer/components/ui/input'
 import { Switch } from '@renderer/components/ui/switch'
 import { cn } from '@renderer/lib/utils'
+import { confirmPii } from '@renderer/lib/pii'
 
 const KINDS = [
   { value: 'feature', label: '기능요청', icon: Lightbulb, hint: '있으면 좋겠다고 생각한 기능, 불편한 점' },
@@ -42,12 +43,13 @@ export function FeedbackWindow(): React.JSX.Element {
 
   const send = async (): Promise<void> => {
     if (problem) return setMsg({ ok: false, text: problem })
+    if (!confirmPii([title, body, author], '누구나 볼 수 있는 공개 게시판에 실리며,')) return
     setBusy(true)
     setMsg(null)
     try {
       const r = await invoke('feedback:submit', { kind, title: title.trim(), body: body.trim(), author: author.trim(), includeEnv })
       if (r.ok) {
-        setMsg({ ok: true, text: `등록했습니다. 접수번호 ${r.id} (게시판 ${r.number}번). 게시판에는 몇 분 뒤에 보입니다.` })
+        setMsg({ ok: true, text: `등록했습니다${r.viaServer ? '(서버 PC를 거쳐 보냄)' : ''}. 접수번호 ${r.id} (게시판 ${r.number}번). 게시판에는 몇 분 뒤에 보입니다.` })
         setTitle('')
         setBody('')
         load()
@@ -134,12 +136,13 @@ export function FeedbackWindow(): React.JSX.Element {
             {includeEnv && <li>{info?.environment}</li>}
             <li>PC 이름, Windows 계정, 기관·팀 이름, IP 주소는 보내지 않습니다.</li>
             <li>보안 연결(HTTPS)로만 보내고, 보낼 때마다 새로 발급받은 임시 키를 쓴 뒤 바로 폐기합니다.</li>
+            <li>이 PC가 인터넷에 연결되어 있지 않으면 팀의 서버 PC가 대신 보냅니다(서버 PC에 글을 남기지 않습니다).</li>
           </ul>
         </div>
 
         {info && !info.configured && (
           <p className="rounded-md bg-urgent/10 px-3 py-2 text-xs text-urgent" role="alert">
-            이 설치본에는 보내기 기능이 들어 있지 않습니다. 프로그램을 최신 버전으로 업데이트한 뒤 다시 열어 주세요.
+            이 PC에서는 보낼 수 없습니다. 프로그램에 보내기 기능이 들어 있지 않고, 서버 PC를 거쳐 보낼 수도 없습니다. 프로그램(과 서버 PC)을 최신 버전으로 업데이트한 뒤 다시 열어 주세요.
           </p>
         )}
 

@@ -2,6 +2,8 @@ import { app, powerSaveBlocker, utilityProcess, type UtilityProcess } from 'elec
 import { join } from 'node:path'
 import log from 'electron-log/main'
 import type { HostToServer, ServerStatus, ServerToHost } from '../shared/server-host'
+import { feedbackRelayConfig } from './feedback'
+import { resourcePath } from './paths'
 
 /**
  * Runs the embedded server in an Electron utilityProcess, watches it and
@@ -84,7 +86,7 @@ function spawn(): void {
     if (restarts <= 10) setTimeout(spawn, Math.min(30000, 1000 * 2 ** Math.min(restarts, 5)))
     else setStatus({ state: 'error', restarts })
   })
-  const start: HostToServer = { type: 'start', dataDir: config.dataDir, version: app.getVersion() }
+  const start: HostToServer = { type: 'start', dataDir: config.dataDir, version: app.getVersion(), feedback: feedbackRelayConfig(), formsDir: resourcePath('forms') }
   proc.postMessage(start)
 }
 

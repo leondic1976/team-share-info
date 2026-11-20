@@ -4,7 +4,9 @@ import { release } from 'node:os'
 import log from 'electron-log/main'
 import { DOWNLOAD_SITE } from '../shared/constants'
 import type { FeedbackInfo, FeedbackSent, FeedbackSubmit, FeedbackSubmitResult } from '../shared/ipc'
-import { FeedbackError, FEEDBACK_LIMITS, newFeedbackId, openSealed, submitFeedback, type FeedbackCreds } from '../node/feedback'
+import { FeedbackError, FEEDBACK_LIMITS, newFeedbackId, openSealed, submitFeedback, type FeedbackCreds, type FeedbackInput } from '../node/feedback'
+import type { FeedbackRelayConfig } from '../shared/server-host'
+import { baseUrl, headers } from './transfer'
 import { localDb } from './localdb'
 import { resourcePath } from './paths'
 import { ensurePcUid } from './pcid'
@@ -25,10 +27,17 @@ const apiBase = (): string | undefined => (E2E ? process.env.TEAMHUB_E2E_FEEDBAC
 const site = (): string | null => (E2E ? (process.env.TEAMHUB_E2E_FEEDBACK_SITE ?? null) : DOWNLOAD_SITE)
 export const boardUrl = (): string => `${DOWNLOAD_SITE}feedback.html`
 
+const sealedFile = (): string => (E2E && process.env.TEAMHUB_E2E_FEEDBACK_FILE) || resourcePath('feedback.bin')
+
+/** Given to the server process of this PC, which posts for member PCs that have no internet. */
+export function feedbackRelayConfig(): FeedbackRelayConfig {
+  return { file: sealedFile(), api: apiBase(), site: site() }
+}
+
 let credsCache: FeedbackCreds | null | undefined
 function creds(): FeedbackCreds | null {
   if (credsCache !== undefined) return credsCache
-  const file = (E2E && process.env.TEAMHUB_E2E_FEEDBACK_FILE) || resourcePath('feedback.bin')
+  const file = sealedFile()
   credsCache = existsSync(file) ? openSealed(readFileSync(file)) : null
   return credsCache
 }
@@ -51,8 +60,38 @@ async function blocked(id: string): Promise<boolean> {
 const sent = (): FeedbackSent[] => localDb().kv.get<FeedbackSent[]>(KV_SENT) ?? []
 const environment = (): string => `TeamHub ${app.getVersion()} · Windows ${release()}`
 
+/** This PC is joined to a team server (its address and device key are kept). */
+function serverCall(path: string, init: { method: string; body?: string }): Promise<Response> {
+  return net.fetch(`${baseUrl()}${path}`, { ...init, headers: headers(init.body ? { 'Content-Type': 'application/json' } : {}), signal: AbortSignal.timeout(45000) })
+}
+
+/** The team's server PC can pass a post on (it has the key and is reachable right now). */
+async function relayAvailable(): Promise<boolean> {
+  try {
+    const r = await serverCall('/api/feedback/relay', { method: 'GET' })
+    return r.ok && !!((await r.json()) as { data?: { available?: boolean } }).data?.available
+  } catch {
+    return false
+  }
+}
+
+/** No internet on this PC: the post goes to the board through the server PC. */
+async function relay(input: FeedbackInput): Promise<{ number: number }> {
+  let r: Response
+  try {
+    r = await serverCall('/api/feedback/relay', { method: 'POST', body: JSON.stringify(input) })
+  } catch {
+    // no answer: the server may have posted it already
+    throw new FeedbackError('이 PC에서 인터넷에 연결할 수 없어 서버 PC를 거쳐 보내려 했지만 서버 PC의 답을 받지 못했습니다. 잠시 뒤 다시 보내 주세요.', true)
+  }
+  const j = (await r.json().catch(() => null)) as { data?: { ok: boolean; number?: number; error?: string; unsure?: boolean }; error?: { message?: string } } | null
+  if (!r.ok || !j?.data) throw new FeedbackError(j?.error?.message ?? '서버 PC를 거쳐 보내지 못했습니다. 잠시 뒤 다시 보내 주세요.')
+  if (!j.data.ok || !j.data.number) throw new FeedbackError(j.data.error ?? '서버 PC를 거쳐 보내지 못했습니다.', !!j.data.unsure)
+  return { number: j.data.number }
+}
+
 export async function feedbackInfo(): Promise<FeedbackInfo> {
-  return { configured: !!creds(), installId: await ensurePcUid(), environment: environment(), boardUrl: boardUrl(), limits: FEEDBACK_LIMITS, sent: sent().slice(0, 20) }
+  return { configured: !!creds() || (await relayAvailable()), installId: await ensurePcUid(), environment: environment(), boardUrl: boardUrl(), limits: FEEDBACK_LIMITS, sent: sent().slice(0, 20) }
 }
 
 /** A send whose outcome is unknown (no answer): the same text sent again must not make a second post. */
@@ -60,7 +99,6 @@ let unsure: { key: string; id: string } | null = null
 
 export async function sendFeedback(req: FeedbackSubmit): Promise<FeedbackSubmitResult> {
   const c = creds()
-  if (!c) return { ok: false, error: '이 설치본에는 보내기 기능이 들어 있지 않습니다. 프로그램을 최신 버전으로 업데이트해 주세요.' }
   const mine = sent()
   const now = Date.now()
   if (mine[0] && now - mine[0].at < MIN_GAP_MS) return { ok: false, error: '방금 글을 보냈습니다. 1분 뒤에 다시 보내 주세요.' }
@@ -72,16 +110,24 @@ export async function sendFeedback(req: FeedbackSubmit): Promise<FeedbackSubmitR
     const key = `${req.kind}\n${req.title}\n${req.body}`
     const id = unsure?.key === key ? unsure.id : newFeedbackId()
     try {
-      const r = await submitFeedback(
-        c,
-        { id, kind: req.kind, title: req.title, body: req.body, author: req.author, environment: req.includeEnv ? environment() : '', installId, retry: unsure?.key === key },
-        { api: apiBase(), fetch: (u, i) => net.fetch(u, i) }
-      )
+      const input: FeedbackInput = { id, kind: req.kind, title: req.title, body: req.body, author: req.author, environment: req.includeEnv ? environment() : '', installId, retry: unsure?.key === key }
+      let r: { number: number }
+      let via = 'direct'
+      try {
+        if (!c) throw new FeedbackError('이 설치본에는 보내기 기능이 들어 있지 않습니다. 프로그램을 최신 버전으로 업데이트해 주세요.', false, true)
+        r = await submitFeedback(c, input, { api: apiBase(), fetch: (u, i) => net.fetch(u, i) })
+      } catch (e) {
+        // This PC cannot reach the board (no internet): let the server PC post it. Not when the
+        // post may already be there, and the message of this PC is kept when no server can help.
+        if (!(e instanceof FeedbackError) || !e.offline || e.unsure || !(await relayAvailable())) throw e
+        r = await relay(input)
+        via = 'server'
+      }
       unsure = null
       const item: FeedbackSent = { id, number: r.number, kind: req.kind, title: req.title, at: Date.now() }
       localDb().kv.set(KV_SENT, [item, ...mine].slice(0, 50))
-      log.info(`[feedback] posted #${r.number} (${id})`)
-      return { ok: true, id, number: r.number }
+      log.info(`[feedback] posted #${r.number} (${id}, ${via})`)
+      return { ok: true, id, number: r.number, viaServer: via === 'server' }
     } catch (e) {
       if (e instanceof FeedbackError && e.unsure) unsure = { key, id }
       throw e

@@ -33,6 +33,8 @@ export interface MenuItem {
   /** personal (local-only) feature: works without the server */
   personal?: boolean
   adminOnly?: boolean
+  /** shown as a sub-item of this menu instead of on its own line */
+  under?: FeatureKey
 }
 
 /** Shared (team) features first, then the personal ones of this PC; the sidebar draws a line between the two. */
@@ -44,7 +46,6 @@ export const MENU: MenuItem[] = [
   { key: 'meetings', label: '회의', path: '/meetings', icon: Video },
   { key: 'chat', label: '메신저', path: '/chat', icon: MessagesSquare },
   { key: 'tasks', label: '할 일', path: '/tasks', icon: ListTodo },
-  { key: 'ledger', label: '관리대장', path: '/ledger', icon: Table2 },
   { key: 'boards', label: '게시판', path: '/boards', icon: ClipboardList },
   { key: 'directory', label: '주소록', path: '/directory', icon: Contact },
   { key: 'docs', label: '기록', path: '/docs', icon: BookOpen },
@@ -55,8 +56,15 @@ export const MENU: MenuItem[] = [
   { key: 'myfiles', label: '내 파일', path: '/myfiles', icon: FolderSearch, personal: true },
   { key: 'launcher', label: '런처', path: '/launcher', icon: Rocket, personal: true },
   { key: 'utilities', label: '유틸리티', path: '/utilities', icon: Gauge, personal: true },
-  { key: 'plugins', label: '확장 기능', path: '/plugins', icon: Puzzle, personal: true }
+  { key: 'plugins', label: '확장 기능', path: '/plugins', icon: Puzzle, personal: true },
+  // built in, but listed with the extensions (no install needed)
+  { key: 'ledger', label: '관리대장', path: '/ledger', icon: Table2, under: 'plugins' }
 ]
+
+/** Menus with a line of their own in the sidebar, in the saved order. */
+export const topMenu = (order: string[]): MenuItem[] => orderMenu(order).filter((m) => !m.under)
+/** Built-in screens listed under another menu (e.g. 관리대장 under 확장 기능). */
+export const subMenu = (parent: FeatureKey): MenuItem[] => MENU.filter((m) => m.under === parent)
 
 export const BOTTOM_MENU: MenuItem[] = [
   { key: 'admin', label: '관리', path: '/admin', icon: Shield, adminOnly: true },

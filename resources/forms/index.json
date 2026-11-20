@@ -1,0 +1,209 @@
+{
+  "version": 1,
+  "folder": "서식자료실",
+  "sets": [
+    {
+      "id": "adm-ops-rule",
+      "name": "행정업무 운영 서식",
+      "law": "행정업무의 운영 및 혁신에 관한 규정 시행규칙",
+      "revision": "[시행 2023. 6. 28.] [행정안전부령 제408호, 2023. 6. 28., 일부개정]",
+      "source": "국가법령정보센터 (https://www.law.go.kr)",
+      "sourceUrl": "https://www.law.go.kr/법령/행정업무의운영및혁신에관한규정시행규칙",
+      "fetchedAt": "2026-11-20",
+      "files": [
+        {
+          "name": "별표 01 - 관인생략이나 서명생략 표시(제11조제4항 관련).hwp",
+          "file": "adm-ops-rule/16123065.hwp",
+          "size": 22528,
+          "sha256": "2611771a9dae91a385f80a4ce606bc9e6bcd11d31e2936d90fa51aede83008bb",
+          "title": "[별표 1] 관인생략이나 서명생략 표시(제11조제4항 관련)",
+          "sourceId": "137303569"
+        },
+        {
+          "name": "별표 02 - 접수인(제15조제1항 관련).hwp",
+          "file": "adm-ops-rule/16123067.hwp",
+          "size": 27648,
+          "sha256": "fe77de70679013b39ca12ac09979f2726daa1a6c11b5d3e1d954972bc27da8ef",
+          "title": "[별표 2] 접수인(제15조제1항 관련)",
+          "sourceId": "137303573"
+        },
+        {
+          "name": "별표 04 - 서식의 설계 기준(제24조제1항 관련).hwp",
+          "file": "adm-ops-rule/16123071.hwp",
+          "size": 148992,
+          "sha256": "ecc66ddbc5b454e7e9931433802380dfa1b5bfa4fd78b905ae20601e943b14a3",
+          "title": "[별표 4] 서식의 설계 기준(제24조제1항 관련)",
+          "sourceId": "137303583"
+        },
+        {
+          "name": "별표 04 - 서식의 설계 기준(제24조제1항 관련).pdf",
+          "file": "adm-ops-rule/16123071.pdf",
+          "size": 96880,
+          "sha256": "70200bef1d39ede14681ba816e391353679bb920e7208cfa0a9804904df42111",
+          "title": "[별표 4] 서식의 설계 기준(제24조제1항 관련)",
+          "sourceId": "137303585"
+        },
+        {
+          "name": "별표 05 - 큰글자 서식의 설계 기준(제24조제2항 관련).hwp",
+          "file": "adm-ops-rule/16123073.hwp",
+          "size": 90112,
+          "sha256": "f5830fb98a511927b03f7760ef1831bbaebd4ff005d044be82b11f4a32c4b5de",
+          "title": "[별표 5] 큰글자 서식의 설계 기준(제24조제2항 관련)",
+          "sourceId": "137303593"
+        },
+        {
+          "name": "별표 05 - 큰글자 서식의 설계 기준(제24조제2항 관련).pdf",
+          "file": "adm-ops-rule/16123073.pdf",
+          "size": 103009,
+          "sha256": "3e4bd055ead233e34b4c5e4ed36017a22ac46ce54e1f4cda1566e495da79d79b",
+          "title": "[별표 5] 큰글자 서식의 설계 기준(제24조제2항 관련)",
+          "sourceId": "137303595"
+        },
+        {
+          "name": "서식 01 - 기안문(시행문 겸용).hwp",
+          "file": "adm-ops-rule/16123075.hwp",
+          "size": 32768,
+          "sha256": "d0498884d4422c02663945a5008ce0aa62e83372f467399bd75de8497c779e1d",
+          "title": "[서식 1] 기안문",
+          "sourceId": "137303605"
+        },
+        {
+          "name": "서식 02 - 기안문(내부결재용).hwp",
+          "file": "adm-ops-rule/16123077.hwp",
+          "size": 30208,
+          "sha256": "99675d9f56fbce112acb6519bc3b35c9f9dad116c8729029274ed84def7ffac7",
+          "title": "[서식 2] 기안문",
+          "sourceId": "137303609"
+        },
+        {
+          "name": "서식 03 - 기안문(대통령).hwp",
+          "file": "adm-ops-rule/16123079.hwp",
+          "size": 35328,
+          "sha256": "b26c928d87a62f0929c3b3555620c769596858c980f67ac973d98f49f2468298",
+          "title": "[서식 3] 기안문(대통령)",
+          "sourceId": "137303613"
+        },
+        {
+          "name": "서식 04 - 기안문(국무총리).hwp",
+          "file": "adm-ops-rule/16123081.hwp",
+          "size": 36864,
+          "sha256": "4bb1e458223e7269ec81eddcd3114ffc3a7990dc34af20d32022e15aeec3a642",
+          "title": "[서식 4] 기안문(국무총리)",
+          "sourceId": "137303617"
+        },
+        {
+          "name": "서식 05 - 관인인쇄용지 관리대장.hwp",
+          "file": "adm-ops-rule/16123083.hwp",
+          "size": 33792,
+          "sha256": "6a99509dae96514ad99f0040c66ad77887685530d1226f0ab95398525bce078a",
+          "title": "[서식 5] 관인인쇄용지 관리대장",
+          "sourceId": "137303621"
+        },
+        {
+          "name": "서식 06 - 문서관리카드.hwp",
+          "file": "adm-ops-rule/16123085.hwp",
+          "size": 57856,
+          "sha256": "b15b506619dd3adab26ca6056c7e2d652970123e35ab2e94d8e3bc5610b55e68",
+          "title": "[서식 6] 문서관리카드",
+          "sourceId": "137303625"
+        },
+        {
+          "name": "서식 07 - 관인대장.hwp",
+          "file": "adm-ops-rule/16123087.hwp",
+          "size": 44032,
+          "sha256": "44aeaf843f36e96f6b5a5ac40ed30ab1686de555581deec7a5c476494c8f06ae",
+          "title": "[서식 7] 관인대장",
+          "sourceId": "137303629"
+        },
+        {
+          "name": "서식 08 - 전자이미지관인대장.hwp",
+          "file": "adm-ops-rule/16123089.hwp",
+          "size": 45056,
+          "sha256": "d5e9be0b25d077212fcf77f7116c71ee55714e9623c2fd3a7aca015910b4f756",
+          "title": "[서식 8] 전자이미지관인대장",
+          "sourceId": "137303633"
+        },
+        {
+          "name": "서식 09 - 관인 등록(재등록) 신청, 관인(전자이미지관인) 폐기 신고, 전자이미지관인 등록(재등록) 신청.hwp",
+          "file": "adm-ops-rule/16123091.hwp",
+          "size": 45568,
+          "sha256": "4409783cf0c38e5a55db89eba65df7d99d6b032951c5adbf289ae520ac5459a7",
+          "title": "[서식 9] 관인 등록(재등록) 신청, 관인(전자이미지관인) 폐기 신고, 전자이미지관인 등록(재등록) 신청",
+          "sourceId": "137303637"
+        },
+        {
+          "name": "서식 10 - 전자이미지관인 관리대장.hwp",
+          "file": "adm-ops-rule/16123093.hwp",
+          "size": 50176,
+          "sha256": "e5bbd3538645067fed9e313eb92d34823131e69c5369c49c761e02293733ea29",
+          "title": "[서식 10] 전자이미지관인 관리대장",
+          "sourceId": "137303641"
+        },
+        {
+          "name": "서식 10의2 - 정책연구과제 심의 신청서.hwp",
+          "file": "adm-ops-rule/16123095.hwp",
+          "size": 33792,
+          "sha256": "2560276b451468b3d608924346cd843f8641841e4901686fc83452bfa67d8a4c",
+          "title": "[서식 10의2] 정책연구과제 심의 신청서",
+          "sourceId": "137303645"
+        },
+        {
+          "name": "서식 10의2 - 정책연구과제 심의 신청서.pdf",
+          "file": "adm-ops-rule/16123095.pdf",
+          "size": 41344,
+          "sha256": "3e96880dbfafb93e789b1a480a9cdd7266ba55ef65bab056f6b8d3709791b1c9",
+          "title": "[서식 10의2] 정책연구과제 심의 신청서",
+          "sourceId": "137303647"
+        },
+        {
+          "name": "서식 10의3 - 정책연구과제 차별성 검토보고서.hwp",
+          "file": "adm-ops-rule/16123097.hwp",
+          "size": 28672,
+          "sha256": "9bad31ab8ffaa80d4827d73e41dab1aee5ac6b181dc8e18749668f3bc1fcd598",
+          "title": "[서식 10의3] 정책연구과제 차별성 검토보고서",
+          "sourceId": "137303651"
+        },
+        {
+          "name": "서식 10의3 - 정책연구과제 차별성 검토보고서.pdf",
+          "file": "adm-ops-rule/16123097.pdf",
+          "size": 33684,
+          "sha256": "df9d4a1149f5c10a1cf1c5ffe7a4e8a13e80e0e3986193b26d953746994b05b7",
+          "title": "[서식 10의3] 정책연구과제 차별성 검토보고서",
+          "sourceId": "137303653"
+        },
+        {
+          "name": "서식 10의4 - 정책연구과제 선정 결과보고서.hwp",
+          "file": "adm-ops-rule/16123099.hwp",
+          "size": 35840,
+          "sha256": "afa57549b1136f5cbc904f4bf7a21cbc51374fa68b9c6f1bd552c8f943f3b2bd",
+          "title": "[서식 10의4] 정책연구과제 선정 결과보고서",
+          "sourceId": "137303657"
+        },
+        {
+          "name": "서식 10의4 - 정책연구과제 선정 결과보고서.pdf",
+          "file": "adm-ops-rule/16123099.pdf",
+          "size": 41599,
+          "sha256": "2220f3bea90fc57b9f8fa5c95f18bf9b468ee90f91f88869d784df2966a916bb",
+          "title": "[서식 10의4] 정책연구과제 선정 결과보고서",
+          "sourceId": "137303659"
+        },
+        {
+          "name": "서식 11 - 정부영상회의실 사용신청서.hwp",
+          "file": "adm-ops-rule/16123101.hwp",
+          "size": 38912,
+          "sha256": "8c79f6121c317c8df29083fa9504d713d617377bc91a14679ff52688a0cb02c9",
+          "title": "[서식 11] 정부영상회의실 사용신청서",
+          "sourceId": "137303663"
+        },
+        {
+          "name": "서식 12 - 업무인계ㆍ인수서.hwp",
+          "file": "adm-ops-rule/16123103.hwp",
+          "size": 34304,
+          "sha256": "102a5a5f309f459f4cb121fe9850044348dadd150f8c0c9d53e2fceb62e6c4ae",
+          "title": "[서식 12] 업무인계ㆍ인수서",
+          "sourceId": "137303667"
+        }
+      ]
+    }
+  ]
+}

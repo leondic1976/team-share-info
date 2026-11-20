@@ -23,6 +23,7 @@ import type { BoardDto, PollDto, PostDto, PostSummaryDto } from '@shared/schemas
 import type { ScopeInput } from '@shared/schemas/scope'
 import { cn } from '@renderer/lib/utils'
 import { FavoriteStar } from '@renderer/features/memos/widgets'
+import { confirmPii } from '@renderer/lib/pii'
 
 const KIND_LABEL = { free: '자유', work: '업무 공유', qna: '질의응답' } as const
 
@@ -126,7 +127,7 @@ function PostCompose({ board, onClose, onCreated }: { board: BoardDto; onClose: 
       title={`${board.name}에 글쓰기`}
       width="max-w-3xl"
       footer={
-        <Button onClick={() => save.mutate()} disabled={!title.trim() || save.isPending}>
+        <Button onClick={() => confirmPii([title, body, question, ...options], '이 게시판을 보는 모든 사람이 보게 되며,') && save.mutate()} disabled={!title.trim() || save.isPending}>
           등록
         </Button>
       }

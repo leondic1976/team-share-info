@@ -126,7 +126,9 @@ export class FeedbackError extends Error {
   constructor(
     message: string,
     /** The post may have been created although we got no answer. */
-    readonly unsure = false
+    readonly unsure = false,
+    /** GitHub could not be reached at all from this PC (no internet): the team's server PC may still reach it. */
+    readonly offline = false
   ) {
     super(message)
   }
@@ -165,7 +167,7 @@ export async function submitFeedback(creds: FeedbackCreds, input: FeedbackInput,
         signal: AbortSignal.timeout(opts.timeoutMs ?? 20000)
       })
     } catch {
-      throw new FeedbackError('GitHub에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 보내 주세요.', method === 'POST' && url.endsWith('/issues'))
+      throw new FeedbackError('GitHub에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 보내 주세요.', method === 'POST' && url.endsWith('/issues'), true)
     }
   }
   const refused = (r: Response, what: string): FeedbackError =>

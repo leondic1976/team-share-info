@@ -18,7 +18,6 @@ import type { NoticeSummaryDto } from '@shared/schemas/notices'
 import type { GroupInviteDto } from '@shared/schemas/scope'
 import { LevelBadge } from '@renderer/features/notices/NoticesPage'
 import { cn } from '@renderer/lib/utils'
-import { TodayWidget } from '@renderer/features/calendar/TodayWidget'
 import type { DocSummaryDto } from '@shared/schemas/docs'
 import { BookOpen } from 'lucide-react'
 import { FavoritesWidget, TodayWorkWidget } from '@renderer/features/memos/widgets'
@@ -156,7 +155,6 @@ export const WIDGETS: { key: string; label: string; render: () => React.JSX.Elem
   { key: 'meetings', label: '진행 중인 회의', render: () => <LiveMeetingsWidget /> },
   { key: 'mustread', label: '필독 문서', render: () => <MustReadWidget /> },
   { key: 'todaywork', label: '오늘의 업무', render: () => <TodayWorkWidget /> },
-  { key: 'today', label: '오늘 일정', render: () => <TodayWidget /> },
   { key: 'notices', label: '공지', render: () => <NoticesWidget /> },
   { key: 'invites', label: '그룹 초대', render: () => <InvitesWidget /> },
   { key: 'presence', label: '팀원 현황', render: () => <PresenceWidget /> },

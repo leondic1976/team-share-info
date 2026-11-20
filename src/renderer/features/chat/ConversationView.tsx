@@ -17,6 +17,7 @@ import type { ConversationDto, MessageDto, MessageNewPayload } from '@shared/sch
 import { useChatUi } from './chat-store'
 import { cn } from '@renderer/lib/utils'
 import { startMeeting } from '@renderer/features/meetings/MeetingsPage'
+import { confirmPii } from '@renderer/lib/pii'
 
 const PAGE = 50
 
@@ -120,6 +121,7 @@ export function ConversationView({ id, onLeft }: { id: string; onLeft: () => voi
   const send = async (attachmentIds: string[] = []): Promise<void> => {
     const body = text
     if (!body.trim() && !attachmentIds.length) return
+    if (!confirmPii([body], '이 대화방의 모든 사람이 보게 되며,')) return
     setSending(true)
     setErr('')
     try {

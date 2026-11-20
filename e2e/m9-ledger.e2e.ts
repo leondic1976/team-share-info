@@ -27,14 +27,16 @@ describe('관리대장 (built-in ledger: personal, team and designated-people le
     rmSync(tmp, { recursive: true, force: true })
   })
 
-  it('setup: the ledger is in the main menu of A (server) and B without installing anything', async () => {
+  it('setup: the ledger is under "확장 기능" in the menu of A (server) and B without installing anything', async () => {
     a = await launch({ profile: 'e2e-ldga' })
     await runWizard(a.page, PORT)
     b = await launch({ profile: 'e2e-ldgb' })
     await joinAndApprove(a.page, b.page, PORT, '팀원B')
     expect(await a.page.evaluate(() => window.teamhub.invoke('plugins:list', undefined))).toEqual([])
     const menu = await a.page.getByRole('navigation', { name: '주 메뉴' }).getByRole('link').allTextContents()
-    expect(menu.slice(menu.indexOf('할 일'), menu.indexOf('할 일') + 3)).toEqual(['할 일', '관리대장', '게시판'])
+    // listed with the extensions: right under "확장 기능", not between the shared menus
+    expect(menu.slice(menu.indexOf('할 일'), menu.indexOf('할 일') + 2)).toEqual(['할 일', '게시판'])
+    expect(menu.slice(menu.indexOf('확장 기능'), menu.indexOf('확장 기능') + 2)).toEqual(['확장 기능', '관리대장'])
     await openLedger(a.page)
     expect(await frame(a.page).locator('#side h1').textContent()).toContain('관리대장')
     expect(await frame(a.page).locator('#teamBooks').textContent()).toContain('팀용 대장이 없습니다')

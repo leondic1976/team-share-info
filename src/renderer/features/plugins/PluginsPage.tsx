@@ -110,6 +110,27 @@ export function PluginsPage(): React.JSX.Element {
           </p>
         )}
         <section>
+          <h2 className="mb-2 text-sm font-semibold text-muted-foreground">기본으로 들어 있는 기능</h2>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <Card data-testid="builtin-ledger">
+              <CardContent className="flex gap-3 p-4">
+                <span className="text-3xl">📒</span>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="font-semibold">
+                    관리대장 <span className="text-xs font-normal text-muted-foreground">설치 없이 바로 사용</span>
+                  </p>
+                  <p className="text-sm text-muted-foreground">엑셀처럼 쓰는 대장 관리. 개인용·팀용·지정자용 대장, 수식, 엑셀 가져오기·저장.</p>
+                  <div className="pt-1">
+                    <Button size="sm" onClick={() => navigate('/ledger')}>
+                      <Play /> 열기
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+        <section>
           <h2 className="mb-2 text-sm font-semibold text-muted-foreground">설치된 확장 기능</h2>
           {!installed.data?.length && <EmptyState icon={Puzzle} title="설치된 확장 기능이 없습니다" description="아래 목록에서 설치하세요." />}
           <div className="grid gap-3 lg:grid-cols-2" data-testid="installed-plugins">

@@ -3,7 +3,7 @@
  * Talks to the main process only through process.parentPort messages.
  */
 import type { Socket } from 'node:dgram'
-import type { HostToServer, ServerToHost } from '../shared/server-host'
+import type { FeedbackRelayConfig, HostToServer, ServerToHost } from '../shared/server-host'
 import type { Db } from '../node/sqlite'
 import { openServerDb } from './db'
 import { applyPendingRestore } from './backup'
@@ -11,6 +11,7 @@ import { buildApp, type BuiltApp } from './app'
 import { getSection } from './settings'
 import { startDiscoveryResponder } from './discovery'
 import { writeLatestYml } from './routes/updates'
+import { seedForms } from './forms-seed'
 
 process.removeAllListeners('warning')
 
@@ -28,11 +29,18 @@ function post(msg: ServerToHost): void {
   parent?.postMessage(msg)
 }
 
-async function start(dataDir: string, version: string): Promise<void> {
+async function start(dataDir: string, version: string, feedback?: FeedbackRelayConfig, formsDir?: string): Promise<void> {
   const restored = applyPendingRestore(dataDir)
   if (restored) post({ type: 'log', level: 'info', message: `restored backup ${restored}` })
   db = openServerDb(dataDir, version)
-  built = await buildApp({ db, dataDir, version })
+  built = await buildApp({ db, dataDir, version, feedback })
+  try {
+    const forms = seedForms(built.ctx, formsDir)
+    if (forms.folderId) post({ type: 'log', level: 'info', message: `forms library: ${forms.added} added, ${forms.updated} updated` })
+  } catch (e) {
+    // the server must start even when the shipped forms cannot be read
+    post({ type: 'log', level: 'warn', message: `forms library skipped: ${String(e)}` })
+  }
   const net = getSection(db, 'network')
   let lastPort = net.port
   built.ctx.onSettingsChanged = () => {
@@ -70,7 +78,7 @@ async function stop(): Promise<void> {
 parent?.on('message', (e) => {
   const msg = e.data
   if (msg.type === 'start') {
-    start(msg.dataDir, msg.version).catch((err: unknown) => {
+    start(msg.dataDir, msg.version, msg.feedback, msg.formsDir).catch((err: unknown) => {
       post({ type: 'error', message: err instanceof Error ? err.message : String(err), fatal: true })
       // Exit so the host restarts us with back-off (e.g. the port is still held by a dying process).
       db?.close()

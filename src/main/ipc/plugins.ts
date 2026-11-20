@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { handle } from './registry'
-import { fetchCatalog, installBuiltin, inspectFile, installFromCatalog, installFromFile, listPlugins, pickPluginFile, pluginOpenFile, pluginSaveFile, setPluginEnabled, uninstallPlugin } from '../plugins'
+import { recognizeImage } from '../ocr'
+import { fetchCatalog, openCopilot, hasPluginPermission, installBuiltin, inspectFile, installFromCatalog, installFromFile, listPlugins, pickPluginFile, pluginOpenFile, pluginSaveFile, setPluginEnabled, uninstallPlugin } from '../plugins'
 import { PLUGIN_ID_RE } from '../../shared/schemas/plugins'
 
 const result = async <T,>(fn: () => Promise<T> | T): Promise<{ ok: boolean; error?: string; data?: T }> => {
@@ -24,5 +25,9 @@ export function registerPluginIpc(): void {
   handle('plugins:uninstall', id, ({ id: pid }) => uninstallPlugin(pid))
   handle('plugins:saveFile', z.object({ id: z.string().regex(PLUGIN_ID_RE), name: z.string().min(1).max(200), text: z.string().max(6_000_000) }), ({ id: pid, name, text }) => pluginSaveFile(pid, name, text))
   handle('plugins:openFile', z.object({ id: z.string().regex(PLUGIN_ID_RE), exts: z.array(z.string().max(5)).max(6) }), ({ id: pid, exts }) => pluginOpenFile(pid, exts))
+  handle('plugins:ocr', z.object({ id: z.string().regex(PLUGIN_ID_RE), image: z.string().max(17_000_000), lang: z.string().max(20).optional() }), ({ id: pid, image, lang }) =>
+    hasPluginPermission(pid, 'ocr') ? recognizeImage(image, lang) : { ok: false, error: '이 확장 기능에는 글자 인식 권한이 없습니다.' }
+  )
+  handle('plugins:openCopilot', id, ({ id: pid }) => (hasPluginPermission(pid, 'copilot') ? openCopilot() : { ok: false, error: '이 확장 기능에는 Copilot을 여는 권한이 없습니다.' }))
   handle('plugins:setEnabled', z.object({ id: z.string().regex(PLUGIN_ID_RE), enabled: z.boolean() }), ({ id: pid, enabled }) => setPluginEnabled(pid, enabled))
 }

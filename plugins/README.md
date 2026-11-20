@@ -21,7 +21,7 @@ plugins/<id>/
   "author": "TeamHub",
   "icon": "🪜",                   // 이모지
   "entry": "index.html",
-  "permissions": ["members", "storage", "rooms", "notify", "clipboard", "files"],
+  "permissions": ["members", "storage", "rooms", "notify", "clipboard", "files", "ocr", "copilot"],
   "minAppVersion": "0.1.0",
   "features": ["사이트 카드에 보일 기능 소개"]
 }
@@ -48,6 +48,9 @@ plugins/<id>/
 | `clipboard.write` | clipboard | `{ text }` |
 | `file.save` | files | `{ name, text }` 저장 창에서 사용자가 고른 곳에 글자 파일로 저장(csv·tsv·txt·json·md·html, 5MB까지) → `{ ok, path }` |
 | `file.open` | files | `{ exts: ['csv'] }` 열기 창에서 사용자가 고른 글자 파일을 읽음(UTF-8, 아니면 CP949) → `{ ok, name, text }` |
+| `ocr.recognize` | ocr | `{ image, lang? }` PNG·JPEG data URL(12MB까지)의 글자를 이 PC의 Windows 글자 인식으로 읽음 → `{ ok, text, lines, language, languages, error }`. `image: ''`이면 쓸 수 있는 언어만 알려 줌 |
+| `copilot.open` | copilot | Windows의 Copilot 앱(없으면 웹 페이지)을 엶 → `{ ok, where: 'app' \| 'web' }`. 질문을 넘기는 방법은 없으므로 `clipboard.write`로 복사해 두고 사용자가 붙여넣게 함 |
+| `pii.scan` | — | `{ text }` 개인정보로 보이는 것 → `[{ kind, label, count, samples }]` (가린 값). 밖으로 보내는 글을 만들 때 확인용 |
 | `openRoute` | — | `{ room }` 이 확장 기능의 다른 방 열기 |
 
 이벤트: `TeamHub.on('room.changed', ({ roomId, deleted }) => …)` — 다른 팀원이 방을 바꾸면 옵니다.
@@ -59,5 +62,5 @@ plugins/<id>/
 - 묶기: `pnpm plugins:pack` → `release/plugins/<id>-<버전>.thplugin`
 - TeamHub **확장 기능 → 파일에서 설치**로 넣어 봅니다.
 - 순수 로직은 `tests/plugins/`에 단위 테스트를 둡니다(예: `ladder.test.ts`).
-- 예시: `plugins/ladder`(함께하기 방). 표 편집·수식 엔진·파일 저장/열기는 같은 방식으로 만든 본 기능 `resources/ledger`(관리대장)를 참고하세요.
+- 예시: `plugins/ladder`(함께하기 방), `plugins/matjip`(방 하나를 팀 게시판으로: 각자의 글·좋아요·댓글을 자기 참여 데이터에), `plugins/survey`(방 하나 = 설문 하나), `plugins/dutchpay`(이 PC 저장만), `plugins/ocr`·`plugins/copilot`(본체 기능 호출). 표 편집·수식 엔진·파일 저장/열기는 같은 방식으로 만든 본 기능 `resources/ledger`(관리대장)를 참고하세요.
 - `sandbox`에서는 `prompt()`가 동작하지 않습니다(Electron). 입력은 `<dialog>`로 받으세요. 붙여넣기는 `paste` 이벤트의 `clipboardData`로 읽습니다(클립보드 읽기 권한 없음).

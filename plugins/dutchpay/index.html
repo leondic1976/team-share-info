@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>N분의 1 정산</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="__sdk.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>🧮 N분의 1 정산</h1>
+      <nav role="tablist">
+        <button role="tab" data-tab="quick" aria-selected="true">간단 N빵</button>
+        <button role="tab" data-tab="items">항목별 정산</button>
+        <button role="tab" data-tab="history">기록</button>
+      </nav>
+    </header>
+
+    <main>
+      <!-- 간단 N빵 -->
+      <section id="quick" class="grid">
+        <div class="panel">
+          <label for="qTitle">무엇을 나누나요 <small>(선택)</small></label>
+          <input id="qTitle" maxlength="60" placeholder="예: 3월 팀 회식" />
+          <div class="row">
+            <div>
+              <label for="qTotal">총 금액</label>
+              <input id="qTotal" inputmode="numeric" placeholder="예: 187,500 또는 18.7만" />
+            </div>
+            <div>
+              <label for="qPeople">인원</label>
+              <div class="stepper">
+                <button type="button" id="qMinus" aria-label="한 명 줄이기">−</button>
+                <input id="qPeople" type="number" min="1" max="999" value="4" aria-label="인원" />
+                <button type="button" id="qPlus" aria-label="한 명 늘리기">＋</button>
+              </div>
+            </div>
+          </div>
+          <div class="chips" id="qAdd" aria-label="금액 더하기">
+            <button type="button" data-add="1000">+1천</button>
+            <button type="button" data-add="5000">+5천</button>
+            <button type="button" data-add="10000">+1만</button>
+            <button type="button" data-add="50000">+5만</button>
+            <button type="button" data-add="0">지우기</button>
+          </div>
+          <label for="qDeduct">먼저 뺄 금액 <small>(지원금·회비·쿠폰, 선택)</small></label>
+          <input id="qDeduct" inputmode="numeric" placeholder="예: 50,000" />
+          <div class="row">
+            <div>
+              <label for="qExtraPayers">더 내는 사람 수 <small>(선택)</small></label>
+              <input id="qExtraPayers" type="number" min="0" max="999" value="0" />
+            </div>
+            <div>
+              <label for="qExtra">한 사람이 더 내는 금액</label>
+              <input id="qExtra" inputmode="numeric" placeholder="예: 20,000 (덜 내면 -5,000)" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label for="qUnit">금액 단위</label>
+              <select id="qUnit" class="unit"></select>
+            </div>
+            <div>
+              <label for="qMode">단위 맞춤</label>
+              <select id="qMode" class="mode"></select>
+            </div>
+          </div>
+        </div>
+        <div class="panel result" id="qResult" aria-live="polite"></div>
+      </section>
+
+      <!-- 항목별 정산 -->
+      <section id="items" class="hidden">
+        <div class="panel">
+          <div class="btns" style="margin-top: 0">
+            <h2>함께한 사람</h2>
+            <span class="muted small">비율: 1 = 보통, 1.5 = 더 냄, 0.5 = 덜 냄</span>
+            <span class="grow"></span>
+            <button type="button" id="loadMembers">팀원 불러오기</button>
+          </div>
+          <div id="people" class="people"></div>
+          <div class="btns">
+            <input id="newPerson" maxlength="20" placeholder="이름을 적고 Enter (쉼표로 여러 명)" />
+            <button type="button" id="addPerson">추가</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="btns" style="margin-top: 0">
+            <h2>쓴 돈</h2>
+            <span class="muted small">항목마다 낸 사람과 함께한 사람을 고릅니다.</span>
+            <span class="grow"></span>
+            <button type="button" id="addExpense" class="primary">＋ 항목 추가</button>
+          </div>
+          <div id="expenses"></div>
+        </div>
+        <div class="panel">
+          <div class="row">
+            <div>
+              <label for="iTitle">정산 이름 <small>(선택)</small></label>
+              <input id="iTitle" maxlength="60" placeholder="예: 워크숍 경비" />
+            </div>
+            <div class="row">
+              <div>
+                <label for="iUnit">송금 단위</label>
+                <select id="iUnit" class="unit"></select>
+              </div>
+              <div>
+                <label for="iMode">단위 맞춤</label>
+                <select id="iMode" class="mode"></select>
+              </div>
+            </div>
+          </div>
+          <div id="iResult" class="result" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section id="history" class="hidden">
+        <div class="panel">
+          <div class="btns" style="margin-top: 0"><h2>기록</h2><span class="muted small">이 PC에만 저장됩니다.</span><span class="grow"></span><button type="button" id="clearHistory">기록 지우기</button></div>
+          <div id="historyList"></div>
+        </div>
+      </section>
+
+      <div class="panel account">
+        <label for="account">받을 계좌 <small>(복사할 때 함께 넣습니다. 이 PC에만 저장)</small></label>
+        <input id="account" maxlength="80" placeholder="예: ○○은행 123-456-789012 홍길동" />
+      </div>
+    </main>
+    <div id="toast" role="status"></div>
+    <script src="dutch.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

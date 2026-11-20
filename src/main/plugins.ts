@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, net, protocol } from 'electron'
+import { app, BrowserWindow, dialog, net, protocol, shell } from 'electron'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join, normalize } from 'node:path'
@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 import log from 'electron-log/main'
 import { DOWNLOAD_SITE } from '../shared/constants'
 import { compareVersions } from '../shared/semver'
-import { pluginBundleSchema, PLUGIN_ID_RE, type CatalogPlugin, type InstalledPlugin, type PluginBundle, type PluginManifest } from '../shared/schemas/plugins'
+import { pluginBundleSchema, PLUGIN_ID_RE, type CatalogPlugin, type InstalledPlugin, type PluginBundle, type PluginManifest, type PluginPermission } from '../shared/schemas/plugins'
 import { localDb } from './localdb'
 import { localDataPath } from './storage'
 import { PLUGIN_SDK } from './plugin-sdk'
@@ -203,10 +203,34 @@ export function installFromFile(path: string): PluginManifest {
   return install(checkBundle(JSON.parse(readFileSync(path, 'utf8'))), 'file')
 }
 
+// ---------- Copilot (permission 'copilot') ----------
+/**
+ * Open the Copilot that comes with Windows; where the app is not installed, its web page.
+ * Only fixed addresses are opened: Copilot offers no supported way to hand it a question,
+ * so the plugin copies the question and the user pastes it.
+ */
+export async function openCopilot(): Promise<{ ok: boolean; where?: 'app' | 'web'; error?: string }> {
+  try {
+    if (app.getApplicationNameForProtocol('ms-copilot:')) {
+      await shell.openExternal('ms-copilot:')
+      return { ok: true, where: 'app' }
+    }
+  } catch {
+    // fall through to the web page
+  }
+  try {
+    await shell.openExternal('https://copilot.microsoft.com/')
+    return { ok: true, where: 'web' }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 // ---------- files (permission 'files'): only through a dialog the user answers ----------
 const FILE_EXT = ['csv', 'tsv', 'txt', 'json', 'md', 'html']
 const MAX_FILE = 5 * 1024 * 1024
-const hasFilesPermission = (id: string): boolean => isBuiltinApp(id) || (!!registry()[id]?.enabled && !!registry()[id]?.manifest.permissions.includes('files'))
+export const hasPluginPermission = (id: string, perm: PluginPermission): boolean => isBuiltinApp(id) || (!!registry()[id]?.enabled && !!registry()[id]?.manifest.permissions.includes(perm))
+const hasFilesPermission = (id: string): boolean => hasPluginPermission(id, 'files')
 const extOfName = (n: string): string => (/\.([a-z0-9]{1,5})$/i.exec(n)?.[1] ?? '').toLowerCase()
 
 /** Save text a plugin made (e.g. CSV) where the user chooses. */

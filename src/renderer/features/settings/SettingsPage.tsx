@@ -193,7 +193,7 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              필요한 기능이나 잘못 동작하는 부분을 개발자에게 알려 주세요. 새 창에서 글을 쓰면 공개 게시판에 등록되고, 처리 상황은 게시판에서 볼 수 있습니다. 인터넷에 연결된 PC에서만 보낼 수 있습니다.
+              필요한 기능이나 잘못 동작하는 부분을 개발자에게 알려 주세요. 새 창에서 글을 쓰면 공개 게시판에 등록되고, 처리 상황은 게시판에서 볼 수 있습니다. 서버용 PC와 일반용(팀원) PC 모두에서 보낼 수 있고, 인터넷이 안 되는 PC에서는 팀의 서버 PC를 거쳐 보냅니다.
             </p>
             <div className="flex gap-2">
               <Button onClick={() => void invoke('feedback:open')} data-testid="feedback-open">

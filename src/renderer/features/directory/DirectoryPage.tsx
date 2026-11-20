@@ -65,7 +65,7 @@ function MemberCard({ m, onClose }: { m: MemberDto; onClose: () => void }): Reac
             <Button size="sm" onClick={() => void openChat()}>
               <MessageSquare /> 메시지
             </Button>
-            <Button size="sm" variant="outline" onClick={() => navigate('/chat/notes')}>
+            <Button size="sm" variant="outline" onClick={() => navigate('/chat/notes', { state: { noteTo: m.id } })}>
               <Mail /> 쪽지
             </Button>
             <Button size="sm" variant="outline" onClick={() => setTask(true)}>
