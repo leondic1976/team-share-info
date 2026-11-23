@@ -19,6 +19,8 @@ const config = M.cleanConfig({ meals: { lunch: { cutoff: '10:30' }, dinner: { cu
 describe('meal plugin: settings', () => {
   it('fills in defaults and refuses odd values', () => {
     const c = M.cleanConfig({ meals: { lunch: { on: false, cutoff: '9:05' }, dinner: { cutoff: '25:00' } }, ahead: 99, notice: ' 구내식당 ' })
+    expect(c.holidays).toBe(true)
+    expect(Array.from(c.clerks)).toEqual([])
     expect(c).toMatchObject({ kind: 'meal', meals: { lunch: { on: false, cutoff: '09:05' }, dinner: { on: true, cutoff: '15:30' } }, weekend: false, ahead: 7, notice: '구내식당' })
     expect(M.isConfig(c)).toBe(true)
     expect(M.isConfig({ questions: [] })).toBe(false)
@@ -79,6 +81,74 @@ describe('meal plugin: request, cancel, request again until the deadline', () =>
     const old = { days: { '2026-07-01': { lunch: { on: true, at: 1 } }, '2026-11-20': { lunch: { on: true, at: 2 } } } }
     const r = M.apply(old, config, MON, 'lunch', true, at(MON, 9))
     expect(Object.keys(r.entry.days).sort()).toEqual(['2026-11-20', MON])
+  })
+})
+
+describe('meal plugin: public holidays', () => {
+  // Wednesday 2026-11-25 made a holiday
+  const hol = M.withHolidays(config, [{ date: '2026-11-25', name: '임시공휴일' }, { date: 'bad', name: 'x' }])
+  it('does not serve a holiday, and says why', () => {
+    expect(config.holidays).toBe(true)
+    expect(M.stateOf(hol, '2026-11-25', 'lunch', at(MON, 9))).toBe('off')
+    expect(Array.from(M.upcoming(hol, at(MON, 9)))).toEqual(['2026-11-23', '2026-11-24', '2026-11-26', '2026-11-27'])
+    expect(JSON.parse(JSON.stringify(M.skipped(hol, at(MON, 9))))).toEqual([{ date: '2026-11-25', name: '임시공휴일' }])
+    expect(M.apply(null, hol, '2026-11-25', 'lunch', true, at(MON, 9)).error).toContain('공휴일(임시공휴일)')
+    expect(M.apply(null, hol, '2026-11-24', 'lunch', true, at(MON, 9)).entry).toBeTruthy()
+  })
+  it('serves holidays when the admin turns the option off', () => {
+    const on = M.withHolidays(M.cleanConfig({ ...config, holidays: false }), [{ date: '2026-11-25', name: '임시공휴일' }])
+    expect(M.stateOf(on, '2026-11-25', 'lunch', at(MON, 9))).toBe('open')
+    expect(M.skipped(on, at(MON, 9))).toHaveLength(0)
+  })
+})
+
+describe('meal plugin: a clerk requests for somebody else', () => {
+  const shared = M.cleanConfig({ ...config, clerks: ['clerk', 'clerk', 5] })
+  const members = [{ id: 'adm', name: '관리자', deptName: '' }, { id: 'clerk', name: '서무', deptName: '행정팀' }, { id: 'kim', name: '김주무', deptName: '행정팀' }, { id: 'lee', name: '이주무', deptName: '민원팀' }]
+  const room = (entries: Record<string, any>) => ({ createdBy: 'adm', shared, entries })
+  const names = (r: any, meal = 'lunch') => M.dayList(r, MON, meal, members).map((p: any) => p.name + (p.by ? `(${p.byName})` : ''))
+
+  it('only the admin who made the settings and the chosen clerks may', () => {
+    expect(Array.from(shared.clerks)).toEqual(['clerk'])
+    expect([M.canProxy(room({}), 'adm'), M.canProxy(room({}), 'clerk'), M.canProxy(room({}), 'kim'), M.canProxy(null, 'adm')]).toEqual([true, true, false, false])
+  })
+
+  it('requests and cancels for a member, under the same deadline', () => {
+    let r = M.applyFor(null, shared, { id: 'kim', name: '김주무' }, MON, 'lunch', true, at(MON, 9))
+    expect(names(room({ clerk: { name: '서무', value: r.entry } }))).toEqual(['김주무(서무)'])
+    // the clerk's own request stays apart
+    r = M.apply(r.entry, shared, MON, 'lunch', true, at(MON, 9, 5))
+    expect(names(room({ clerk: { name: '서무', value: r.entry } }))).toEqual(['김주무(서무)', '서무'])
+    r = M.applyFor(r.entry, shared, { id: 'kim', name: '김주무' }, MON, 'lunch', false, at(MON, 9, 10))
+    expect(names(room({ clerk: { name: '서무', value: r.entry } }))).toEqual(['서무'])
+    expect(M.applyFor(r.entry, shared, { id: 'kim', name: '김주무' }, MON, 'lunch', true, at(MON, 10, 30)).error).toContain('마감')
+    expect(M.applyFor(r.entry, shared, null, MON, 'lunch', true, at(MON, 9)).error).toContain('고르세요')
+  })
+
+  it('the newest of the own request and the one made for the member counts', () => {
+    const byClerk = M.applyFor(null, shared, { id: 'kim', name: '김주무' }, MON, 'lunch', true, at(MON, 9)).entry
+    const own = (on: boolean, h: number, m: number) => ({ name: '김주무', value: M.apply(null, shared, MON, 'lunch', on, at(MON, h, m)).entry })
+    // the member cancels later: not eating
+    expect(names(room({ clerk: { name: '서무', value: byClerk }, kim: own(false, 9, 30) }))).toEqual([])
+    // the member had cancelled earlier, the clerk requested after that: eating
+    const r = room({ clerk: { name: '서무', value: byClerk }, kim: own(false, 8, 0) })
+    expect(names(r)).toEqual(['김주무(서무)'])
+    expect(M.recordOf(r, members, 'kim', MON, 'lunch')).toMatchObject({ on: true, by: 'clerk', byName: '서무' })
+    expect(M.monthTally(r, '2026-11', members, at(MON, 11), false).rows.map((x: any) => [x.deptName, x.name, x.lunch])).toEqual([['행정팀', '김주무', 1]])
+  })
+
+  it('ignores requests made for others by somebody who may not', () => {
+    const forged = M.applyFor(null, shared, { id: 'kim', name: '김주무' }, MON, 'lunch', true, at(MON, 9)).entry
+    expect(names(room({ lee: { name: '이주무', value: forged } }))).toEqual([])
+    // and by a clerk who is no longer one
+    expect(names({ createdBy: 'adm', shared: M.cleanConfig(config), entries: { clerk: { name: '서무', value: forged } } })).toEqual([])
+  })
+
+  it('keeps requests made for others for a shorter time', () => {
+    const old = { days: {}, for: { kim: { name: '김주무', days: { '2026-08-01': { lunch: { on: true, at: 1 } }, '2026-11-20': { lunch: { on: true, at: 2 } } } }, lee: { name: '이주무', days: { '2026-08-01': { lunch: { on: true, at: 1 } } } } } }
+    const r = M.applyFor(old, shared, { id: 'kim', name: '김주무' }, MON, 'dinner', true, at(MON, 9))
+    expect(Object.keys(r.entry.for)).toEqual(['kim'])
+    expect(Object.keys(r.entry.for.kim.days).sort()).toEqual(['2026-11-20', MON])
   })
 })
 

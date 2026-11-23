@@ -9,7 +9,7 @@
   const MEALS = { lunch: '점심', dinner: '저녁' }
   const MEAL_KEYS = ['lunch', 'dinner']
   const DEFAULT_CUTOFF = { lunch: '10:30', dinner: '15:30' }
-  const LIMITS = { notice: 300, aheadMax: 14, keepDays: 100 }
+  const LIMITS = { notice: 300, aheadMax: 14, keepDays: 100, proxyKeepDays: 62, clerksMax: 30 }
   const DAY = 86400000
   const WEEK = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -53,6 +53,10 @@
       v: 1,
       meals,
       weekend: !!c.weekend,
+      // public holidays are not served (the list comes from TeamHub: 관리 → 공휴일)
+      holidays: c.holidays === undefined ? true : !!c.holidays,
+      // members who may request for somebody else, besides the admin who made the settings
+      clerks: Array.from(new Set((Array.isArray(c.clerks) ? c.clerks : []).filter((x) => typeof x === 'string' && x.length > 0 && x.length <= 40))).slice(0, LIMITS.clerksMax),
       // how many days ahead a request may be made (1 = today only)
       ahead: ahead >= 1 && ahead <= LIMITS.aheadMax ? ahead : 7,
       notice: String(c.notice == null ? '' : c.notice).trim().slice(0, LIMITS.notice)
@@ -65,7 +69,24 @@
     return (rooms || []).filter((r) => isConfig(r.shared)).sort((a, b) => a.createdAt - b.createdAt)[0] || null
   }
 
-  const isServed = (config, date) => config.weekend || ![0, 6].includes(new Date(dayStart(date)).getDay())
+  /** The settings plus the holiday list ([{ date, name }]) of this moment; not stored. */
+  function withHolidays(config, list) {
+    const off = {}
+    for (const h of list || []) if (h && isYmd(h.date)) off[h.date] = String(h.name || '공휴일')
+    return Object.assign({}, config, { off })
+  }
+  const holidayName = (config, date) => (config.holidays && config.off && config.off[date]) || ''
+  const isServed = (config, date) => (config.weekend || ![0, 6].includes(new Date(dayStart(date)).getDay())) && !holidayName(config, date)
+  /** Holidays inside the request window: shown so nobody wonders why a day is missing. */
+  function skipped(config, now) {
+    const out = []
+    const today = ymd(now)
+    for (let i = 0; i < config.ahead; i++) {
+      const date = addDays(today, i)
+      if (holidayName(config, date)) out.push({ date, name: holidayName(config, date) })
+    }
+    return out
+  }
   /** The moment after which the request for that meal of that day cannot be changed. */
   function cutoffAt(config, date, meal) {
     const [h, m] = config.meals[meal].cutoff.split(':').map(Number)
@@ -95,9 +116,9 @@
   }
 
   /** One member's requests as stored in their entry: { days: { 'YYYY-MM-DD': { lunch: { on, at } } } }. */
-  function cleanEntry(value) {
+  function cleanDays(src) {
     const days = {}
-    const src = value && typeof value === 'object' && value.days && typeof value.days === 'object' ? value.days : {}
+    if (!src || typeof src !== 'object') return days
     for (const date of Object.keys(src)) {
       if (!isYmd(date)) continue
       const day = {}
@@ -107,7 +128,21 @@
       }
       if (Object.keys(day).length) days[date] = day
     }
-    return { v: 1, days }
+    return days
+  }
+  /** `for` holds what this member requested for others: { memberId: { name, days } }. */
+  function cleanEntry(value) {
+    const v = value && typeof value === 'object' ? value : {}
+    const out = { v: 1, days: cleanDays(v.days) }
+    if (v.for && typeof v.for === 'object') {
+      const others = {}
+      for (const id of Object.keys(v.for)) {
+        const days = cleanDays(v.for[id] && v.for[id].days)
+        if (id.length <= 40 && Object.keys(days).length) others[id] = { name: String((v.for[id] && v.for[id].name) || '').slice(0, 60), days }
+      }
+      if (Object.keys(others).length) out.for = others
+    }
+    return out
   }
   const wants = (value, date, meal) => {
     const d = value && value.days && value.days[date]
@@ -123,42 +158,120 @@
    * can be done any number of times; after it nothing changes. Old days are dropped so the
    * entry stays small. Returns { entry } or { error }.
    */
-  function apply(value, config, date, meal, on, now) {
-    if (!isYmd(date) || !MEALS[meal]) return { error: '잘못된 신청입니다.' }
+  function refusal(config, date, meal, now) {
+    if (!isYmd(date) || !MEALS[meal]) return '잘못된 신청입니다.'
     const st = stateOf(config, date, meal, now)
-    if (st === 'off') return { error: `${MEALS[meal]} 신청을 받지 않는 날입니다.` }
-    if (st === 'closed') return { error: `${MEALS[meal]} 신청이 ${config.meals[meal].cutoff}에 마감되었습니다. 바꿀 수 없습니다.` }
-    if (!upcoming(config, now).includes(date)) return { error: '아직 신청을 받지 않는 날짜입니다.' }
-    const entry = cleanEntry(value)
+    if (st === 'off') return holidayName(config, date) ? `공휴일(${holidayName(config, date)})이라 신청을 받지 않습니다.` : `${MEALS[meal]} 신청을 받지 않는 날입니다.`
+    if (st === 'closed') return `${MEALS[meal]} 신청이 ${config.meals[meal].cutoff}에 마감되었습니다. 바꿀 수 없습니다.`
+    if (!upcoming(config, now).includes(date)) return '아직 신청을 받지 않는 날짜입니다.'
+    return ''
+  }
+  /** Drops old days so the entry stays small (requests made for others are kept for a shorter time). */
+  function prune(entry, now) {
     const oldest = ymd(now - LIMITS.keepDays * DAY)
     for (const d of Object.keys(entry.days)) if (d < oldest) delete entry.days[d]
+    const oldestFor = ymd(now - LIMITS.proxyKeepDays * DAY)
+    for (const id of Object.keys(entry.for || {})) {
+      for (const d of Object.keys(entry.for[id].days)) if (d < oldestFor) delete entry.for[id].days[d]
+      if (!Object.keys(entry.for[id].days).length) delete entry.for[id]
+    }
+    if (entry.for && !Object.keys(entry.for).length) delete entry.for
+    return entry
+  }
+  function apply(value, config, date, meal, on, now) {
+    const error = refusal(config, date, meal, now)
+    if (error) return { error }
+    const entry = prune(cleanEntry(value), now)
     entry.days[date] = Object.assign({}, entry.days[date], { [meal]: { on: !!on, at: now } })
     return { entry }
   }
 
+  /** Who may request for somebody else: the admin who made the settings and the clerks they chose. */
+  const canProxy = (room, id) => !!room && !!id && (room.createdBy === id || cleanConfig(room.shared).clerks.includes(id))
+  /**
+   * Request or cancel for another member (target = { id, name }), under the same deadline.
+   * It is written into the entry of the one who does it (`value`); the newest of the member's
+   * own request and the ones made for them counts, so the member can still change it.
+   */
+  function applyFor(value, config, target, date, meal, on, now) {
+    if (!target || typeof target.id !== 'string' || !target.id) return { error: '대신 신청할 사람을 고르세요.' }
+    const error = refusal(config, date, meal, now)
+    if (error) return { error }
+    const entry = prune(cleanEntry(value), now)
+    const others = entry.for || (entry.for = {})
+    const t = others[target.id] || (others[target.id] = { name: '', days: {} })
+    t.name = String(target.name || t.name || '').slice(0, 60)
+    t.days[date] = Object.assign({}, t.days[date], { [meal]: { on: !!on, at: now } })
+    return { entry }
+  }
+
   const byDeptName = (a, b) => (a.deptName || '').localeCompare(b.deptName || '', 'ko') || a.name.localeCompare(b.name, 'ko')
-  /** Everyone who has an entry, with the department from the member list (kept when they left). */
-  function people(room, members) {
-    const dept = new Map((members || []).map((m) => [m.id, m.deptName || '']))
-    return Object.keys((room && room.entries) || {}).map((id) => ({ id, name: room.entries[id].name, deptName: dept.get(id) || '', value: room.entries[id].value }))
+  /**
+   * Every member with a request, own or made for them: Map id → { id, name, deptName, days }
+   * where days[date][meal] = { on, at, by, byName } (by = who requested it for them, '' = themselves).
+   * The newest record counts; at the same moment the member's own.
+   */
+  function resolve(room, members) {
+    const entries = (room && room.entries) || {}
+    const info = new Map((members || []).map((m) => [m.id, m]))
+    const out = new Map()
+    const person = (id, name) => {
+      let p = out.get(id)
+      if (!p) {
+        const m = info.get(id)
+        p = { id, name: name || (m && m.name) || '(이름 없음)', deptName: (m && m.deptName) || '', days: {} }
+        out.set(id, p)
+      }
+      return p
+    }
+    const put = (p, days, by, byName) => {
+      for (const date of Object.keys(days)) {
+        for (const k of Object.keys(days[date])) {
+          const r = days[date][k]
+          const cur = p.days[date] && p.days[date][k]
+          if (cur && (r.at < cur.at || (r.at === cur.at && by))) continue
+          p.days[date] = Object.assign({}, p.days[date], { [k]: { on: r.on, at: r.at, by, byName } })
+        }
+      }
+    }
+    const clean = {}
+    for (const id of Object.keys(entries)) {
+      clean[id] = cleanEntry(entries[id].value)
+      put(person(id, entries[id].name), clean[id].days, '', '')
+    }
+    for (const id of Object.keys(entries)) {
+      if (!clean[id].for || !canProxy(room, id)) continue
+      for (const tid of Object.keys(clean[id].for)) {
+        if (tid === id) continue
+        const m = info.get(tid)
+        put(person(tid, (m && m.name) || clean[id].for[tid].name), clean[id].for[tid].days, id, entries[id].name || '')
+      }
+    }
+    return out
+  }
+  /** The record that counts for one member: { on, at, by, byName } or null. */
+  function recordOf(room, members, id, date, meal) {
+    const p = resolve(room, members).get(id)
+    return (p && p.days[date] && p.days[date][meal]) || null
   }
   /** Who asked for that meal on that day. */
   function dayList(room, date, meal, members) {
-    return people(room, members)
-      .filter((p) => wants(p.value, date, meal))
-      .map((p) => ({ id: p.id, name: p.name, deptName: p.deptName, at: requestedAt(p.value, date, meal) }))
-      .sort(byDeptName)
+    const out = []
+    for (const p of resolve(room, members).values()) {
+      const r = p.days[date] && p.days[date][meal]
+      if (r && r.on) out.push({ id: p.id, name: p.name, deptName: p.deptName, at: r.at, by: r.by, byName: r.byName })
+    }
+    return out.sort(byDeptName)
   }
   /** Meals per person in a month ('YYYY-MM'). Only days whose deadline has passed count, unless `all`. */
   function monthTally(room, month, members, now, all) {
     const config = cleanConfig(room && room.shared)
     const rows = []
-    for (const p of people(room, members)) {
+    for (const p of resolve(room, members).values()) {
       const row = { id: p.id, name: p.name, deptName: p.deptName, lunch: 0, dinner: 0 }
-      const days = (p.value && p.value.days) || {}
-      for (const date of Object.keys(days)) {
+      for (const date of Object.keys(p.days)) {
         if (!date.startsWith(month + '-')) continue
-        for (const k of MEAL_KEYS) if (wants(p.value, date, k) && (all || now >= cutoffAt(config, date, k))) row[k]++
+        for (const k of MEAL_KEYS) if (p.days[date][k] && p.days[date][k].on && (all || now >= cutoffAt(config, date, k))) row[k]++
       }
       if (row.lunch || row.dinner) rows.push(row)
     }
@@ -184,5 +297,5 @@
     return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n'
   }
 
-  g.Meal = { MEALS, MEAL_KEYS, LIMITS, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, dayList, monthTally, orderText, monthCsv }
+  g.Meal = { MEALS, MEAL_KEYS, LIMITS, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
 })(typeof window !== 'undefined' ? window : globalThis)

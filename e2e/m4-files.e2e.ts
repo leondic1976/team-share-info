@@ -60,6 +60,10 @@ describe('M4 files', () => {
     await a.page.getByTestId('file-row-teamhub-e2e-report.txt').click()
     await a.page.getByTestId('version-1').waitFor()
     expect(await a.page.getByTestId('version-2').textContent()).toContain('현재')
+    // the text preview uses the app's Korean font, not the browser's fixed-width one
+    const preview = a.page.getByTestId('file-preview-text')
+    await expect.poll(() => preview.textContent(), { timeout: 10000 }).toBe('두 번째 버전입니다')
+    expect(await preview.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/Pretendard.*Malgun Gothic/)
     await a.page.getByRole('dialog').getByRole('button', { name: '닫기' }).click()
   })
 

@@ -38,6 +38,7 @@ plugins/<id>/
 |---|---|---|
 | `me` | — | `{ id, name, deptName, isAdmin }` |
 | `time` | — | `{ now }` 서버 PC의 시계(ms). 마감 시각처럼 모든 PC에서 같아야 하는 판단에 씀 |
+| `holidays` | — | `{ from, to }`(YYYY-MM-DD) 사이의 공휴일 `[{ date, name }]` (관리 → 공휴일의 목록) |
 | `members` | members | 활동 중인 팀원 `[{ id, name, deptName, title, presence }]` |
 | `storage.get` / `storage.set` / `storage.keys` | storage | 이 PC에만 저장(`{ key }`, `{ key, value }`), 값 512KB까지 |
 | `rooms.list` / `rooms.get` | rooms | 내가 볼 수 있는 이 확장 기능의 방 |

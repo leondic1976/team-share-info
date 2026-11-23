@@ -43,6 +43,7 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     await fa.locator('#ahead').fill('2')
     await fa.locator('#weekend').check()
     await fa.locator('#notice').fill('구내식당E2E')
+    expect(await fa.locator('#holidays').isChecked()).toBe(true)
     await fa.locator('#settings button[type=submit]').click()
     await fa.locator('.day.today').waitFor({ timeout: 15000 })
 
@@ -79,5 +80,55 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     const tomorrow = fb.locator('.day:not(.today) [data-tile$=":lunch"]')
     await tomorrow.getByRole('button', { name: '신청', exact: true }).click()
     await expect.poll(() => tomorrow.textContent(), { timeout: 10000 }).toContain('신청함')
+  }, 90000)
+
+  it('the admin requests and cancels for a member; the member can still change it', async () => {
+    const fa = frame(a.page)
+    const fb = frame(b.page)
+    const dinnerA = fa.locator('[data-status="dinner"]')
+    const dinner = fb.locator('.day.today [data-tile$=":dinner"]')
+    // a member who is not a clerk has no such control
+    await fb.locator('nav [data-tab="status"]').click()
+    await fb.locator('[data-status="dinner"]').waitFor({ timeout: 10000 })
+    expect(await fb.locator('.proxy').count()).toBe(0)
+    await fb.locator('nav [data-tab="apply"]').click()
+
+    // cancel for 팀원B, then request again for them
+    await dinnerA.locator('button[data-unproxy]').click()
+    await expect.poll(() => dinnerA.textContent(), { timeout: 15000 }).toContain('0명')
+    await expect.poll(() => dinner.textContent(), { timeout: 15000 }).toContain('대신')
+    expect(await dinner.textContent()).toContain('신청 안 함')
+
+    await dinnerA.locator('select').selectOption({ index: 1 })
+    await dinnerA.getByRole('button', { name: '대신 신청', exact: true }).click()
+    await expect.poll(() => dinnerA.textContent(), { timeout: 15000 }).toContain('1명')
+    expect(await dinnerA.locator('.who').textContent()).toContain('대신')
+    await expect.poll(() => dinner.textContent(), { timeout: 15000 }).toContain('신청함')
+
+    // the member's own later change wins
+    await dinner.getByRole('button', { name: '취소' }).click()
+    await expect.poll(() => dinnerA.textContent(), { timeout: 15000 }).toContain('0명')
+  }, 90000)
+
+  it('a public holiday is not served', async () => {
+    const fb = frame(b.page)
+    const d = new Date(Date.now() + 86400000)
+    const tomorrow = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const r = await a.page.evaluate(async (date) => {
+      const c = await window.teamhub.invoke('conn:get', undefined as never)
+      const res = await fetch(`${c.serverUrl}/api/admin/holidays/${date}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.deviceId}.${c.deviceKey}`, 'X-Win-User': encodeURIComponent(c.winUser), 'X-Protocol': '1' },
+        body: JSON.stringify({ name: '임시공휴일E2E' })
+      })
+      return res.status
+    }, tomorrow)
+    expect(r).toBe(200)
+    // the list of holidays is read when the extension opens
+    await go(b.page, '/plugins')
+    await expect.poll(() => b.page.locator('[data-testid="plugin-frame"]').count(), { timeout: 10000 }).toBe(0)
+    await open(b.page, '.day.today')
+    await expect.poll(() => fb.locator('.day').count(), { timeout: 15000 }).toBe(1)
+    expect(await fb.locator(`[data-holiday="${tomorrow}"]`).textContent()).toContain('임시공휴일E2E')
   }, 90000)
 })

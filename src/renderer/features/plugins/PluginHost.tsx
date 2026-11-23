@@ -19,6 +19,7 @@ type Msg = { th: 1; id: string; method: string; params: Record<string, unknown> 
 const NEEDS: Record<string, PluginPermission | null> = {
   me: null,
   time: null,
+  holidays: null,
   members: 'members',
   'storage.get': 'storage',
   'storage.set': 'storage',
@@ -80,6 +81,9 @@ export function PluginHost(): React.JSX.Element {
         case 'time':
           // the server's clock: deadlines must not depend on the clock of each PC
           return api.get<{ now: number }>('/api/time')
+        case 'holidays':
+          // public holidays of TeamHub (관리 → 공휴일) between two dates
+          return api.get<{ date: string; name: string }[]>('/api/holidays', { from: str('from', 10), to: str('to', 10) })
         case 'members':
           return (await api.get<MemberDto[]>('/api/members')).filter((x) => x.status === 'active').map((x) => ({ id: x.id, name: x.name, deptName: x.deptName, title: x.title, presence: x.presence }))
         case 'storage.get':

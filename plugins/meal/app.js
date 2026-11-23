@@ -17,9 +17,12 @@
   let statusDate = ''
   let month = ''
   let busy = false
+  let holidays = [] // [{ date, name }] from TeamHub (관리 → 공휴일)
+  const proxySel = { lunch: '', dinner: '' } // who is picked in "대신 신청"
 
   const now = () => Date.now() + offset
-  const config = () => M.cleanConfig(room && room.shared)
+  const config = () => M.withHolidays(M.cleanConfig(room && room.shared), holidays)
+  const canProxy = () => M.canProxy(room, me.id)
   const mine = () => (room && room.entries && room.entries[me.id] ? room.entries[me.id].value : null)
   const hm = (ms) => {
     const d = new Date(ms)
@@ -44,6 +47,14 @@
       offset = 0 // an older TeamHub without the call: this PC's clock
     }
   }
+  async function loadHolidays() {
+    try {
+      const today = M.ymd(now())
+      holidays = await call('holidays', { from: M.addDays(today, -1), to: M.addDays(today, M.LIMITS.aheadMax + 1) })
+    } catch {
+      holidays = [] // an older TeamHub without the call: no holiday is skipped
+    }
+  }
   async function load() {
     room = M.pickRoom(await call('rooms.list'))
   }
@@ -52,14 +63,17 @@
   function mealTile(c, date, meal) {
     const st = M.stateOf(c, date, meal, now())
     if (st === 'off') return ''
-    const on = M.wants(mine(), date, meal)
-    const at = M.requestedAt(mine(), date, meal)
+    // the newest of my own request and one a clerk made for me
+    const rec = M.recordOf(room, members, me.id, date, meal)
+    const on = !!(rec && rec.on)
+    const at = rec ? rec.at : 0
+    const who = rec && rec.by ? ` · ${esc(rec.byName)} 대신` : ''
     const count = M.dayList(room, date, meal, members).length
     const cut = M.cutoffAt(c, date, meal)
     const open = st === 'open'
     return `<div class="tile ${on ? 'on' : ''} ${open ? '' : 'locked'}" data-tile="${date}:${meal}">
       <div class="tile-top"><b>${M.MEALS[meal]}</b><span class="count">${count}명 신청</span></div>
-      <div class="state">${on ? '✅ 신청함' : open ? '신청 안 함' : '신청하지 않음'}${at ? ` <span class="muted small">${hm(at)} ${on ? '신청' : '취소'}</span>` : ''}</div>
+      <div class="state">${on ? '✅ 신청함' : open ? '신청 안 함' : '신청하지 않음'}${at ? ` <span class="muted small">${hm(at)} ${on ? '신청' : '취소'}${who}</span>` : ''}</div>
       <div class="deadline ${open ? '' : 'over'}">${open ? `${c.meals[meal].cutoff} 마감 · ${M.remaining(cut - now())}` : `${c.meals[meal].cutoff} 마감됨`}</div>
       ${open ? `<button class="${on ? 'danger' : 'primary'}" data-act="${on ? 'cancel' : 'apply'}" data-date="${date}" data-meal="${meal}" ${busy ? 'disabled' : ''}>${on ? '취소' : at ? '다시 신청' : '신청'}</button>` : ''}
     </div>`
@@ -68,14 +82,16 @@
     const c = config()
     const today = M.ymd(now())
     const days = M.upcoming(c, now())
-    if (!days.length) return empty('🍱', '신청을 받는 날이 없습니다', '관리자가 설정에서 받는 식사와 요일을 정합니다.')
+    if (!days.length) return empty('🍱', '신청을 받는 날이 없습니다', M.skipped(c, now()).length ? '공휴일에는 신청을 받지 않습니다.' : '관리자가 설정에서 받는 식사와 요일을 정합니다.')
     return `<div class="wrap">
       ${c.notice ? `<div class="notice">${esc(c.notice)}</div>` : ''}
       <p class="muted small">마감 시각 전에는 신청·취소·다시 신청을 마음대로 할 수 있습니다. 마감 뒤에는 바꿀 수 없습니다.</p>
+      ${M.skipped(c, now()).map((h) => `<p class="muted small holiday" data-holiday="${h.date}">${M.dateLabel(h.date, today)} 공휴일(${esc(h.name)}) — 신청을 받지 않습니다.</p>`).join('')}
       ${days.map((date) => `<section class="card day ${date === today ? 'today' : ''}"><h2>${M.dateLabel(date, today)}</h2><div class="tiles">${M.MEAL_KEYS.map((k) => mealTile(c, date, k)).join('')}</div></section>`).join('')}
     </div>`
   }
-  async function change(date, meal, on) {
+  /** target = { id, name }: request or cancel for that member (clerks and the admin). */
+  async function change(date, meal, on, target) {
     if (busy) return
     busy = true
     try {
@@ -83,11 +99,11 @@
       // read the newest state first: the settings may have changed and my entry is replaced as a whole
       const fresh = await call('rooms.get', { roomId: room.id })
       room = fresh
-      const r = M.apply(mine(), config(), date, meal, on, now())
+      const r = !target ? M.apply(mine(), config(), date, meal, on, now()) : canProxy() ? M.applyFor(mine(), config(), target, date, meal, on, now()) : { error: '대신 신청할 권한이 없습니다.' }
       if (r.error) toast(r.error)
       else {
         room = await call('rooms.setEntry', { roomId: room.id, value: r.entry })
-        toast(`${M.dateLabel(date, M.ymd(now()))} ${M.MEALS[meal]}을 ${on ? '신청했습니다' : '취소했습니다'}.`)
+        toast(`${target ? `${target.name} 님의 ` : ''}${M.dateLabel(date, M.ymd(now()))} ${M.MEALS[meal]}을 ${on ? '신청했습니다' : '취소했습니다'}.`)
       }
     } catch (e) {
       toast(e.message || '저장하지 못했습니다.')
@@ -105,11 +121,14 @@
       .map((k) => {
         const list = M.dayList(room, statusDate, k, members)
         const st = M.stateOf(c, statusDate, k, now())
-        const badge = st === 'open' ? `<span class="badge todo">신청 받는 중 · ${c.meals[k].cutoff} 마감</span>` : st === 'closed' ? '<span class="badge done">마감 · 확정</span>' : '<span class="badge">받지 않는 날</span>'
+        const proxy = canProxy() && st === 'open'
+        const rest = proxy ? members.filter((m) => m.id !== me.id && !list.some((p) => p.id === m.id)).sort((a, b) => (a.deptName || '').localeCompare(b.deptName || '', 'ko') || a.name.localeCompare(b.name, 'ko')) : []
+        const badge = st === 'open' ? `<span class="badge todo">신청 받는 중 · ${c.meals[k].cutoff} 마감</span>` : st === 'closed' ? '<span class="badge done">마감 · 확정</span>' : `<span class="badge">${M.holidayName(c, statusDate) ? `공휴일(${esc(M.holidayName(c, statusDate))})` : '받지 않는 날'}</span>`
         const depts = new Map()
         for (const p of list) depts.set(p.deptName || '부서 미지정', [...(depts.get(p.deptName || '부서 미지정') || []), p])
         return `<section class="card" data-status="${k}"><div class="card-top"><b>${M.MEALS[k]} <span class="total">${list.length}명</span></b>${badge}</div>
-          ${list.length ? [...depts].map(([d, ps]) => `<div class="dept"><span class="muted small">${esc(d)} ${ps.length}</span><div class="who">${ps.map((p) => `<span title="${hm(p.at)} 신청">${esc(p.name)}</span>`).join('')}</div></div>`).join('') : '<p class="muted small">신청한 사람이 없습니다.</p>'}
+          ${list.length ? [...depts].map(([d, ps]) => `<div class="dept"><span class="muted small">${esc(d)} ${ps.length}</span><div class="who">${ps.map((p) => `<span data-who="${esc(p.id)}" title="${hm(p.at)} ${p.by ? `${esc(p.byName)} 님이 대신 신청` : '신청'}">${esc(p.name)}${p.by ? ' <small>대신</small>' : ''}${proxy && p.id !== me.id ? `<button class="x" data-unproxy="${esc(p.id)}" data-meal="${k}" aria-label="${esc(p.name)} 신청 대신 취소" title="대신 취소" ${busy ? 'disabled' : ''}>✕</button>` : ''}</span>`).join('')}</div></div>`).join('') : '<p class="muted small">신청한 사람이 없습니다.</p>'}
+          ${proxy ? `<div class="proxy"><label for="proxy-${k}" class="muted small">대신 신청</label><select id="proxy-${k}" data-proxy-sel="${k}"><option value="">사람 고르기</option>${rest.map((m) => `<option value="${esc(m.id)}" ${proxySel[k] === m.id ? 'selected' : ''}>${esc(m.deptName ? `${m.deptName} · ${m.name}` : m.name)}</option>`).join('')}</select><button data-proxy="${k}" ${busy ? 'disabled' : ''}>대신 신청</button></div>` : ''}
         </section>`
       })
       .join('')
@@ -149,6 +168,9 @@
       ${row('lunch')}${row('dinner')}
       <div class="set-row"><label for="ahead">며칠 앞까지 신청</label><input type="number" id="ahead" min="1" max="${M.LIMITS.aheadMax}" value="${c.ahead}" ${own ? '' : 'disabled'} /><span class="muted small">1 = 오늘만</span></div>
       <label class="inline"><input type="checkbox" id="weekend" ${c.weekend ? 'checked' : ''} ${own ? '' : 'disabled'} /> 토·일요일에도 받기</label>
+      <label class="inline"><input type="checkbox" id="holidays" ${c.holidays ? 'checked' : ''} ${own ? '' : 'disabled'} /> 공휴일에는 받지 않기 <small>(공휴일 목록: 관리 → 공휴일)</small></label>
+      <label>서무 <small>(다른 사람의 식사를 대신 신청·취소할 수 있는 사람. 설정을 만든 관리자는 늘 할 수 있음)</small></label>
+      <div class="members" id="clerks">${members.filter((m) => m.id !== (room ? room.createdBy : me.id)).map((m) => `<label class="inline"><input type="checkbox" value="${esc(m.id)}" ${c.clerks.includes(m.id) ? 'checked' : ''} ${own ? '' : 'disabled'} /> ${esc(m.name)} <small>${esc(m.deptName || '')}</small></label>`).join('') || '<p class="muted small">팀원이 없습니다.</p>'}</div>
       <label for="notice">안내 글 <small>(선택, 신청 화면 맨 위에 보임)</small></label>
       <textarea id="notice" rows="2" maxlength="${M.LIMITS.notice}" placeholder="예: 구내식당 4,000원, 식권은 서무에게" ${own ? '' : 'disabled'}>${esc(c.notice)}</textarea>
       <p id="setError" class="error" role="alert"></p>
@@ -160,6 +182,8 @@
       meals: { lunch: { on: $('on-lunch').checked, cutoff: $('cut-lunch').value }, dinner: { on: $('on-dinner').checked, cutoff: $('cut-dinner').value } },
       ahead: $('ahead').value,
       weekend: $('weekend').checked,
+      holidays: $('holidays').checked,
+      clerks: Array.from(document.querySelectorAll('#clerks input:checked')).map((x) => x.value),
       notice: $('notice').value
     })
     if (!c.meals.lunch.on && !c.meals.dinner.on) return ($('setError').textContent = '점심과 저녁 가운데 하나는 받아야 합니다.')
@@ -202,6 +226,15 @@
     const t = e.target.closest('button')
     if (!t) return
     if (t.dataset.act) return void change(t.dataset.date, t.dataset.meal, t.dataset.act === 'apply')
+    if (t.dataset.proxy || t.dataset.unproxy) {
+      const meal = t.dataset.proxy || t.dataset.meal
+      const id = t.dataset.unproxy || proxySel[meal]
+      const m = members.find((x) => x.id === id)
+      const name = m ? m.name : (M.dayList(room, statusDate, meal, members).find((p) => p.id === id) || {}).name
+      if (!id || !name) return toast('대신 신청할 사람을 고르세요.')
+      proxySel[meal] = ''
+      return void change(statusDate, meal, !t.dataset.unproxy, { id, name })
+    }
     if (t.dataset.move !== undefined) {
       statusDate = t.dataset.move === '0' ? M.ymd(now()) : M.addDays(statusDate, Number(t.dataset.move))
       return render()
@@ -223,6 +256,10 @@
         (err) => toast(err.message)
       )
   })
+  $('main').addEventListener('change', (e) => {
+    const k = e.target.dataset && e.target.dataset.proxySel
+    if (k) proxySel[k] = e.target.value
+  })
   $('main').addEventListener('submit', (e) => {
     if (e.target.id !== 'settings') return
     e.preventDefault()
@@ -236,15 +273,17 @@
   })
   // countdowns, and the lock at the deadline
   setInterval(() => {
-    if (me && tab !== 'settings' && !busy) render()
+    // not while a clerk has the "대신 신청" list open: a redraw would close it
+    if (me && tab !== 'settings' && !busy && !(document.activeElement && document.activeElement.tagName === 'SELECT')) render()
   }, 20000)
-  setInterval(() => void syncClock(), 10 * 60000)
+  setInterval(() => void syncClock().then(loadHolidays), 10 * 60000)
 
   ;(async () => {
     try {
       me = await call('me')
       await syncClock()
       members = await call('members').catch(() => [])
+      await loadHolidays()
       await load()
       render()
     } catch (e) {

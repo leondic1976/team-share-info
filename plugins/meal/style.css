@@ -493,3 +493,34 @@ table.tally tfoot td {
 .set-row input[type='number'] {
   width: 130px !important;
 }
+.who span small {
+  color: var(--muted);
+}
+.who button.x {
+  border: 0;
+  background: transparent;
+  padding: 0 0 0 4px;
+  font-size: 11px;
+  color: var(--bad);
+}
+.proxy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+.proxy label {
+  margin: 0;
+}
+.proxy select {
+  width: auto;
+  flex: 1;
+  min-width: 160px;
+  max-width: 320px;
+}
+p.holiday {
+  margin: 0;
+}

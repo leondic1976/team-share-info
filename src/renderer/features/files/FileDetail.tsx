@@ -49,7 +49,7 @@ function Preview({ file }: { file: FileDto }): React.JSX.Element | null {
   }, [file])
   if (!canPreview(file.name)) return null
   if (err) return <p className="text-sm text-muted-foreground">{err}</p>
-  if (text !== null) return <pre className="selectable max-h-80 overflow-auto rounded bg-muted p-3 text-xs whitespace-pre-wrap">{text}</pre>
+  if (text !== null) return <pre className="selectable max-h-96 overflow-auto rounded bg-muted p-4 font-sans text-sm leading-relaxed break-words whitespace-pre-wrap" data-testid="file-preview-text">{text}</pre>
   if (!url) return <p className="text-sm text-muted-foreground">미리보기를 불러오는 중…</p>
   if (PDF.test(file.name)) return <iframe title="PDF 미리보기" src={url} className="h-[60vh] w-full rounded border border-border" />
   return <img src={url} alt={file.name} className="max-h-[50vh] rounded border border-border object-contain" />
