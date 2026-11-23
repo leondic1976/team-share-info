@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>식사 신청</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="__sdk.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>🍱 식사 신청</h1>
+      <nav role="tablist">
+        <button role="tab" data-tab="apply" aria-selected="true">신청</button>
+        <button role="tab" data-tab="status">현황</button>
+        <button role="tab" data-tab="month">집계</button>
+        <button role="tab" data-tab="settings" id="settingsTab" class="hidden">설정</button>
+      </nav>
+      <span class="grow"></span>
+      <span id="clock" class="muted small"></span>
+    </header>
+
+    <main id="main" aria-live="polite"></main>
+
+    <div id="toast" role="status"></div>
+    <script src="meal.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

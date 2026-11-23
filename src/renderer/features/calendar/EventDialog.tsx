@@ -134,7 +134,7 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
       reminders: [10],
       scope: defaultScope(space),
       attendeeIds: [],
-      absenceType: '휴가',
+      absenceType: '연가',
       busy: false,
       busyEventId: null
     }
@@ -185,7 +185,7 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
             reminders: e.reminders,
             scope: { type: e.scope.type, groupIds: e.scope.groups.map((g) => g.id), memberIds: e.scope.members.map((m) => m.id) },
             attendeeIds: e.attendees.map((a) => a.memberId),
-            absenceType: e.absenceType ?? '휴가'
+            absenceType: e.absenceType ?? '연가'
           }))
           setLoaded(true)
         })
@@ -423,6 +423,8 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
             {f.kind === 'absence' && (
               <Field label="부재 종류">
                 <Select aria-label="부재 종류" value={f.absenceType} onChange={(e) => set('absenceType', e.target.value)}>
+                  {/* a type from an older version (휴가, 반차) stays as it is until changed */}
+                  {!ABSENCE_TYPES.includes(f.absenceType) && <option>{f.absenceType}</option>}
                   {ABSENCE_TYPES.map((t) => (
                     <option key={t}>{t}</option>
                   ))}

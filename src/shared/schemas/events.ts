@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import { scopeSchema, type ScopeDto } from './scope'
+import { DUTY_TYPE_NAMES } from './duty'
 
-export const ABSENCE_TYPES = ['휴가', '반차', '출장', '교육', '외근', '병가', '기타'] as const
+/** The same list as the 근무현황 screen: both write the same absence events. */
+export const ABSENCE_TYPES: readonly string[] = DUTY_TYPE_NAMES
 
 export const eventInputSchema = z
   .object({

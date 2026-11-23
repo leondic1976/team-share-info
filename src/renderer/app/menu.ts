@@ -21,6 +21,7 @@ import {
   Library,
   Puzzle,
   Table2,
+  UserCheck,
   type LucideIcon
 } from 'lucide-react'
 import type { FeatureKey } from '@shared/constants'
@@ -47,6 +48,7 @@ export const MENU: MenuItem[] = [
   { key: 'chat', label: '메신저', path: '/chat', icon: MessagesSquare },
   { key: 'tasks', label: '할 일', path: '/tasks', icon: ListTodo },
   { key: 'boards', label: '게시판', path: '/boards', icon: ClipboardList },
+  { key: 'duty', label: '근무현황', path: '/duty', icon: UserCheck },
   { key: 'directory', label: '주소록', path: '/directory', icon: Contact },
   { key: 'docs', label: '기록', path: '/docs', icon: BookOpen },
   { key: 'diary', label: '다이어리', path: '/diary', icon: NotebookPen, personal: true },

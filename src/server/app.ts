@@ -20,6 +20,7 @@ import { registerCommentRoutes } from './routes/comments'
 import { registerTaskRoutes } from './routes/tasks'
 import { registerBoardRoutes } from './routes/boards'
 import { registerDirectoryRoutes } from './routes/directory'
+import { registerDutyRoutes } from './routes/duty'
 import { registerDocRoutes } from './routes/docs'
 import { registerToolRoutes, runAlarmJobs } from './routes/tools'
 import { registerLauncherRoutes } from './routes/launcher'
@@ -102,6 +103,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   registerTaskRoutes(app, ctx, { requireAuth })
   registerBoardRoutes(app, ctx, { requireAuth, requireAdmin })
   registerDirectoryRoutes(app, ctx, { requireAuth, requireAdmin })
+  registerDutyRoutes(app, ctx, { requireAuth })
   registerDocRoutes(app, ctx, { requireAuth, requireAdmin })
   registerToolRoutes(app, ctx, { requireAuth })
   registerLauncherRoutes(app, ctx, { requireAuth, requireAdmin })

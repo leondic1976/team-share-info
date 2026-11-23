@@ -57,6 +57,7 @@ export const FEATURES = [
   'chat',
   'tasks',
   'boards',
+  'duty',
   'directory',
   'docs',
   'diary',

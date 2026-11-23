@@ -788,5 +788,15 @@ CREATE INDEX idx_blocked_pc_uid ON blocked_pcs(pc_uid);
 ALTER TABLE members ADD COLUMN nickname TEXT;
 ALTER TABLE members ADD COLUMN admin_fields TEXT NOT NULL DEFAULT '[]';
 `
+  },
+  {
+    id: 17,
+    name: 'duty-board',
+    sql: `
+-- 근무현황: an absence (events.kind = 'absence') may be recorded for a member by an admin or
+-- a 서무. created_by stays the member who is away; registered_by is who typed it in.
+ALTER TABLE events ADD COLUMN registered_by TEXT;
+CREATE INDEX idx_events_absence ON events(kind, start_at, end_at);
+`
   }
 ]

@@ -45,6 +45,7 @@ const FilesPage = lazy(() => import('@renderer/features/files/FilesPage').then((
 const ChatPage = lazy(() => import('@renderer/features/chat/ChatPage').then((m) => ({ default: m.ChatPage })))
 const TasksPage = lazy(() => import('@renderer/features/tasks/TasksPage').then((m) => ({ default: m.TasksPage })))
 const BoardsPage = lazy(() => import('@renderer/features/boards/BoardsPage').then((m) => ({ default: m.BoardsPage })))
+const DutyPage = lazy(() => import('@renderer/features/duty/DutyPage').then((m) => ({ default: m.DutyPage })))
 const DirectoryPage = lazy(() => import('@renderer/features/directory/DirectoryPage').then((m) => ({ default: m.DirectoryPage })))
 const DocsPage = lazy(() => import('@renderer/features/docs/DocsPage').then((m) => ({ default: m.DocsPage })))
 const MemosPage = lazy(() => import('@renderer/features/memos/MemosPage').then((m) => ({ default: m.MemosPage })))
@@ -164,6 +165,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/boards" element={<BoardsPage />} />
             <Route path="/boards/:boardId" element={<BoardsPage />} />
             <Route path="/boards/:boardId/:postId" element={<BoardsPage />} />
+            <Route path="/duty" element={<DutyPage />} />
             <Route path="/directory" element={<DirectoryPage />} />
             <Route path="/docs" element={<DocsPage />} />
             <Route path="/docs/:section" element={<DocsPage />} />
@@ -180,7 +182,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/plugins" element={<PluginsPage />} />
             <Route path="/plugins/:id" element={<PluginHost />} />
             <Route path="/notes/:id" element={<NotesPage />} />
-            {MENU.filter((m) => !['home', 'notices', 'calendar', 'diary', 'files', 'chat', 'tasks', 'boards', 'directory', 'docs', 'memos', 'alarms', 'utilities', 'launcher', 'myfiles', 'notes', 'meetings', 'plugins'].includes(m.key)).map((m) => (
+            {MENU.filter((m) => !['home', 'notices', 'calendar', 'diary', 'files', 'chat', 'tasks', 'boards', 'duty', 'directory', 'docs', 'memos', 'alarms', 'utilities', 'launcher', 'myfiles', 'notes', 'meetings', 'plugins'].includes(m.key)).map((m) => (
               <Route key={m.key} path={`${m.path}/*`} element={<ComingSoon title={m.label} />} />
             ))}
             <Route path="/settings" element={<SettingsPage extra={<ConnectionCard onReset={onReset} />} />} />

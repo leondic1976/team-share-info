@@ -81,6 +81,18 @@ export function PluginsPage(): React.JSX.Element {
       void qc.invalidateQueries({ queryKey: ['local', 'plugins'] })
     } else setMsg(r.error ?? '설치하지 못했습니다.')
   }
+  const remove = async (m: Pick<PluginManifest, 'id' | 'name'>): Promise<void> => {
+    if (!confirmDialog(`${m.name}을(를) 삭제할까요? 이 PC에 저장된 확장 기능 데이터도 지워집니다.`)) return
+    setBusy(true)
+    try {
+      await invoke('plugins:uninstall', { id: m.id })
+      setMsg(`${m.name}을(를) 삭제했습니다. 필요하면 다시 설치할 수 있습니다.`)
+    } catch (e) {
+      setMsg(`삭제하지 못했습니다. ${e instanceof Error ? e.message : String(e)}`)
+    }
+    setBusy(false)
+    void qc.invalidateQueries({ queryKey: ['local', 'plugins'] })
+  }
   const fromFile = async (): Promise<void> => {
     const r = await invoke('plugins:pickFile')
     if (r.ok && r.manifest && r.path) setPending({ manifest: r.manifest, from: { kind: 'file', path: r.path } })
@@ -156,13 +168,8 @@ export function PluginsPage(): React.JSX.Element {
                           </Button>
                         )}
                         <Switch checked={p.enabled} onCheckedChange={(v) => void invoke('plugins:setEnabled', { id: p.manifest.id, enabled: v })} label="사용" />
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="ml-auto"
-                          onClick={() => confirmDialog(`${p.manifest.name}을(를) 지울까요? 이 PC에 저장된 확장 기능 데이터도 지워집니다.`) && void invoke('plugins:uninstall', { id: p.manifest.id })}
-                        >
-                          <Trash2 /> 제거
+                        <Button size="sm" variant="outline" className="ml-auto text-urgent" disabled={busy} data-testid="plugin-remove" onClick={() => void remove(p.manifest)}>
+                          <Trash2 /> 삭제
                         </Button>
                       </div>
                     </div>
@@ -206,9 +213,14 @@ export function PluginsPage(): React.JSX.Element {
                           ))}
                         </ul>
                       )}
-                      <div className="pt-1">
+                      <div className="flex items-center gap-2 pt-1">
                         {ins ? (
-                          <span className="text-xs text-muted-foreground">설치됨 v{ins.manifest.version}</span>
+                          <>
+                            <span className="text-xs text-muted-foreground">설치됨 v{ins.manifest.version}</span>
+                            <Button size="sm" variant="outline" className="text-urgent" disabled={busy} data-testid="catalog-remove" onClick={() => void remove(ins.manifest)}>
+                              <Trash2 /> 삭제
+                            </Button>
+                          </>
                         ) : (
                           <Button size="sm" disabled={busy} onClick={() => (c.builtin ? void installNow([c]) : askCatalog(c))}>
                             <Download /> {c.builtin ? '바로 설치' : '설치'}

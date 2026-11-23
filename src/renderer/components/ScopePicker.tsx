@@ -77,7 +77,7 @@ export function ScopePicker({ value, onChange, initial }: { value: ScopeInput; o
   )
 }
 
-export function MemberPicker({ value, onChange, excludeSelf }: { value: string[]; onChange: (ids: string[]) => void; excludeSelf?: boolean }): React.JSX.Element {
+export function MemberPicker({ value, onChange, excludeSelf, selectAll }: { value: string[]; onChange: (ids: string[]) => void; excludeSelf?: boolean; selectAll?: boolean }): React.JSX.Element {
   const { data: members } = useMembers()
   const { data: me } = useMe()
   const [q, setQ] = useState('')
@@ -108,6 +108,26 @@ export function MemberPicker({ value, onChange, excludeSelf }: { value: string[]
         <Input className="pl-8" aria-label="구성원 검색" value={q} onChange={(e) => setQ(e.target.value)} placeholder="이름·부서 검색" />
       </div>
       <div className="max-h-40 overflow-y-auto rounded-md border border-border">
+        {selectAll && list.length > 0 && (
+          <label className="sticky top-0 flex cursor-pointer items-center gap-2 border-b border-border bg-background px-2.5 py-1.5 text-sm font-medium hover:bg-muted">
+            <input
+              type="checkbox"
+              aria-label="전체 선택"
+              checked={list.every((m) => value.includes(m.id))}
+              onChange={(e) => {
+                // acts on the members shown (after the search), keeps the others as they are
+                const shown = new Set(list.map((m) => m.id))
+                const rest = value.filter((x) => !shown.has(x))
+                onChange(e.target.checked ? [...rest, ...shown] : rest)
+              }}
+            />
+            전체 선택
+            <span className="text-xs font-normal text-muted-foreground">
+              {q.trim() ? '검색된 ' : ''}
+              {list.length}명
+            </span>
+          </label>
+        )}
         {list.map((m) => (
           <label key={m.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-sm hover:bg-muted">
             <input type="checkbox" checked={value.includes(m.id)} onChange={(e) => onChange(e.target.checked ? [...value, m.id] : value.filter((x) => x !== m.id))} aria-label={m.name} />

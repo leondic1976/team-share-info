@@ -121,6 +121,9 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
     return ok(listMembers(ctx.db).map((m) => toMemberDto(m, ctx.hub.presenceOf(m.id))))
   })
 
+  /** The server clock, for deadlines that must be the same on every PC. */
+  app.get('/api/time', { preHandler: requireAuth }, async () => ok({ now: Date.now() }))
+
   app.get('/api/org', { preHandler: requireAuth }, async () => {
     const org = getSection(ctx.db, 'org')
     return ok({ ...org, departments: listDepartments(ctx.db) })

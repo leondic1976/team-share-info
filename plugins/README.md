@@ -36,7 +36,8 @@ plugins/<id>/
 ## API (`await TeamHub.call(이름, 값)`)
 | 이름 | 권한 | 설명 |
 |---|---|---|
-| `me` | — | `{ id, name, deptName }` |
+| `me` | — | `{ id, name, deptName, isAdmin }` |
+| `time` | — | `{ now }` 서버 PC의 시계(ms). 마감 시각처럼 모든 PC에서 같아야 하는 판단에 씀 |
 | `members` | members | 활동 중인 팀원 `[{ id, name, deptName, title, presence }]` |
 | `storage.get` / `storage.set` / `storage.keys` | storage | 이 PC에만 저장(`{ key }`, `{ key, value }`), 값 512KB까지 |
 | `rooms.list` / `rooms.get` | rooms | 내가 볼 수 있는 이 확장 기능의 방 |
@@ -62,5 +63,5 @@ plugins/<id>/
 - 묶기: `pnpm plugins:pack` → `release/plugins/<id>-<버전>.thplugin`
 - TeamHub **확장 기능 → 파일에서 설치**로 넣어 봅니다.
 - 순수 로직은 `tests/plugins/`에 단위 테스트를 둡니다(예: `ladder.test.ts`).
-- 예시: `plugins/ladder`(함께하기 방), `plugins/matjip`(방 하나를 팀 게시판으로: 각자의 글·좋아요·댓글을 자기 참여 데이터에), `plugins/survey`(방 하나 = 설문 하나), `plugins/dutchpay`(이 PC 저장만), `plugins/ocr`·`plugins/copilot`(본체 기능 호출). 표 편집·수식 엔진·파일 저장/열기는 같은 방식으로 만든 본 기능 `resources/ledger`(관리대장)를 참고하세요.
+- 예시: `plugins/ladder`(함께하기 방), `plugins/matjip`(방 하나를 팀 게시판으로: 각자의 글·좋아요·댓글을 자기 참여 데이터에), `plugins/survey`(방 하나 = 설문 하나), `plugins/meal`(관리자가 만든 방 하나에 마감 시각, 각자의 날짜별 신청은 자기 참여 데이터에), `plugins/dutchpay`(이 PC 저장만), `plugins/ocr`·`plugins/copilot`(본체 기능 호출). 표 편집·수식 엔진·파일 저장/열기는 같은 방식으로 만든 본 기능 `resources/ledger`(관리대장)를 참고하세요.
 - `sandbox`에서는 `prompt()`가 동작하지 않습니다(Electron). 입력은 `<dialog>`로 받으세요. 붙여넣기는 `paste` 이벤트의 `clipboardData`로 읽습니다(클립보드 읽기 권한 없음).

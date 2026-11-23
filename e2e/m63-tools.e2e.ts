@@ -77,10 +77,15 @@ describe('M6-3 personal tools: memos, alarms, shared memos, team alarms', () => 
   it('team alarm: admin sends, member gets a popup and confirms; sender sees it', async () => {
     await go(a.page, '/chat')
     await a.page.getByRole('button', { name: '팀원 알람' }).click()
+    // 전체 선택 checks everyone shown, and clears them again
+    await a.page.getByRole('checkbox', { name: '전체 선택' }).check()
+    expect(await a.page.getByRole('checkbox', { name: '팀원B' }).isChecked()).toBe(true)
+    await a.page.getByRole('checkbox', { name: '전체 선택' }).uncheck()
+    expect(await a.page.getByRole('checkbox', { name: '팀원B' }).isChecked()).toBe(false)
     await a.page.getByRole('checkbox', { name: '팀원B' }).check()
     await a.page.getByLabel('알람 내용').fill('14시 회의 자료 지참E2E')
-    await a.page.getByRole('button', { name: '지금' }).click()
-    await a.page.getByRole('button', { name: '보내기' }).click()
+    await a.page.getByRole('button', { name: '즉시', exact: true }).click()
+    await a.page.getByRole('button', { name: '즉시 보내기' }).click()
     await expect.poll(() => a.page.getByText(/1명에게/).count()).toBe(1)
     await expect.poll(() => alarmsShown(b.app), { timeout: 40000, interval: 1000 }).toContain('14시 회의 자료 지참E2E')
     // The server pushes right away (due now), so wait for the window to register.

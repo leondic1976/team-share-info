@@ -71,4 +71,17 @@ describe('shared memos and team alarms (M6-8)', () => {
     expect((await s.req(s.admin, { method: 'DELETE', url: `/api/alarms/${later}` })).statusCode).toBe(200)
     expect((await s.req(b, { method: 'GET', url: '/api/alarms/received', ip: IP })).json().data).toHaveLength(1)
   })
+
+  it('immediate alarm uses the server clock, whatever time the sender PC gave', async () => {
+    s = await createTestServer()
+    const b = await s.join('B')
+    s.ctx.hub.onlineMemberIds = () => new Set()
+    const before = Date.now()
+    // a sender PC whose clock is an hour slow would be refused without "immediate"
+    const res = await s.req(s.admin, { method: 'POST', url: '/api/alarms', payload: { toIds: [b.memberId], fireAt: before - 3_600_000, immediate: true, title: '즉시' } })
+    expect(res.statusCode).toBe(200)
+    const pending = (await s.req(b, { method: 'GET', url: '/api/alarms/pending', ip: IP })).json().data
+    expect(pending).toHaveLength(1)
+    expect(pending[0].fireAt).toBeGreaterThanOrEqual(before)
+  })
 })

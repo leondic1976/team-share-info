@@ -146,6 +146,8 @@ export interface SharedMemoDto {
 export const sendAlarmSchema = z.object({
   toIds: z.array(z.string()).min(1, '받는 사람을 고르세요').max(100),
   fireAt: z.number().int(),
+  /** Ring as soon as it is sent: the server uses its own clock, so the sender's PC clock does not matter. */
+  immediate: z.boolean().default(false),
   title: z.string().trim().min(1, '알람 내용을 입력하세요').max(100),
   body: z.string().max(500).default('')
 })

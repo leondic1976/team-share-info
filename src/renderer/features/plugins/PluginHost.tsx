@@ -18,6 +18,7 @@ type Msg = { th: 1; id: string; method: string; params: Record<string, unknown> 
 /** Which permission each bridge method needs (manifest.permissions). */
 const NEEDS: Record<string, PluginPermission | null> = {
   me: null,
+  time: null,
   members: 'members',
   'storage.get': 'storage',
   'storage.set': 'storage',
@@ -75,7 +76,10 @@ export function PluginHost(): React.JSX.Element {
       }
       switch (m.method) {
         case 'me':
-          return me ? { id: me.id, name: me.name, deptName: me.deptName ?? null } : null
+          return me ? { id: me.id, name: me.name, deptName: me.deptName ?? null, isAdmin: me.role === 'admin' } : null
+        case 'time':
+          // the server's clock: deadlines must not depend on the clock of each PC
+          return api.get<{ now: number }>('/api/time')
         case 'members':
           return (await api.get<MemberDto[]>('/api/members')).filter((x) => x.status === 'active').map((x) => ({ id: x.id, name: x.name, deptName: x.deptName, title: x.title, presence: x.presence }))
         case 'storage.get':

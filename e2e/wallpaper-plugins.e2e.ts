@@ -141,5 +141,16 @@ describe('wallpaper and built-in plugins', () => {
     // 관리대장 (the former 스마트 대장 plugin) is part of the app now: not offered as a plugin, always in the menu (under 확장 기능)
     expect(await cards.filter({ hasText: '스마트 대장' }).count()).toBe(0)
     expect(await a.page.getByRole('navigation', { name: '주 메뉴' }).getByRole('link', { name: '관리대장' }).count()).toBe(1)
+
+    // delete from the catalog card, install again, delete from the installed card
+    const menuLadder = a.page.getByRole('navigation', { name: '주 메뉴' }).getByRole('link', { name: '사다리타기' })
+    await ladder.getByTestId('catalog-remove').click()
+    await expect.poll(() => a.page.getByTestId('installed-plugin').count(), { timeout: 15000 }).toBe(0)
+    await expect.poll(() => menuLadder.count()).toBe(0)
+    await ladder.getByRole('button', { name: '바로 설치' }).click()
+    await expect.poll(() => a.page.getByTestId('installed-plugin').count(), { timeout: 15000 }).toBe(1)
+    await a.page.getByTestId('installed-plugin').getByTestId('plugin-remove').click()
+    await expect.poll(() => a.page.getByTestId('installed-plugin').count(), { timeout: 15000 }).toBe(0)
+    await expect.poll(() => ladder.getByRole('button', { name: '바로 설치' }).count()).toBe(1)
   }, 120000)
 })

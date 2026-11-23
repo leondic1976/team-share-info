@@ -143,18 +143,19 @@ export function registerToolRoutes(app: FastifyInstance, ctx: ServerContext, gua
   app.post('/api/alarms', auth, async (req) => {
     const input = parse(sendAlarmSchema, req.body)
     const now = Date.now()
-    if (input.fireAt < now - 60_000) throw badRequest('지난 시각으로는 보낼 수 없습니다.')
-    if (input.fireAt > now + 366 * 86400000) throw badRequest('1년 이내의 시각만 정할 수 있습니다.')
+    const fireAt = input.immediate ? now : input.fireAt
+    if (fireAt < now - 60_000) throw badRequest('지난 시각으로는 보낼 수 없습니다.')
+    if (fireAt > now + 366 * 86400000) throw badRequest('1년 이내의 시각만 정할 수 있습니다.')
     const ids: string[] = []
     db.tx(() => {
       for (const to of new Set(input.toIds)) {
         if (!db.get(`SELECT 1 FROM members WHERE id = ? AND status = 'active'`, [to])) throw badRequest('없는 구성원이 포함되어 있습니다.')
         const id = newId()
-        db.run('INSERT INTO sent_alarms (id, from_id, to_id, fire_at, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, req.member.id, to, input.fireAt, input.title, input.body, now])
+        db.run('INSERT INTO sent_alarms (id, from_id, to_id, fire_at, title, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, req.member.id, to, fireAt, input.title, input.body, now])
         ids.push(id)
       }
     })
-    logActivity(ctx, req, 'alarm.send', null, { count: ids.length, fireAt: input.fireAt })
+    logActivity(ctx, req, 'alarm.send', null, { count: ids.length, fireAt })
     runAlarmJobs(ctx)
     return ok({ ids })
   })
