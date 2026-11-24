@@ -10,7 +10,7 @@ import { DOC_KIND_LABEL } from '@shared/schemas/docs'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Select } from '@renderer/components/ui/input'
 import { Dialog, confirmDialog } from '@renderer/components/Dialog'
-import { EmptyState } from '@renderer/components/EmptyState'
+import { EmptyState, EmptyNote } from '@renderer/components/EmptyState'
 import { ScopePicker, defaultScope, scopeIsValid } from '@renderer/components/ScopePicker'
 import { invoke } from '@renderer/lib/bridge'
 import { api, errorMessage } from '@renderer/lib/api'
@@ -393,7 +393,7 @@ export function NotesPage(): React.JSX.Element {
                   <span className="block truncate text-xs text-muted-foreground">{r.snippet}</span>
                 </button>
               ))}
-              {results.data && !results.data.length && <p className="px-2 text-sm text-muted-foreground">찾는 내용이 없습니다.</p>}
+              {results.data && !results.data.length && <EmptyNote>찾는 내용이 없습니다.</EmptyNote>}
             </div>
           ) : (
             <>
@@ -411,7 +411,7 @@ export function NotesPage(): React.JSX.Element {
               {roots.map((r) => (
                 <TreeNode key={r.id} item={r} all={all} depth={0} current={id} expanded={expanded} toggle={toggle} onDrop={drop} />
               ))}
-              {!roots.length && <p className="px-2 text-xs text-muted-foreground">아직 페이지가 없습니다.</p>}
+              {!roots.length && <EmptyNote>아직 페이지가 없습니다.</EmptyNote>}
             </>
           )}
         </div>

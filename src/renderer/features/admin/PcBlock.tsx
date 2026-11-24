@@ -1,3 +1,4 @@
+import { EmptyNote } from '@renderer/components/EmptyState'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -99,7 +100,7 @@ export function BlockedPcsCard({ canUnblock = true }: { canUnblock?: boolean }):
       </CardHeader>
       {err && <p className="px-4 pb-2 text-sm text-urgent">{err}</p>}
       {list.length === 0 ? (
-        <p className="px-4 pb-4 text-sm text-muted-foreground">영구 차단한 PC가 없습니다.</p>
+        <EmptyNote>영구 차단한 PC가 없습니다.</EmptyNote>
       ) : (
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-muted-foreground">

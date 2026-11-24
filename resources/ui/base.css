@@ -533,3 +533,125 @@ textarea.th-input {
     padding: 0;
   }
 }
+
+/* ---------- chip: a small toggle for a filter, a tag or an option. Outline; the chosen one
+   (aria-pressed / aria-checked / aria-selected = true, or a checked input inside) is tinted.
+   Put a count in <b>. ---------- */
+.th-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+.th-chip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+  height: 1.75rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--input);
+  border-radius: 0.375rem;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+.th-chip:hover {
+  background: var(--muted);
+}
+.th-chip:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+.th-chip[aria-pressed='true'],
+.th-chip[aria-checked='true'],
+.th-chip[aria-selected='true'],
+.th-chip:has(input:checked) {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+}
+.th-chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.th-chip:has(input:focus-visible) {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.th-chip b {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- meter: a thin bar for a share or progress — <div class="th-meter"><i style="width:40%"></i></div> ---------- */
+.th-meter {
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: 0.25rem;
+  background: var(--muted);
+}
+.th-meter > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+
+/* ---------- menu: a list of actions that drops from a button or opens on a right click.
+   <div class="th-menu" role="menu"><button>…</button><hr /><button class="th-menu-danger">…</button></div>
+   The page places it (position, left/top). ---------- */
+.th-menu {
+  z-index: 30;
+  display: flex;
+  min-width: 12rem;
+  flex-direction: column;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+}
+.th-menu > button {
+  padding: 0.375rem 0.625rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.th-menu > button:hover {
+  background: var(--muted);
+}
+.th-menu > button:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+.th-menu > .th-menu-danger {
+  color: var(--urgent);
+}
+.th-menu > hr {
+  width: 100%;
+  margin: 0.25rem 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* A whole page that is empty (nothing but the empty state in the page body): the message sits
+   in the middle of the page, as on the program's own screens. */
+.th-ui .th-page-body > .th-empty:only-child,
+.th-ui main > .th-empty:only-child {
+  min-height: calc(100vh - 11rem);
+}

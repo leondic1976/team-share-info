@@ -1,3 +1,4 @@
+import { EmptyNote } from '@renderer/components/EmptyState'
 import { useEffect, useState } from 'react'
 import { Lock, Radar, Loader2, RotateCcw, Server } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
@@ -101,7 +102,7 @@ export function ConnectionCard({ onReset }: { onReset: () => void }): React.JSX.
             </div>
             {found && (
               <div className="space-y-1">
-                {found.length === 0 && <p className="text-xs text-muted-foreground">찾은 서버가 없습니다.</p>}
+                {found.length === 0 && <EmptyNote>찾은 서버가 없습니다.</EmptyNote>}
                 {found.map((s) => (
                   <button
                     key={s.url}

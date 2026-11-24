@@ -1,7 +1,7 @@
 {
   "id": "survey",
   "name": "설문조사",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "팀 전체나 지정한 사람에게 설문을 돌리고 결과를 바로 모아 봅니다. 객관식·복수 선택·별점·주관식, 마감, 이름 숨김, CSV 저장.",
   "author": "TeamHub",
   "icon": "설",

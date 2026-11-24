@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" class="th-ui">
   <head>
     <meta charset="utf-8" />
     <title>설문조사</title>
@@ -7,57 +7,76 @@
     <script src="__sdk.js"></script>
   </head>
   <body>
-    <header>
-      <h1><i data-icon="chart-column"></i> 설문조사</h1>
-      <nav role="tablist">
-        <button role="tab" data-tab="open" aria-selected="true">진행 중</button>
-        <button role="tab" data-tab="closed">끝난 설문</button>
-        <button role="tab" data-tab="mine">내가 만든 설문</button>
-      </nav>
-      <span class="grow"></span>
-      <button id="newBtn" class="primary">＋ 새 설문 만들기</button>
-    </header>
+    <div class="th-page">
+      <header class="th-page-header">
+        <div>
+          <h1>설문조사</h1>
+          <p>팀원에게 묻고 결과를 한눈에 봅니다. 날짜 정하기, 메뉴 고르기, 만족도 조사에 쓰세요.</p>
+        </div>
+        <div class="th-actions">
+          <button class="th-btn" id="newBtn"><i data-icon="plus"></i> 새 설문 만들기</button>
+        </div>
+      </header>
+      <div class="th-toolbar">
+        <nav class="th-tabs" role="tablist" aria-label="보기">
+          <button class="th-btn th-tab" role="tab" data-tab="open" aria-selected="true"><i data-icon="clipboard-list"></i> 진행 중</button>
+          <button class="th-btn th-tab" role="tab" data-tab="closed" aria-selected="false"><i data-icon="folder-archive"></i> 끝난 설문</button>
+          <button class="th-btn th-tab" role="tab" data-tab="mine" aria-selected="false"><i data-icon="user"></i> 내가 만든 설문</button>
+        </nav>
+      </div>
 
-    <main id="main" aria-live="polite"></main>
+      <p id="oldApp" class="th-no-print" hidden>이 화면은 TeamHub를 최신 버전으로 업데이트해야 제대로 보입니다.</p>
+      <main class="th-body" id="main" aria-live="polite"></main>
+    </div>
 
-    <dialog id="builder">
+    <dialog id="builder" class="th-dialog wide">
       <form id="builderForm" method="dialog">
-        <h2>새 설문 만들기</h2>
-        <label for="bTitle">설문 제목</label>
-        <input id="bTitle" maxlength="100" required placeholder="예: 워크숍 날짜와 장소" />
-        <label for="bDesc">안내 글 <small>(선택)</small></label>
-        <textarea id="bDesc" rows="2" maxlength="500" placeholder="설문 목적이나 참고할 내용을 적어 주세요."></textarea>
-
-        <div id="bQuestions"></div>
-        <button type="button" id="bAdd">＋ 문항 추가</button>
-
-        <div class="row">
-          <div>
-            <label for="bDeadline">마감 일시 <small>(선택)</small></label>
-            <input id="bDeadline" type="datetime-local" />
+        <h2 class="th-dialog-title">새 설문 만들기</h2>
+        <div class="form">
+          <div class="th-field">
+            <label class="th-label" for="bTitle">설문 제목</label>
+            <input class="th-input" id="bTitle" maxlength="100" required placeholder="예: 워크숍 날짜와 장소" />
           </div>
-          <div>
-            <label for="bResults">결과를 볼 수 있는 사람</label>
-            <select id="bResults"></select>
+          <div class="th-field">
+            <label class="th-label" for="bDesc">안내 글 <small>(선택)</small></label>
+            <textarea class="th-input" id="bDesc" rows="2" maxlength="500" placeholder="설문 목적이나 참고할 내용을 적어 주세요."></textarea>
+          </div>
+
+          <div id="bQuestions" class="form"></div>
+          <div><button type="button" class="th-btn th-btn-outline th-btn-sm" id="bAdd"><i data-icon="plus"></i> 문항 추가</button></div>
+
+          <div class="pair">
+            <div class="th-field">
+              <label class="th-label" for="bDeadline">마감 일시 <small>(선택)</small></label>
+              <input class="th-input" id="bDeadline" type="datetime-local" />
+            </div>
+            <div class="th-field">
+              <label class="th-label" for="bResults">결과를 볼 수 있는 사람</label>
+              <select class="th-input" id="bResults"></select>
+            </div>
+          </div>
+          <label class="th-check"><input type="checkbox" id="bAnon" /> 이름 숨김 <small>(결과 화면과 저장 파일에 누가 답했는지 표시하지 않음)</small></label>
+
+          <div class="th-field">
+            <span class="th-label">받는 사람</span>
+            <div class="checks">
+              <label class="th-check"><input type="radio" name="bScope" value="team" checked /> 팀 전체</label>
+              <label class="th-check"><input type="radio" name="bScope" value="members" /> 지정한 사람 <small>(초대 알림이 갑니다)</small></label>
+            </div>
+            <div id="bMembers" class="members hidden"></div>
           </div>
         </div>
-        <label class="inline"><input type="checkbox" id="bAnon" /> 이름 숨김 <small>(결과 화면과 저장 파일에 누가 답했는지 표시하지 않음)</small></label>
 
-        <label>받는 사람</label>
-        <label class="inline"><input type="radio" name="bScope" value="team" checked /> 팀 전체</label>
-        <label class="inline"><input type="radio" name="bScope" value="members" /> 지정한 사람 <small>(초대 알림이 갑니다)</small></label>
-        <div id="bMembers" class="members hidden"></div>
-
-        <p id="bError" class="error" role="alert"></p>
-        <div class="btns">
-          <span class="grow"></span>
-          <button type="button" id="bCancel">취소</button>
-          <button type="submit" class="primary">설문 시작</button>
+        <p id="bError" class="th-error" role="alert"></p>
+        <div class="dlg-btns">
+          <span class="th-grow"></span>
+          <button type="button" class="th-btn th-btn-outline" id="bCancel">취소</button>
+          <button type="submit" class="th-btn">설문 시작</button>
         </div>
       </form>
     </dialog>
 
-    <div id="toast" role="status"></div>
+    <div id="toast" class="th-toast" role="status"></div>
     <script src="survey.js"></script>
     <script src="app.js"></script>
   </body>

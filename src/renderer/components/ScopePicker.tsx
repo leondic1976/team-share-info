@@ -5,6 +5,7 @@ import { displayName } from '@shared/schemas/auth'
 import { useMe, useMembers } from '@renderer/lib/queries'
 import { Input } from './ui/input'
 import { cn } from '@renderer/lib/utils'
+import { affiliationText } from '@shared/org'
 
 export function defaultScope(space: string): ScopeInput {
   return space === 'team' ? { type: 'team', groupIds: [], memberIds: [] } : { type: 'group', groupIds: [space], memberIds: [] }
@@ -86,7 +87,7 @@ export function MemberPicker({ value, onChange, excludeSelf, selectAll }: { valu
     () =>
       (members ?? [])
         .filter((m) => !excludeSelf || m.id !== me?.id)
-        .filter((m) => !q.trim() || `${m.name} ${m.nickname ?? ''} ${m.deptName ?? ''}`.includes(q.trim())),
+        .filter((m) => !q.trim() || `${m.name} ${m.nickname ?? ''} ${affiliationText(m)}`.includes(q.trim())),
     [members, me, q, excludeSelf]
   )
   const selected = (members ?? []).filter((m) => value.includes(m.id))
@@ -133,7 +134,9 @@ export function MemberPicker({ value, onChange, excludeSelf, selectAll }: { valu
           <label key={m.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-sm hover:bg-muted">
             <input type="checkbox" checked={value.includes(m.id)} onChange={(e) => onChange(e.target.checked ? [...value, m.id] : value.filter((x) => x !== m.id))} aria-label={m.name} />
             {displayName(m)}
-            <span className="text-xs text-muted-foreground">{m.deptName}</span>
+            <span className="text-xs text-muted-foreground" title={affiliationText(m) || undefined}>
+              {m.deptName}
+            </span>
           </label>
         ))}
         {list.length === 0 && <p className="px-2.5 py-2 text-xs text-muted-foreground">구성원이 없습니다.</p>}

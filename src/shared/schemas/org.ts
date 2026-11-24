@@ -14,6 +14,12 @@ export interface DepartmentDto {
   duties?: string | null
   /** where it sits (e.g. "본관 2층") */
   location?: string | null
+  /**
+   * Set when a person made this department by typing their own affiliation (내 정보, 사용 신청):
+   * the member id, and when. Cleared once the 최종관리자 has renamed, moved or confirmed it.
+   */
+  enteredBy?: string | null
+  enteredAt?: number | null
 }
 
 /** Optional text; an empty one is stored as "none". */
@@ -44,8 +50,13 @@ export const departmentPatchSchema = z.object({
   headId: z.string().nullable().optional(),
   phone: text(40),
   duties: text(500),
-  location: text(60)
+  location: text(60),
+  /** true: the 최종관리자 has looked at a person-entered department; its mark goes */
+  confirmed: z.boolean().optional()
 })
+
+/** 합치기: the members and the departments below `id` go to `targetId`, then `id` is removed. */
+export const departmentMergeSchema = z.object({ targetId: z.string().min(1) })
 
 /** The departments of one parent, in the order they should be shown. */
 export const departmentOrderSchema = z.object({

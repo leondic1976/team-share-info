@@ -13,8 +13,9 @@ export function EmptyState({
   description?: string
   action?: ReactNode
 }): React.JSX.Element {
+  // w-full + flex-1: also centred when it is a child of a row (beside a side list), not only of a column
   return (
-    <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2 p-8 text-center">
+    <div className="flex h-full min-h-48 w-full min-w-0 flex-1 flex-col items-center justify-center gap-2 p-8 text-center" data-testid="empty-state">
       {Icon && <Icon className="size-10 text-muted-foreground/60" aria-hidden />}
       <p className="text-base font-semibold">{title}</p>
       {description && <p className="max-w-md text-sm text-muted-foreground">{description}</p>}
@@ -25,7 +26,7 @@ export function EmptyState({
 
 export function Loading({ label = '불러오는 중…' }: { label?: string }): React.JSX.Element {
   return (
-    <div className="flex h-full min-h-32 items-center justify-center gap-2 text-sm text-muted-foreground">
+    <div className="flex h-full min-h-32 w-full min-w-0 flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
       <Loader2 className="size-4 animate-spin" /> {label}
     </div>
   )
@@ -56,5 +57,17 @@ export function OfflineState(): React.JSX.Element {
       title="서버에 연결되어 있지 않습니다"
       description="서버 PC가 켜져 있는지 확인하세요. 연결되면 자동으로 다시 불러옵니다."
     />
+  )
+}
+
+/**
+ * "Nothing here" inside a list or a card (a short line, not a whole page): always centred and
+ * in one style, so every menu reads the same.
+ */
+export function EmptyNote({ children }: { children: ReactNode }): React.JSX.Element {
+  return (
+    <p className="px-3 py-4 text-center text-sm text-muted-foreground" data-testid="empty-note">
+      {children}
+    </p>
   )
 }

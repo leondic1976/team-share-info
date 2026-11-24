@@ -1,3 +1,4 @@
+import { EmptyNote } from '@renderer/components/EmptyState'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
@@ -98,7 +99,7 @@ export function LauncherBar(): React.JSX.Element {
             <span className={cn('ml-auto shrink-0 text-xs', i === sel ? 'opacity-80' : 'text-muted-foreground')}>{e.sub}</span>
           </button>
         ))}
-        {!list.length && <p className="p-4 text-center text-sm text-muted-foreground">찾는 항목이 없습니다.</p>}
+        {!list.length && <EmptyNote>찾는 항목이 없습니다.</EmptyNote>}
       </div>
     </div>
   )

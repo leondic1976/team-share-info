@@ -18,7 +18,8 @@ import { MemberCard } from '@renderer/features/directory/MemberCard'
 import { displayName, roleLabel, type MemberDto, type Presence } from '@shared/schemas/auth'
 import { DUTY_COLORS, dayPart, dutyGroupOf, type DutyEntryDto } from '@shared/schemas/duty'
 import type { DepartmentDto } from '@shared/schemas/org'
-import { buildOrgTree, findOrgNode, flattenOrg, memberColumns, pruneOrg, type OrgNode } from '@shared/org'
+import { affiliationText, buildOrgTree, findOrgNode, flattenOrg, pruneOrg, type OrgNode } from '@shared/org'
+import { ORG_FIT_FLOOR, ORG_MAX_ZOOM, ORG_MIN_ZOOM, ORG_ROOT_MIN, fitScale, overflowsAtFloor, planOrgChart, stepZoom, type OrgBranchPlan, type OrgChartPlan, type OrgKidsPlan, type OrgLayoutItem } from '@shared/orgLayout'
 import { useDepartments, useTodayAbsences } from './useOrgData'
 import './orgchart.css'
 
@@ -29,15 +30,17 @@ const NONE_ID = '__none'
 const PRESENCES: Presence[] = ['online', 'away', 'absent', 'offline']
 /** A4 landscape inside 10mm margins, in CSS pixels (with a little room to spare). */
 const PRINT_WIDTH = 1020
-const MIN_ZOOM = 0.3
-const MAX_ZOOM = 1.5
+/** The layout works in units of 1/16 rem (src/shared/orgLayout.ts). */
+const rem = (units: number): string => `${units / 16}rem`
 
 /** 재석: at the PC now (online or briefly away). */
 const isPresent = (m: MemberDto): boolean => m.presence === 'online' || m.presence === 'away'
 const lower = (parts: (string | null | undefined)[]): string => parts.filter(Boolean).join(' ').toLowerCase()
-const personText = (m: MemberDto): string => lower([m.name, m.nickname, m.title, m.rank, m.duty, m.ext, m.mobile, m.deptName, m.statusMessage])
+const personText = (m: MemberDto): string => lower([m.name, m.nickname, m.title, m.rank, m.duty, m.ext, m.mobile, affiliationText(m), m.statusMessage])
 const deptText = (d: DepartmentDto): string => lower([d.name, d.duties, d.phone, d.location])
 const allPeople = (n: Node): MemberDto[] => [...n.members, ...n.children.flatMap(allPeople)]
+/** The head of a department when they belong to it: drawn first, over the full width of the box. */
+const headHere = (n: Node): MemberDto | null => (n.head && n.head.deptId === n.dept.id ? n.head : null)
 
 /** What every part of the chart needs to draw a person or a department. */
 interface Shared {
@@ -60,7 +63,7 @@ function AbsenceBadges({ entries, dayStart }: { entries: DutyEntryDto[] | undefi
         const color = DUTY_COLORS[dutyGroupOf(e.type)]
         const part = dayPart(e, dayStart, dayStart + DAY)
         return (
-          <span key={`${e.id}:${e.key}`} className="inline-flex items-center rounded px-1.5 py-0.5 text-[0.72rem] font-semibold leading-none" style={{ color, backgroundColor: `${color}22` }} title={[e.place, e.note].filter(Boolean).join(' · ') || undefined}>
+          <span key={`${e.id}:${e.key}`} className="org-badge inline-flex items-center rounded px-1.5 py-0.5 font-semibold" style={{ color, backgroundColor: `${color}22` }} title={[e.place, e.note].filter(Boolean).join(' · ') || undefined}>
             {e.type}
             {part !== '종일' && <span className="ml-1 font-normal">{part}</span>}
           </span>
@@ -96,12 +99,16 @@ function PersonCard({ m, head, s }: { m: MemberDto; head?: boolean; s: Shared })
     >
       <span className="flex items-center gap-1.5">
         <PresenceDot presence={m.presence} />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={displayName(m)}>
+        <span className="org-name min-w-0 flex-1 truncate font-semibold" title={displayName(m)}>
           {m.name}
           {m.nickname && <span className="font-normal text-muted-foreground">({m.nickname})</span>}
         </span>
       </span>
-      {rankLine && <span className="truncate text-xs">{rankLine}</span>}
+      {rankLine && (
+        <span className="org-detail truncate" title={rankLine}>
+          {rankLine}
+        </span>
+      )}
       {badges && (
         <span className="flex flex-wrap gap-1">
           {head && <Badge>부서장</Badge>}
@@ -110,12 +117,12 @@ function PersonCard({ m, head, s }: { m: MemberDto; head?: boolean; s: Shared })
         </span>
       )}
       {m.duty && (
-        <span className="org-clamp-2 text-xs text-muted-foreground" title={m.duty}>
+        <span className="org-detail org-clamp-2 org-wrap text-muted-foreground" title={m.duty}>
           {m.duty}
         </span>
       )}
       {(m.ext || m.mobile) && (
-        <span className="flex flex-wrap gap-x-2 gap-y-0.5 text-xs tabular-nums text-muted-foreground">
+        <span className="org-detail flex flex-wrap gap-x-2 gap-y-0.5 tabular-nums text-muted-foreground">
           {m.ext && (
             <span className="inline-flex items-center gap-0.5">
               <Phone className="size-3" aria-label="내선" /> {m.ext}
@@ -129,7 +136,11 @@ function PersonCard({ m, head, s }: { m: MemberDto; head?: boolean; s: Shared })
         </span>
       )}
       <AbsenceBadges entries={s.absences.get(m.id)} dayStart={s.dayStart} />
-      {m.statusMessage && <span className="truncate text-xs text-muted-foreground">“{m.statusMessage}”</span>}
+      {m.statusMessage && (
+        <span className="org-detail truncate text-muted-foreground" title={m.statusMessage}>
+          “{m.statusMessage}”
+        </span>
+      )}
     </button>
   )
 }
@@ -170,17 +181,16 @@ function HeadLine({ n, s }: { n: Node; s: Shared }): React.JSX.Element | null {
   const h = n.head
   if (!h || h.deptId === n.dept.id) return null
   return (
-    <button type="button" className="inline-flex cursor-pointer items-center gap-1 text-xs hover:text-primary" onClick={() => s.open(h)}>
+    <button type="button" className="org-detail inline-flex max-w-full cursor-pointer items-center gap-1 text-left hover:text-primary" onClick={() => s.open(h)}>
       <UserRound className="size-3" /> 부서장 <b>{h.name}</b> {h.title}
     </button>
   )
 }
 
-function DeptBox({ n, s }: { n: Node; s: Shared }): React.JSX.Element {
+function DeptBox({ n, p, s }: { n: Node; p: OrgBranchPlan; s: Shared }): React.JSX.Element {
   const id = `d:${n.dept.id}`
-  const headHere = n.head && n.head.deptId === n.dept.id ? n.head : null
-  const others = n.members.filter((m) => m.id !== headHere?.id)
-  const cols = memberColumns(others.length)
+  const head = headHere(n)
+  const others = n.members.filter((m) => m.id !== head?.id)
   const closed = !s.searching && s.collapsed.has(n.dept.id)
   const foldable = n.members.length > 0 || n.children.length > 0
   const hit = s.hits.has(id)
@@ -190,12 +200,14 @@ function DeptBox({ n, s }: { n: Node; s: Shared }): React.JSX.Element {
       data-org-id={id}
       data-testid={`org-dept-${n.dept.name}`}
       className={cn('org-box rounded-xl border border-border bg-card text-left shadow-sm', hit && 'ring-2 ring-important', s.current === id && 'ring-4 ring-important')}
-      style={{ width: `max(14rem, calc(${cols} * 11rem + ${(cols - 1) * 0.5 + 1}rem + 2px))`, borderTop: `3px solid ${stripe}` }}
+      style={{ width: rem(p.box), borderTop: `3px solid ${stripe}` }}
     >
       <div className="space-y-1 px-3 py-2">
         <div className="flex items-start gap-1.5">
           <Building2 className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-          <span className="min-w-0 flex-1 text-sm font-bold leading-tight break-keep">{n.dept.name}</span>
+          <span className="org-name org-clamp-2 org-wrap min-w-0 flex-1 font-bold" title={n.dept.name}>
+            {n.dept.name}
+          </span>
           {foldable && (
             <button
               type="button"
@@ -209,27 +221,27 @@ function DeptBox({ n, s }: { n: Node; s: Shared }): React.JSX.Element {
             </button>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+        <div className="org-detail flex flex-wrap items-center gap-x-2 gap-y-0.5 text-muted-foreground">
           <Counts people={allPeople(n)} s={s} />
           <DeptFacts d={n.dept} />
         </div>
         <HeadLine n={n} s={s} />
         {n.dept.duties && (
-          <p className="org-clamp-2 whitespace-pre-line text-xs text-muted-foreground" title={n.dept.duties}>
+          <p className="org-detail org-clamp-2 org-wrap whitespace-pre-line text-muted-foreground" title={n.dept.duties}>
             {n.dept.duties}
           </p>
         )}
       </div>
       {closed ? (
-        <div className="border-t border-border px-3 py-1.5 text-xs text-muted-foreground">
+        <div className="org-detail border-t border-border px-3 py-1.5 text-muted-foreground">
           접힘 · 구성원 {n.total}명{n.children.length > 0 && ` · 하위 부서 ${flattenOrg(n.children).length}개`}
         </div>
       ) : (
         n.members.length > 0 && (
-          <div className="grid gap-2 border-t border-border p-2" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-            {headHere && (
+          <div className="grid gap-2 border-t border-border p-2" style={{ gridTemplateColumns: `repeat(${p.cols}, minmax(0, 1fr))` }}>
+            {head && (
               <div className="col-span-full">
-                <PersonCard m={headHere} head s={s} />
+                <PersonCard m={head} head s={s} />
               </div>
             )}
             {others.map((m) => (
@@ -242,26 +254,38 @@ function DeptBox({ n, s }: { n: Node; s: Shared }): React.JSX.Element {
   )
 }
 
-function Branch({ n, s }: { n: Node; s: Shared }): React.JSX.Element {
-  const closed = !s.searching && s.collapsed.has(n.dept.id)
+/** The departments below a box: side by side in rows, or stacked (the plan says which). */
+function Kids({ nodes, kids, s }: { nodes: Node[]; kids: OrgKidsPlan; s: Shared }): React.JSX.Element {
+  const byId = new Map(nodes.map((n) => [n.dept.id, n]))
+  const branch = (p: OrgBranchPlan): React.JSX.Element | null => {
+    const n = byId.get(p.id)
+    return n ? <Branch key={p.id} n={n} p={p} s={s} /> : null
+  }
+  if (kids.mode === 'stack') return <ul className="org-stack">{kids.rows.map((row) => row.map(branch))}</ul>
   return (
-    <li>
-      <DeptBox n={n} s={s} />
-      {!closed && n.children.length > 0 && (
-        <ul>
-          {n.children.map((c) => (
-            <Branch key={c.dept.id} n={c} s={s} />
-          ))}
+    <div className={cn('org-rows', kids.rows.length > 1 && 'org-rows-multi')}>
+      {kids.rows.map((row) => (
+        <ul key={row[0].id} className="org-row">
+          {row.map(branch)}
         </ul>
-      )}
+      ))}
+    </div>
+  )
+}
+
+function Branch({ n, p, s }: { n: Node; p: OrgBranchPlan; s: Shared }): React.JSX.Element {
+  return (
+    <li className={cn('org-node', p.kids?.mode === 'stack' && 'org-node-stacked')}>
+      <DeptBox n={n} p={p} s={s} />
+      {p.kids && <Kids nodes={n.children} kids={p.kids} s={s} />}
     </li>
   )
 }
 
 /**
- * The scrolling area of the chart: scales the tree (fit to width or a chosen zoom) and lets
- * the empty area be dragged. The tree keeps its natural size and is scaled with a transform;
- * the box around it takes the scaled size, so the scroll bars match what is seen.
+ * The scrolling area of the chart. The chart is laid out for the width of this area (it wraps
+ * instead of shrinking), so the width in layout units decides the plan; zooming changes how
+ * many units fit and so wraps the chart again. The empty area can be dragged.
  */
 function ChartCanvas({
   fit,
@@ -269,45 +293,52 @@ function ChartCanvas({
   printing,
   onScale,
   printList,
+  plan,
   children
 }: {
+  /** as much as possible side by side: scaled down to ORG_FIT_FLOOR at most */
   fit: boolean
   zoom: number
   printing: boolean
   onScale: (scale: number) => void
   /** printed instead of the chart when the chart is too wide for a sheet of paper */
   printList: ReactNode
-  children: ReactNode
+  /** the layout for a width in units */
+  plan: (avail: number) => OrgChartPlan
+  children: (plan: OrgChartPlan) => ReactNode
 }): React.JSX.Element {
   const scroller = useRef<HTMLDivElement>(null)
-  const inner = useRef<HTMLDivElement>(null)
   const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
-  const [nat, setNat] = useState({ w: 0, h: 0 })
-  const [room, setRoom] = useState(0)
+  /** width of the scrolling area and the size of 1rem, both in pixels */
+  const [size, setSize] = useState({ width: 0, rem: 16 })
   const [dragging, setDragging] = useState(false)
 
   useLayoutEffect(() => {
-    const el = inner.current
     const sc = scroller.current
-    if (!el || !sc) return
+    if (!sc) return
     const measure = (): void => {
       // hidden (the list is being printed instead): keep the last size
-      if (!el.offsetWidth) return
-      setNat((p) => (p.w === el.offsetWidth && p.h === el.offsetHeight ? p : { w: el.offsetWidth, h: el.offsetHeight }))
-      setRoom(sc.clientWidth)
+      if (!sc.clientWidth) return
+      const next = { width: sc.clientWidth, rem: parseFloat(getComputedStyle(document.documentElement).fontSize) || 16 }
+      setSize((prev) => (prev.width === next.width && prev.rem === next.rem ? prev : next))
     }
     measure()
     const ro = new ResizeObserver(measure)
-    ro.observe(el)
     ro.observe(sc)
+    // the font size setting changes the size of the content, not of the area
+    if (sc.firstElementChild) ro.observe(sc.firstElementChild)
     return () => ro.disconnect()
   }, [])
 
-  const fitTo = (width: number): number => (nat.w > 0 && width > 0 ? Math.max(0.2, Math.min(1, Math.floor((width / nat.w) * 100) / 100)) : 1)
-  // 2rem: the padding of the scrolling area
-  const paper = fitTo(PRINT_WIDTH)
-  const asList = printing && paper < 0.5
-  const scale = printing ? paper : fit ? fitTo(room - 32) : zoom
+  const units = (px: number): number => (px * 16) / size.rem
+  // 32: the padding of the scrolling area (2rem); before the first measure: a usual window
+  const room = printing ? units(PRINT_WIDTH) : size.width ? Math.max(0, units(size.width) - 32) : 1100
+  const fitted = printing || fit
+  const widest = useMemo(() => (fitted ? plan(room / ORG_FIT_FLOOR).width : 0), [fitted, plan, room])
+  const asList = printing && overflowsAtFloor(room, widest)
+  const scale = fitted ? fitScale(room, widest) : zoom
+  const avail = Math.floor(room / scale)
+  const chart = useMemo(() => plan(avail), [plan, avail])
   useEffect(() => {
     if (!printing) onScale(scale)
   }, [scale, printing, onScale])
@@ -347,11 +378,7 @@ function ChartCanvas({
         setDragging(true)
       }}
     >
-      <div className="relative mx-auto" style={{ width: nat.w * scale, height: nat.h * scale }}>
-        <div ref={inner} className="absolute left-0 top-0" style={{ width: 'max-content', transform: `scale(${scale})`, transformOrigin: '0 0' }}>
-          {children}
-        </div>
-      </div>
+      <div style={{ zoom: scale, width: rem(Math.max(avail, chart.width)) }}>{children(chart)}</div>
     </div>
     </>
   )
@@ -454,7 +481,7 @@ export function OrgChartPage(): React.JSX.Element {
   const [onlyPresent, setOnlyPresent] = useState(false)
   const [deptId, setDeptId] = useState('all')
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
-  const [fit, setFit] = useState(true)
+  const [fit, setFit] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [scale, setScale] = useState(1)
   const [printing, setPrinting] = useState(false)
@@ -489,6 +516,16 @@ export function OrgChartPage(): React.JSX.Element {
   }, [tree, deptId, onlyPresent])
 
   const needle = q.trim().toLowerCase()
+  /** The chart as the layout sees it: a folded department is one small box. */
+  const plan = useMemo(() => {
+    const item = (n: Node): OrgLayoutItem => {
+      if (!needle && collapsed.has(n.dept.id)) return { id: n.dept.id, cards: 0, children: [] }
+      const head = headHere(n)
+      return { id: n.dept.id, cards: n.members.filter((m) => m.id !== head?.id).length, children: n.children.map(item) }
+    }
+    const items = shown.roots.map(item)
+    return (avail: number): OrgChartPlan => planOrgChart(items, avail, shown.single)
+  }, [shown, collapsed, needle])
   const matches = useMemo(() => {
     if (!needle) return [] as string[]
     const out: string[] = []
@@ -542,7 +579,7 @@ export function OrgChartPage(): React.JSX.Element {
   ]
 
   const changeZoom = (step: number): void => {
-    setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round((scale + step) * 10) / 10)))
+    setZoom(stepZoom(scale, step))
     setFit(false)
   }
   const print = (): void => {
@@ -631,16 +668,16 @@ export function OrgChartPage(): React.JSX.Element {
             <Button size="sm" variant="ghost" onClick={() => setCollapsed(new Set(shown.flat.map((n) => n.dept.id)))} title="부서 이름만 보이게 접습니다">
               <ChevronsDownUp /> 모두 접기
             </Button>
-            <Button size="icon-sm" variant="outline" aria-label="축소" title="축소" disabled={scale <= MIN_ZOOM} onClick={() => changeZoom(-0.1)}>
+            <Button size="icon-sm" variant="outline" aria-label="축소" title="축소" disabled={scale <= ORG_MIN_ZOOM} onClick={() => changeZoom(-0.1)}>
               <ZoomOut />
             </Button>
             <button type="button" className="w-12 cursor-pointer rounded text-center text-xs tabular-nums hover:bg-muted" title="100%로 보기" onClick={() => (setZoom(1), setFit(false))} data-testid="org-zoom">
               {Math.round(scale * 100)}%
             </button>
-            <Button size="icon-sm" variant="outline" aria-label="확대" title="확대" disabled={scale >= MAX_ZOOM} onClick={() => changeZoom(0.1)}>
+            <Button size="icon-sm" variant="outline" aria-label="확대" title="확대" disabled={scale >= ORG_MAX_ZOOM} onClick={() => changeZoom(0.1)}>
               <ZoomIn />
             </Button>
-            <Button size="sm" variant={fit ? 'secondary' : 'outline'} onClick={() => setFit(true)} title="조직도 전체가 화면 너비에 들어오게 맞춥니다">
+            <Button size="sm" variant={fit ? 'secondary' : 'outline'} onClick={() => setFit(true)} title="한 줄에 더 많은 부서가 들어오게 줄입니다(80%까지)">
               <Maximize2 /> 화면 맞춤
             </Button>
           </div>
@@ -652,27 +689,32 @@ export function OrgChartPage(): React.JSX.Element {
       ) : view === 'list' ? (
         <ListView nodes={shown.flat} s={s} />
       ) : (
-        <ChartCanvas fit={fit} zoom={zoom} printing={printing} onScale={setScale} printList={<ListView nodes={shown.flat} s={s} />}>
-          <ul className="org-tree">
-            {shown.single ? (
-              <Branch n={shown.roots[0]} s={s} />
-            ) : (
-              <li>
-                <div className="org-box rounded-xl bg-primary px-6 py-3 text-center text-primary-foreground shadow" data-testid="org-root">
-                  {org.orgName && org.orgName !== top && <div className="text-xs opacity-90">{org.orgName}</div>}
-                  <div className="text-base font-bold">{top}</div>
-                  <div className="mt-0.5 text-xs opacity-90">
-                    총원 {people.length}명 · 부서 {flatAll.length}개
-                  </div>
-                </div>
-                <ul>
-                  {shown.roots.map((n) => (
-                    <Branch key={n.dept.id} n={n} s={s} />
-                  ))}
-                </ul>
-              </li>
-            )}
-          </ul>
+        <ChartCanvas fit={fit} zoom={zoom} printing={printing} onScale={setScale} printList={<ListView nodes={shown.flat} s={s} />} plan={plan}>
+          {(chart) => {
+            const first = chart.kids.rows[0]?.[0]
+            return (
+              <ul className="org-tree">
+                {shown.single ? (
+                  first && <Branch n={shown.roots[0]} p={first} s={s} />
+                ) : (
+                  <li className="org-node">
+                    <div
+                      className="org-box org-wrap rounded-xl bg-primary px-6 py-3 text-center text-primary-foreground shadow"
+                      style={{ minWidth: rem(ORG_ROOT_MIN), maxWidth: rem(Math.max(ORG_ROOT_MIN, Math.min(chart.width, 480))) }}
+                      data-testid="org-root"
+                    >
+                      {org.orgName && org.orgName !== top && <div className="org-detail opacity-90">{org.orgName}</div>}
+                      <div className="text-base font-bold">{top}</div>
+                      <div className="org-detail mt-0.5 opacity-90">
+                        총원 {people.length}명 · 부서 {flatAll.length}개
+                      </div>
+                    </div>
+                    <Kids nodes={shown.roots} kids={chart.kids} s={s} />
+                  </li>
+                )}
+              </ul>
+            )
+          }}
         </ChartCanvas>
       )}
 

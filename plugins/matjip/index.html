@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" class="th-ui">
   <head>
     <meta charset="utf-8" />
     <title>맛집 추천</title>
@@ -7,88 +7,101 @@
     <script src="__sdk.js"></script>
   </head>
   <body>
-    <header>
-      <h1><i data-icon="soup"></i> 우리 사무실 맛집</h1>
-      <nav role="tablist">
-        <button role="tab" data-tab="feed" aria-selected="true">추천 글</button>
-        <button role="tab" data-tab="rank">맛집 랭킹</button>
-        <button role="tab" data-tab="mine">내 글</button>
-      </nav>
-      <span class="grow"></span>
-      <button id="pickBtn"><i data-icon="dices"></i> 오늘 뭐 먹지?</button>
-      <button id="writeBtn" class="primary"><i data-icon="pencil"></i> 맛집 추천하기</button>
-    </header>
+    <div class="th-page">
+      <header class="th-page-header">
+        <div>
+          <h1>맛집 추천</h1>
+          <p>사무실 주변 맛집을 팀원끼리 추천하고 좋아요·댓글로 이야기합니다. 팀 전체가 함께 봅니다.</p>
+        </div>
+        <div class="th-actions">
+          <button class="th-btn th-btn-outline" id="pickBtn"><i data-icon="dices"></i> 오늘 뭐 먹지?</button>
+          <button class="th-btn" id="writeBtn"><i data-icon="pencil"></i> 맛집 추천하기</button>
+        </div>
+      </header>
+      <div class="th-toolbar">
+        <nav class="th-tabs" role="tablist" aria-label="보기">
+          <button class="th-btn th-tab" role="tab" data-tab="feed" aria-selected="true"><i data-icon="utensils"></i> 추천 글</button>
+          <button class="th-btn th-tab" role="tab" data-tab="rank" aria-selected="false"><i data-icon="trophy"></i> 맛집 랭킹</button>
+          <button class="th-btn th-tab" role="tab" data-tab="mine" aria-selected="false"><i data-icon="user"></i> 내 글</button>
+        </nav>
+        <div id="filters" class="bar-tools">
+          <input class="th-input" id="q" type="search" placeholder="가게·메뉴·글쓴이 검색" aria-label="검색" />
+          <select class="th-input" id="sort" aria-label="정렬">
+            <option value="new">최신순</option>
+            <option value="likes">인기순</option>
+            <option value="rating">별점순</option>
+          </select>
+        </div>
+      </div>
+      <div class="th-toolbar th-chips" id="cats" role="radiogroup" aria-label="종류"></div>
 
-    <div id="filters">
-      <div id="cats" role="radiogroup" aria-label="종류"></div>
-      <span class="grow"></span>
-      <input id="q" type="search" placeholder="가게·메뉴·글쓴이 검색" aria-label="검색" />
-      <select id="sort" aria-label="정렬">
-        <option value="new">최신순</option>
-        <option value="likes">인기순</option>
-        <option value="rating">별점순</option>
-      </select>
+      <p id="oldApp" class="th-no-print" hidden>이 화면은 TeamHub를 최신 버전으로 업데이트해야 제대로 보입니다.</p>
+      <main class="th-body" id="list" aria-live="polite"></main>
     </div>
 
-    <main id="list" aria-live="polite"></main>
-
-    <dialog id="editor">
+    <dialog id="editor" class="th-dialog">
       <form id="editorForm" method="dialog">
-        <h2 id="editorTitle">맛집 추천하기</h2>
-        <label for="fName">가게 이름</label>
-        <input id="fName" maxlength="40" required placeholder="예: 할매순대국" />
-        <div class="row">
-          <div>
-            <label for="fCat">종류</label>
-            <select id="fCat"></select>
+        <h2 class="th-dialog-title" id="editorTitle">맛집 추천하기</h2>
+        <div class="form">
+          <div class="th-field">
+            <label class="th-label" for="fName">가게 이름</label>
+            <input class="th-input" id="fName" maxlength="40" required placeholder="예: 할매순대국" />
           </div>
-          <div>
-            <label>별점</label>
-            <div id="fRating" class="rating" role="radiogroup" aria-label="별점"></div>
+          <div class="pair">
+            <div class="th-field">
+              <label class="th-label" for="fCat">종류</label>
+              <select class="th-input" id="fCat"></select>
+            </div>
+            <div class="th-field">
+              <span class="th-label">별점</span>
+              <div id="fRating" class="rating" role="radiogroup" aria-label="별점"></div>
+            </div>
+          </div>
+          <div class="pair">
+            <div class="th-field">
+              <label class="th-label" for="fMenu">대표 메뉴 <small>(선택)</small></label>
+              <input class="th-input" id="fMenu" maxlength="60" placeholder="예: 순대국 특" />
+            </div>
+            <div class="th-field">
+              <label class="th-label" for="fPrice">1인 가격대 <small>(선택)</small></label>
+              <select class="th-input" id="fPrice"></select>
+            </div>
+          </div>
+          <div class="pair">
+            <div class="th-field">
+              <label class="th-label" for="fWalk">걸어서 몇 분 <small>(선택)</small></label>
+              <input class="th-input" id="fWalk" type="number" min="0" max="120" placeholder="예: 5" />
+            </div>
+            <div class="th-field">
+              <span class="th-label">이런 곳이에요 <small>(선택)</small></span>
+              <div id="fTags" class="th-chips"></div>
+            </div>
+          </div>
+          <div class="th-field">
+            <label class="th-label" for="fText">한 줄 평 <small>(선택, 500자)</small></label>
+            <textarea class="th-input" id="fText" rows="4" maxlength="500" placeholder="무엇이 맛있는지, 언제 가면 좋은지 적어 주세요."></textarea>
+            <p class="th-hint">팀 전체가 보는 글입니다. 개인정보나 업무상 비공개 내용은 적지 마세요.</p>
           </div>
         </div>
-        <div class="row">
-          <div>
-            <label for="fMenu">대표 메뉴 <small>(선택)</small></label>
-            <input id="fMenu" maxlength="60" placeholder="예: 순대국 특" />
-          </div>
-          <div>
-            <label for="fPrice">1인 가격대 <small>(선택)</small></label>
-            <select id="fPrice"></select>
-          </div>
-        </div>
-        <div class="row">
-          <div>
-            <label for="fWalk">걸어서 몇 분 <small>(선택)</small></label>
-            <input id="fWalk" type="number" min="0" max="120" placeholder="예: 5" />
-          </div>
-          <div>
-            <label>이런 곳이에요 <small>(선택)</small></label>
-            <div id="fTags" class="tags"></div>
-          </div>
-        </div>
-        <label for="fText">한 줄 평 <small>(선택, 500자)</small></label>
-        <textarea id="fText" rows="4" maxlength="500" placeholder="무엇이 맛있는지, 언제 가면 좋은지 적어 주세요."></textarea>
-        <p class="muted small">팀 전체가 보는 글입니다. 개인정보나 업무상 비공개 내용은 적지 마세요.</p>
-        <div class="btns">
-          <span class="grow"></span>
-          <button type="button" id="editorCancel">취소</button>
-          <button type="submit" class="primary" id="editorSave">올리기</button>
+        <div class="dlg-btns">
+          <span class="th-grow"></span>
+          <button type="button" class="th-btn th-btn-outline" id="editorCancel">취소</button>
+          <button type="submit" class="th-btn" id="editorSave">올리기</button>
         </div>
       </form>
     </dialog>
 
-    <dialog id="picker">
-      <h2><i data-icon="dices"></i> 오늘은 여기 어때요?</h2>
-      <div id="pickResult"></div>
-      <div class="btns">
-        <span class="grow"></span>
-        <button type="button" id="pickAgain">다시 뽑기</button>
-        <button type="button" id="pickClose" class="primary">좋아요</button>
+    <dialog id="picker" class="th-dialog">
+      <h2 class="th-dialog-title">오늘은 여기 어때요?</h2>
+      <div id="pickResult" class="pick"></div>
+      <div class="dlg-btns">
+        <span class="th-grow"></span>
+        <button type="button" class="th-btn th-btn-outline" id="pickAgain"><i data-icon="dices"></i> 다시 뽑기</button>
+        <button type="button" class="th-btn" id="pickClose">좋아요</button>
       </div>
     </dialog>
 
-    <div id="toast" role="status"></div>
+    <div id="toast" class="th-toast" role="status"></div>
     <script src="matjip.js"></script>
     <script src="app.js"></script>
   </body>

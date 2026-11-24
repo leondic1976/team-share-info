@@ -1,3 +1,4 @@
+import { EmptyNote } from '@renderer/components/EmptyState'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -69,7 +70,7 @@ export function BackupTab(): React.JSX.Element {
           <CardTitle>백업 목록</CardTitle>
         </CardHeader>
         <CardContent className="space-y-1 p-2" data-testid="backup-list">
-          {!d?.backups.length && <p className="px-2 py-3 text-sm text-muted-foreground">아직 백업이 없습니다.</p>}
+          {!d?.backups.length && <EmptyNote>아직 백업이 없습니다.</EmptyNote>}
           {d?.backups.map((b) => (
             <div key={b.name} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted" data-testid="backup-item">
               <span className="w-36 shrink-0">{format(b.createdAt, 'yyyy-MM-dd HH:mm')}</span>

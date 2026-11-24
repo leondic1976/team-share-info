@@ -1,3 +1,4 @@
+import { EmptyNote } from '@renderer/components/EmptyState'
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -59,7 +60,7 @@ export function TodayWorkWidget(): React.JSX.Element {
       </CardHeader>
       <CardContent className="max-h-80 space-y-0.5 overflow-y-auto p-2">
         {!rows.length ? (
-          <p className="px-2 py-4 text-center text-sm text-muted-foreground">오늘 일정과 알람이 없습니다.</p>
+          <EmptyNote>오늘 일정과 알람이 없습니다.</EmptyNote>
         ) : (
           rows.map((r) => (
             <button key={r.key} className={cn('flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted', r.done && 'opacity-50')} onClick={() => navigate(r.route)}>

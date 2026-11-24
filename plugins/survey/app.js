@@ -1,7 +1,8 @@
 /* Survey UI. Talks to TeamHub only via TeamHub.call (see __sdk.js).
  *
  * One survey is one room: the questions are the room's shared data (only the person who
- * made it can change or close it) and every member's answers are that member's own entry. */
+ * made it can change or close it) and every member's answers are that member's own entry.
+ * The look comes from TeamHub (__ui.css, the th-* classes); style.css holds the layout only. */
 ;(function () {
   'use strict'
   // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
@@ -31,7 +32,10 @@
     const d = new Date(t)
     return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }
-  const empty = (icon, title, body) => `<div class="empty"><div class="big">${icon}</div><h2>${esc(title)}</h2><p>${esc(body)}</p></div>`
+  const empty = (pic, title, body, action) => `<div class="th-empty empty">${pic}<p class="th-empty-title">${esc(title)}</p><p>${esc(body)}</p>${action || ''}</div>`
+  // the state of a survey: `badge` is kept as a class for whoever looks for it
+  const badge = (kind, text) => `<span class="th-badge${kind ? ` th-badge-${kind}` : ''} badge">${text}</span>`
+  const scopeName = (r) => (r.scope.type === 'team' ? '팀 전체' : '지정한 사람')
   const room = () => rooms.find((r) => r.id === current) || null
   const answered = (r) => !!(r.entries && r.entries[me.id])
   /** People asked to answer: the listed members, or the whole team. */
@@ -53,14 +57,15 @@
     const list = rooms.filter((r) => (tab === 'mine' ? r.createdBy === me.id : tab === 'open' ? S.isOpen(r, now) : !S.isOpen(r, now)))
     list.sort((a, b) => (tab === 'open' ? Number(answered(a)) - Number(answered(b)) : 0) || b.createdAt - a.createdAt)
     $('main').innerHTML = list.length
-      ? `<div class="wrap">${list
+      ? `<div class="grid">${list
           .map((r) => {
             const open = S.isOpen(r, now)
             const n = Object.keys(r.entries || {}).length
             const who = audience(r).length
-            return `<button class="card" data-open="${esc(r.id)}">
-              <span class="card-top"><b>${esc(r.title)}</b>${open ? (answered(r) ? '<span class="badge done">응답함</span>' : '<span class="badge todo">응답 필요</span>') : '<span class="badge">마감</span>'}</span>
-              <span class="meta"><span>${esc(r.createdByName)}</span><span>문항 ${r.shared.questions.length}개</span><span>응답 ${n}${who ? ` / ${who}` : ''}명</span>${r.shared.deadline ? `<span>마감 ${fmt(r.shared.deadline)}</span>` : ''}${r.shared.anonymous ? '<span>이름 숨김</span>' : ''}<span>${r.scope.type === 'team' ? '팀 전체' : '지정한 사람'}</span></span>
+            return `<button class="th-card card" data-open="${esc(r.id)}">
+              <span class="card-top"><b>${esc(r.title)}</b>${open ? (answered(r) ? badge('success', '응답함') : badge('important', '응답 필요')) : badge('muted', '마감')}</span>
+              <span class="meta th-xs th-muted"><span>${esc(r.createdByName)}</span><span>문항 ${r.shared.questions.length}개</span><span>응답 ${n}${who ? ` / ${who}` : ''}명</span>${r.shared.deadline ? `<span>마감 ${fmt(r.shared.deadline)}</span>` : ''}${r.shared.anonymous ? '<span>이름 숨김</span>' : ''}<span>${scopeName(r)}</span></span>
+              ${who ? `<span class="th-meter" aria-hidden="true"><i style="width:${Math.min(100, Math.round((n / who) * 100))}%"></i></span>` : ''}
             </button>`
           })
           .join('')}</div>`
@@ -74,19 +79,20 @@
   // ---------- one survey ----------
   function questionHtml(q, i) {
     const v = draft[q.id]
-    const head = `<h3>${i + 1}. ${esc(q.text)}${q.required ? ' <span class="req" title="꼭 답해야 하는 문항">*</span>' : ''}${q.type === 'multi' ? ' <span class="muted small">(여러 개 선택)</span>' : ''}</h3>`
+    const head = `<h3 class="q-title">${i + 1}. ${esc(q.text)}${q.required ? ' <span class="req" title="꼭 답해야 하는 문항">*</span>' : ''}${q.type === 'multi' ? ' <span class="th-xs th-muted">(여러 개 선택)</span>' : ''}</h3>`
     let body
     if (q.type === 'single' || q.type === 'multi')
       body = q.options
         .map((o, k) => {
           const on = q.type === 'single' ? v === o : Array.isArray(v) && v.includes(o)
-          return `<label class="choice"><input type="${q.type === 'single' ? 'radio' : 'checkbox'}" name="q-${esc(q.id)}" data-q="${esc(q.id)}" data-k="${k}"${on ? ' checked' : ''} /> ${esc(o)}</label>`
+          return `<label class="th-check choice"><input type="${q.type === 'single' ? 'radio' : 'checkbox'}" name="q-${esc(q.id)}" data-q="${esc(q.id)}" data-k="${k}"${on ? ' checked' : ''} /> ${esc(o)}</label>`
         })
         .join('')
-    else if (q.type === 'rating') body = `<div class="stars" role="radiogroup" aria-label="별점">${[1, 2, 3, 4, 5].map((n) => `<button type="button" role="radio" aria-checked="${v === n}" aria-label="${n}점" data-q="${esc(q.id)}" data-star="${n}" class="${v >= n ? 'on' : ''}">${icon('star', { fill: true }) || '*'}</button>`).join('')}</div>`
-    else body = `<textarea rows="3" maxlength="${S.LIMITS.answer}" data-q="${esc(q.id)}" data-text="1" placeholder="답을 적어 주세요.">${esc(v || '')}</textarea>`
-    return `<div class="card question">${head}${body}</div>`
+    else if (q.type === 'rating') body = `<div class="stars" role="radiogroup" aria-label="별점">${[1, 2, 3, 4, 5].map((n) => `<button type="button" role="radio" aria-checked="${v === n}" aria-label="${n}점" data-q="${esc(q.id)}" data-star="${n}" class="${v >= n ? 'on' : ''}">${icon('star', { fill: true }) || `${n}점`}</button>`).join('')}</div>`
+    else body = `<textarea class="th-input" rows="3" maxlength="${S.LIMITS.answer}" data-q="${esc(q.id)}" data-text="1" placeholder="답을 적어 주세요.">${esc(v || '')}</textarea>`
+    return `<div class="th-card question">${head}${body}</div>`
   }
+  const barRow = (label, percent, count, top, title) => `<div class="bar-row${top ? ' top' : ''}" title="${title || ''}"><span class="bar-label">${label}</span><div class="th-meter"><i style="width:${percent}%"></i></div><span class="count th-xs th-nums">${count}</span></div>`
 
   function resultHtml(r) {
     const hide = r.shared.anonymous
@@ -94,16 +100,14 @@
       .map((t, i) => {
         let body
         if (t.options)
-          body = t.options
-            .map((o) => `<div class="bar-row${o.count && o.count === t.top ? ' top' : ''}" title="${hide ? '' : esc(o.names.join(', '))}"><span>${esc(o.label)}</span><div class="bar"><i style="width:${o.percent}%"></i></div><span class="count">${o.count}명 · ${o.percent}%</span></div>`)
-            .join('')
+          body = t.options.map((o) => barRow(esc(o.label), o.percent, `${o.count}명 · ${o.percent}%`, o.count && o.count === t.top, hide ? '' : esc(o.names.join(', ')))).join('')
         else if (t.type === 'rating')
-          body = `<p><b style="font-size:20px">${icon('star', { fill: true, cls: 'star-on' })} ${t.average.toFixed(1)}</b> <span class="muted">/ 5 · ${t.answered}명</span></p>${t.counts
-            .map((c, k) => `<div class="bar-row"><span>${k + 1}점</span><div class="bar"><i style="width:${t.answered ? Math.round((c / t.answered) * 100) : 0}%"></i></div><span class="count">${c}명</span></div>`)
+          body = `<p class="avg"><b class="big th-nums">${icon('star', { fill: true, cls: 'star-on' })} ${t.average.toFixed(1)}</b> <span class="th-muted">/ 5 · ${t.answered}명</span></p>${t.counts
+            .map((c, k) => barRow(`${k + 1}점`, t.answered ? Math.round((c / t.answered) * 100) : 0, `${c}명`))
             .reverse()
             .join('')}`
-        else body = t.texts.length ? `<ul class="texts">${t.texts.map((x) => `<li>${esc(x.text)}${hide ? '' : ` <span class="muted small">— ${esc(x.name)}</span>`}</li>`).join('')}</ul>` : '<p class="muted">아직 답이 없습니다.</p>'
-        return `<div class="card question"><h3>${i + 1}. ${esc(t.text)} <span class="muted small">응답 ${t.answered}명</span></h3>${body}</div>`
+        else body = t.texts.length ? `<ul class="texts">${t.texts.map((x) => `<li>${esc(x.text)}${hide ? '' : ` <span class="th-xs th-muted">— ${esc(x.name)}</span>`}</li>`).join('')}</ul>` : '<p class="th-muted none">아직 답이 없습니다.</p>'
+        return `<div class="th-card question"><h3 class="q-title">${i + 1}. ${esc(t.text)} <span class="th-xs th-muted">응답 ${t.answered}명</span></h3>${body}</div>`
       })
       .join('')
   }
@@ -124,37 +128,53 @@
     const see = S.canSeeResults(r, me.id, now)
     const scroll = $('main').scrollTop
 
-    $('main').innerHTML = `<div class="wrap">
-      <div><button data-act="back">← 목록으로</button></div>
-      <div class="card">
-        <div class="card-top"><h2 style="flex:1">${esc(r.title)}</h2>${open ? '<span class="badge todo">진행 중</span>' : '<span class="badge">마감</span>'}</div>
-        <div class="meta"><span>${esc(r.createdByName)}</span><span>${fmt(r.createdAt)} 시작</span>${r.shared.deadline ? `<span>마감 ${fmt(r.shared.deadline)}</span>` : ''}<span>${r.scope.type === 'team' ? '팀 전체' : '지정한 사람'}</span><span>결과 공개: ${esc(S.RESULTS[r.shared.results])}</span>${r.shared.anonymous ? '<span>이름 숨김</span>' : ''}</div>
-        ${r.shared.desc ? `<p class="desc">${esc(r.shared.desc)}</p>` : ''}
+    const tool = (name, body, cls) => `<button class="th-btn th-btn-sm ${cls || 'th-btn-outline'}" data-act="${name}">${body}</button>`
+    const fact = (k, v) => `<div><dt>${k}</dt><dd>${v}</dd></div>`
+    // the survey itself on the side (above, in a narrow window); answering and the results in the wide column
+    $('main').innerHTML = `<div class="detail">
+      <aside class="stack side">
+        <div><button class="th-btn th-btn-ghost th-btn-sm" data-act="back">${icon('chevron-left')} 목록으로</button></div>
+        <section class="th-card">
+          <div class="th-card-header card-top"><h2 class="th-card-title">${esc(r.title)}</h2>${open ? badge('', '진행 중') : badge('muted', '마감')}</div>
+          <div class="th-card-body stack tight">
+            ${r.shared.desc ? `<p class="desc">${esc(r.shared.desc)}</p>` : ''}
+            <dl class="facts">
+              ${fact('만든 사람', esc(r.createdByName))}
+              ${fact('시작', fmt(r.createdAt))}
+              ${r.shared.deadline ? fact('마감', fmt(r.shared.deadline)) : ''}
+              ${fact('받는 사람', scopeName(r))}
+              ${fact('결과 공개', esc(S.RESULTS[r.shared.results]))}
+              ${r.shared.anonymous ? fact('이름', '숨김') : ''}
+            </dl>
+          </div>
+          ${mine ? `<div class="card-foot btns">${open ? tool('close', `${icon('lock')} 지금 마감하기`) : ''}${tool('copy', `${icon('copy')} 결과 복사`)}${tool('csv', `${icon('download')} CSV로 저장`)}<span class="th-grow"></span>${tool('delete', `${icon('trash-2')} 설문 삭제`, 'th-btn-ghost danger')}</div>` : ''}
+        </section>
         ${
-          mine
-            ? `<div class="btns">${open ? '<button data-act="close">지금 마감하기</button>' : ''}<button data-act="copy">결과 복사</button><button data-act="csv">CSV로 저장</button><span class="grow"></span><button data-act="delete" class="danger">설문 삭제</button></div>`
+          r.shared.anonymous
+            ? ''
+            : `<section class="th-card people">
+                <div class="th-card-header"><h2 class="th-card-title">응답한 사람 ${names.length}명</h2></div>
+                <div class="th-card-body who">${names.map((n) => `<span class="th-badge th-badge-success">${esc(n)}</span>`).join('') || '<span class="th-xs th-muted no">아직 없음</span>'}</div>
+                ${waiting.length ? `<div class="th-card-header mid"><h2 class="th-card-title">아직 응답하지 않은 사람 ${waiting.length}명</h2></div><div class="th-card-body who">${waiting.map((n) => `<span class="th-badge th-badge-muted no">${esc(n)}</span>`).join('')}</div>` : ''}
+              </section>`
+        }
+      </aside>
+      <div class="stack">
+        ${
+          filling
+            ? `<form id="answerForm" class="stack">${r.shared.questions.map(questionHtml).join('')}
+                <div class="btns"><button type="submit" class="th-btn">${done ? '응답 고치기' : '응답 보내기'}</button>${done ? '<button type="button" class="th-btn th-btn-outline" data-act="cancelEdit">취소</button>' : ''}<span class="th-xs th-muted">* 표시는 꼭 답해야 하는 문항입니다. 마감 전까지 고칠 수 있습니다.</span></div>
+              </form>`
+            : `<div class="th-card"><div class="th-card-body btns"><b class="${done ? 'done' : ''}">${done ? `${icon('circle-check')} 응답했습니다.` : open ? '' : '마감된 설문입니다. 응답하지 않았습니다.'}</b><span class="th-grow"></span>${done && open ? `<button class="th-btn th-btn-outline th-btn-sm" data-act="edit">${icon('pencil')} 내 응답 고치기</button>` : ''}</div></div>`
+        }
+        ${
+          !filling || mine
+            ? see
+              ? `<div class="sub-head"><h3>결과</h3><span class="th-xs th-muted th-nums">응답 ${names.length}명${audience(r).length ? ` / ${audience(r).length}명` : ''}</span></div>${resultHtml(r)}`
+              : `<div class="th-card"><div class="th-card-body th-muted">결과는 ${esc(S.RESULTS[r.shared.results])} 볼 수 있습니다.</div></div>`
             : ''
         }
       </div>
-      ${
-        filling
-          ? `<form id="answerForm" class="wrap">${r.shared.questions.map(questionHtml).join('')}
-              <div class="btns"><button type="submit" class="primary">${done ? '응답 고치기' : '응답 보내기'}</button>${done ? '<button type="button" data-act="cancelEdit">취소</button>' : ''}<span class="muted small">* 표시는 꼭 답해야 하는 문항입니다. 마감 전까지 고칠 수 있습니다.</span></div>
-            </form>`
-          : `<div class="card"><div class="btns" style="margin-top:0"><b>${done ? `${icon('circle-check')} 응답했습니다.` : open ? '' : '마감된 설문입니다. 응답하지 않았습니다.'}</b>${done && open ? '<button data-act="edit">내 응답 고치기</button>' : ''}</div></div>`
-      }
-      ${
-        !filling || mine
-          ? see
-            ? `<h2>결과 <span class="muted small">응답 ${names.length}명${audience(r).length ? ` / ${audience(r).length}명` : ''}</span></h2>${resultHtml(r)}`
-            : `<div class="card muted">결과는 ${esc(S.RESULTS[r.shared.results])} 볼 수 있습니다.</div>`
-          : ''
-      }
-      ${
-        r.shared.anonymous
-          ? ''
-          : `<div class="card"><h3>응답한 사람 ${names.length}명</h3><div class="who">${names.map((n) => `<span>${esc(n)}</span>`).join('') || '<span class="no">아직 없음</span>'}</div>${waiting.length ? `<h3 style="margin-top:10px">아직 응답하지 않은 사람 ${waiting.length}명</h3><div class="who">${waiting.map((n) => `<span class="no">${esc(n)}</span>`).join('')}</div>` : ''}</div>`
-      }
     </div>`
     $('main').scrollTop = scroll
   }
@@ -228,14 +248,15 @@
       .map(
         (q, i) => `<div class="bq" data-i="${i}">
         <div class="bq-head"><b>문항 ${i + 1}</b>
-          <select data-f="type" aria-label="문항 종류">${Object.keys(S.TYPES).map((t) => `<option value="${t}"${q.type === t ? ' selected' : ''}>${esc(S.TYPES[t])}</option>`).join('')}</select>
-          <button type="button" data-b="up" aria-label="위로"${i === 0 ? ' disabled' : ''}>${icon('arrow-up') || '위'}</button>
-          <button type="button" data-b="down" aria-label="아래로"${i === bq.length - 1 ? ' disabled' : ''}>${icon('arrow-down') || '아래'}</button>
-          <button type="button" data-b="del" aria-label="문항 지우기"${bq.length === 1 ? ' disabled' : ''}>${icon('x') || '×'}</button>
+          <select class="th-input" data-f="type" aria-label="문항 종류">${Object.keys(S.TYPES).map((t) => `<option value="${t}"${q.type === t ? ' selected' : ''}>${esc(S.TYPES[t])}</option>`).join('')}</select>
+          <span class="th-grow"></span>
+          <button type="button" class="th-btn th-btn-ghost th-btn-sm th-btn-icon" data-b="up" aria-label="위로" title="위로"${i === 0 ? ' disabled' : ''}>${icon('arrow-up') || '위'}</button>
+          <button type="button" class="th-btn th-btn-ghost th-btn-sm th-btn-icon" data-b="down" aria-label="아래로" title="아래로"${i === bq.length - 1 ? ' disabled' : ''}>${icon('arrow-down') || '아래'}</button>
+          <button type="button" class="th-btn th-btn-ghost th-btn-sm th-btn-icon" data-b="del" aria-label="문항 지우기" title="문항 지우기"${bq.length === 1 ? ' disabled' : ''}>${icon('trash-2') || '지우기'}</button>
         </div>
-        <input type="text" data-f="text" maxlength="${S.LIMITS.question}" placeholder="질문을 적으세요" aria-label="질문" value="${esc(q.text)}" />
-        ${q.type === 'single' || q.type === 'multi' ? `<textarea data-f="options" rows="3" aria-label="보기" placeholder="보기를 한 줄에 하나씩 적으세요&#10;예) 5월 10일(금)&#10;5월 17일(금)">${esc(q.options)}</textarea>` : ''}
-        <label class="inline"><input type="checkbox" data-f="required"${q.required ? ' checked' : ''} /> 꼭 답해야 함</label>
+        <input class="th-input" type="text" data-f="text" maxlength="${S.LIMITS.question}" placeholder="질문을 적으세요" aria-label="질문" value="${esc(q.text)}" />
+        ${q.type === 'single' || q.type === 'multi' ? `<textarea class="th-input" data-f="options" rows="3" aria-label="보기" placeholder="보기를 한 줄에 하나씩 적으세요&#10;예) 5월 10일(금)&#10;5월 17일(금)">${esc(q.options)}</textarea>` : ''}
+        <label class="th-check"><input type="checkbox" data-f="required"${q.required ? ' checked' : ''} /> 꼭 답해야 함</label>
       </div>`
       )
       .join('')
@@ -249,8 +270,8 @@
     $('bMembers').classList.add('hidden')
     $('bMembers').innerHTML = members
       .filter((m) => m.id !== me.id)
-      .map((m) => `<label class="inline"><input type="checkbox" value="${esc(m.id)}" /> ${esc(m.name)} <small>${esc(m.deptName || '')}</small></label>`)
-      .join('') || '<p class="muted small">다른 팀원이 없습니다.</p>'
+      .map((m) => `<label class="th-check"><input type="checkbox" value="${esc(m.id)}" /> ${esc(m.name)} <small>${esc(m.deptName || '')}</small></label>`)
+      .join('') || '<p class="th-hint">다른 팀원이 없습니다.</p>'
     renderBuilder()
     $('builder').showModal()
     $('bTitle').focus()
@@ -313,6 +334,9 @@
     if (b) void act(b.dataset.act)
   }
 
+  // an older TeamHub does not give extension frames its look (__ui.css): say so
+  window.addEventListener('load', () => ($('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim()))
+
   async function init() {
     $('bResults').innerHTML = Object.keys(S.RESULTS).map((k) => `<option value="${k}">${esc(S.RESULTS[k])}</option>`).join('')
     document.querySelector('nav').addEventListener('click', (e) => {
@@ -368,7 +392,7 @@
       if (window.TeamHub.room && rooms.some((r) => r.id === window.TeamHub.room)) openSurvey(window.TeamHub.room)
       else render()
     } catch (e) {
-      $('main').innerHTML = empty(icon('wifi-off'), '설문을 불러오지 못했습니다', e.message || '서버 연결을 확인하세요.') + '<p style="text-align:center"><button id="retry" class="primary">다시 시도</button></p>'
+      $('main').innerHTML = empty(icon('wifi-off'), '설문을 불러오지 못했습니다', e.message || '서버 연결을 확인하세요.', `<button id="retry" class="th-btn">${icon('refresh-cw')} 다시 시도</button>`)
       $('retry').addEventListener('click', () => location.reload())
     }
 

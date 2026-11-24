@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" class="th-ui">
   <head>
     <meta charset="utf-8" />
     <title>사다리타기</title>
@@ -7,95 +7,130 @@
     <script src="__sdk.js"></script>
   </head>
   <body>
-    <header>
-      <h1><i data-icon="ladder"></i> 사다리타기</h1>
-      <nav role="tablist">
-        <button role="tab" data-tab="quick" aria-selected="true">바로 하기</button>
-        <button role="tab" data-tab="together">팀원과 함께</button>
-        <button role="tab" data-tab="history">기록</button>
-      </nav>
-    </header>
+    <div class="th-page">
+      <header class="th-page-header">
+        <div>
+          <h1>사다리타기</h1>
+          <p>참여자와 결과를 적고 사다리를 만듭니다. 팀원과 함께 하면 각자 출발점을 고르고 결과를 같이 봅니다.</p>
+        </div>
+      </header>
+      <div class="th-toolbar">
+        <nav class="th-tabs" role="tablist" aria-label="보기">
+          <button class="th-btn th-tab" role="tab" data-tab="quick" aria-selected="true"><i data-icon="dices"></i> 바로 하기</button>
+          <button class="th-btn th-tab" role="tab" data-tab="together" aria-selected="false"><i data-icon="users"></i> 팀원과 함께</button>
+          <button class="th-btn th-tab" role="tab" data-tab="history" aria-selected="false"><i data-icon="history"></i> 기록</button>
+        </nav>
+      </div>
+      <p id="oldApp" hidden>이 화면은 TeamHub를 최신 버전으로 업데이트해야 제대로 보입니다.</p>
 
-    <main>
-      <!-- 바로 하기 / 방 만들기 공통 설정 -->
-      <section id="setup" class="panel">
-        <div class="row">
-          <div class="col">
-            <label for="people">참여자 <small>(줄바꿈이나 쉼표로 구분, 2~30명)</small></label>
-            <textarea id="people" rows="6" placeholder="김주무관&#10;이주무관&#10;박주무관"></textarea>
-            <div class="btns">
-              <button id="loadMembers" class="ghost">팀원 불러오기</button>
-              <button id="shufflePeople" class="ghost">참여자 순서 섞기</button>
-              <span id="peopleCount" class="muted"></span>
+      <main class="th-body">
+        <div class="stack">
+          <!-- settings shared by 바로 하기 and 팀원과 함께 -->
+          <section id="setup" class="th-card">
+            <div class="th-card-header">
+              <h2 class="th-card-title">사다리 만들기</h2>
+              <span class="th-xs th-muted">참여자 2~30명 · 결과는 줄 수만큼</span>
             </div>
-          </div>
-          <div class="col">
-            <label for="preset">결과 종류</label>
-            <select id="preset">
-              <option value="winner">당첨 고르기 (당첨 N명, 나머지 꽝)</option>
-              <option value="order">순서 정하기 (1등 ~ N등)</option>
-              <option value="teams">팀 나누기 (A팀·B팀…)</option>
-              <option value="coffee">커피 몰아주기 (1명이 쏜다)</option>
-              <option value="penalty">벌칙 정하기</option>
-              <option value="custom">직접 입력</option>
-            </select>
-            <div id="presetOpts" class="btns"></div>
-            <label for="results">결과 <small>(줄 수만큼, 모자라면 '꽝'으로 채움)</small></label>
-            <textarea id="results" rows="4"></textarea>
-          </div>
-        </div>
-        <div class="btns">
-          <label class="inline"><input type="checkbox" id="hide" checked /> 결과 가리기(하나씩 공개)</label>
-          <label class="inline">가로줄
-            <select id="density">
-              <option value="8">적게</option>
-              <option value="12" selected>보통</option>
-              <option value="18">많게</option>
-            </select>
-          </label>
-          <span class="grow"></span>
-          <button id="start" class="primary">사다리 만들기</button>
-        </div>
-        <div id="roomOpts" class="together-only">
-          <hr />
-          <label for="roomTitle">방 이름</label>
-          <input id="roomTitle" placeholder="예: 오늘 커피 내기" maxlength="100" />
-          <label class="inline"><input type="checkbox" id="everyone" /> 팀 전체에 공개(초대 알림 없이 목록에만)</label>
-          <p class="muted">참여자에 적은 이름이 팀원 이름과 같으면 그 팀원에게 초대가 갑니다. 각자 자기 출발점을 고르고, 모두 고르면 만든 사람이 결과를 공개합니다.</p>
-          <button id="createRoom" class="primary">방 만들고 초대</button>
-        </div>
-      </section>
+            <div class="th-card-body stack">
+              <div class="cols">
+                <div class="th-field">
+                  <label class="th-label" for="people">참여자</label>
+                  <textarea class="th-input" id="people" rows="6" placeholder="김주무관&#10;이주무관&#10;박주무관"></textarea>
+                  <p class="th-hint">줄바꿈이나 쉼표로 구분합니다(2~30명).</p>
+                  <div class="row">
+                    <button type="button" id="loadMembers" class="th-btn th-btn-outline th-btn-sm"><i data-icon="users"></i> 팀원 불러오기</button>
+                    <button type="button" id="shufflePeople" class="th-btn th-btn-outline th-btn-sm"><i data-icon="refresh-cw"></i> 참여자 순서 섞기</button>
+                    <span id="peopleCount" class="th-badge th-badge-muted th-nums"></span>
+                  </div>
+                </div>
+                <div class="stack tight">
+                  <div class="th-field">
+                    <label class="th-label" for="preset">결과 종류</label>
+                    <select class="th-input" id="preset">
+                      <option value="winner">당첨 고르기 (당첨 N명, 나머지 꽝)</option>
+                      <option value="order">순서 정하기 (1등 ~ N등)</option>
+                      <option value="teams">팀 나누기 (A팀·B팀…)</option>
+                      <option value="coffee">커피 몰아주기 (1명이 쏜다)</option>
+                      <option value="penalty">벌칙 정하기</option>
+                      <option value="custom">직접 입력</option>
+                    </select>
+                    <div id="presetOpts" class="row"></div>
+                  </div>
+                  <div class="th-field">
+                    <label class="th-label" for="results">결과</label>
+                    <textarea class="th-input" id="results" rows="4"></textarea>
+                    <p class="th-hint">줄 수만큼 적습니다. 모자라면 '꽝'으로 채웁니다.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="row">
+                <label class="th-check"><input type="checkbox" id="hide" checked /> 결과 가리기(하나씩 공개)</label>
+                <label class="opt" for="density">가로줄
+                  <select class="th-input" id="density">
+                    <option value="8">적게</option>
+                    <option value="12" selected>보통</option>
+                    <option value="18">많게</option>
+                  </select>
+                </label>
+                <span class="th-grow"></span>
+                <button type="button" id="start" class="th-btn"><i data-icon="ladder"></i> 사다리 만들기</button>
+              </div>
+            </div>
+            <div id="roomOpts" class="together-only card-foot stack tight">
+              <div class="th-field">
+                <label class="th-label" for="roomTitle">방 이름</label>
+                <input class="th-input" id="roomTitle" placeholder="예: 오늘 커피 내기" maxlength="100" />
+              </div>
+              <label class="th-check"><input type="checkbox" id="everyone" /> 팀 전체에 공개(초대 알림 없이 목록에만)</label>
+              <p class="th-hint">참여자에 적은 이름이 팀원 이름과 같으면 그 팀원에게 초대가 갑니다. 각자 자기 출발점을 고르고, 모두 고르면 만든 사람이 결과를 공개합니다.</p>
+              <div class="row">
+                <span class="th-grow"></span>
+                <button type="button" id="createRoom" class="th-btn"><i data-icon="users"></i> 방 만들고 초대</button>
+              </div>
+            </div>
+          </section>
 
-      <!-- 함께하기: 방 목록 -->
-      <section id="rooms" class="panel together-only">
-        <div class="btns"><h2>진행 중인 방</h2><span class="grow"></span><button id="refreshRooms" class="ghost">새로 고침</button></div>
-        <div id="roomList"></div>
-      </section>
+          <!-- 팀원과 함께: rooms -->
+          <section id="rooms" class="th-card together-only">
+            <div class="th-card-header center">
+              <h2 class="th-card-title">진행 중인 방</h2>
+              <button type="button" id="refreshRooms" class="th-btn th-btn-outline th-btn-sm push"><i data-icon="refresh-cw"></i> 새로 고침</button>
+            </div>
+            <div id="roomList" class="rows"></div>
+          </section>
 
-      <!-- 사다리 -->
-      <section id="board" class="panel hidden">
-        <div class="btns">
-          <h2 id="boardTitle">사다리</h2>
-          <span class="grow"></span>
-          <span id="boardStatus" class="muted"></span>
-        </div>
-        <div id="ladderWrap"><svg id="ladder" role="img" aria-label="사다리"></svg></div>
-        <div class="btns" id="boardBtns">
-          <button id="revealAll" class="primary">모두 공개</button>
-          <button id="reshuffle" class="ghost">다시 섞기</button>
-          <button id="copyResult" class="ghost">결과 복사</button>
-          <button id="backSetup" class="ghost">처음으로</button>
-        </div>
-        <div id="resultTable"></div>
-        <p class="muted small" id="fair"></p>
-      </section>
+          <!-- the ladder -->
+          <section id="board" class="th-card hidden">
+            <div class="th-card-header center">
+              <h2 class="th-card-title" id="boardTitle">사다리</h2>
+              <span id="boardStatus" class="th-xs th-muted"></span>
+            </div>
+            <div class="th-card-body stack tight">
+              <div id="ladderWrap"><svg id="ladder" role="img" aria-label="사다리"></svg></div>
+              <div class="row" id="boardBtns">
+                <button type="button" id="revealAll" class="th-btn">모두 공개</button>
+                <button type="button" id="reshuffle" class="th-btn th-btn-outline"><i data-icon="refresh-cw"></i> 다시 섞기</button>
+                <button type="button" id="copyResult" class="th-btn th-btn-outline"><i data-icon="copy"></i> 결과 복사</button>
+                <span class="th-grow"></span>
+                <button type="button" id="backSetup" class="th-btn th-btn-ghost"><i data-icon="chevron-left"></i> 처음으로</button>
+              </div>
+            </div>
+            <div id="resultTable"></div>
+            <p class="th-hint card-foot" id="fair"></p>
+          </section>
 
-      <section id="history" class="panel hidden">
-        <div class="btns"><h2>기록</h2><span class="grow"></span><button id="clearHistory" class="ghost">기록 지우기</button></div>
-        <div id="historyList"></div>
-      </section>
-    </main>
-    <div id="toast" role="status"></div>
+          <section id="history" class="th-card hidden">
+            <div class="th-card-header center">
+              <h2 class="th-card-title">기록</h2>
+              <span class="th-xs th-muted">이 PC에만 보관(50개)</span>
+              <button type="button" id="clearHistory" class="th-btn th-btn-outline th-btn-sm push"><i data-icon="trash-2"></i> 기록 지우기</button>
+            </div>
+            <div id="historyList" class="rows"></div>
+          </section>
+        </div>
+      </main>
+    </div>
+    <div id="toast" class="th-toast" role="status"></div>
     <script src="ladder.js"></script>
     <script src="app.js"></script>
   </body>

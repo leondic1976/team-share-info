@@ -2,7 +2,8 @@
  *
  * One team-wide room holds the board. The server lets each member write only their own
  * entry, so a member's entry carries their posts plus their likes, visits and comments on
- * other people's posts; the feed is put together from all entries (matjip.js). */
+ * other people's posts; the feed is put together from all entries (matjip.js).
+ * The look comes from TeamHub (__ui.css, the th-* classes); style.css holds the layout only. */
 ;(function () {
   'use strict'
   // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
@@ -12,7 +13,6 @@
   const call = (m, p) => window.TeamHub.call(m, p)
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
   const ROOM_TITLE = '맛집 게시판'
-  const AVATARS = ['#ef4444', '#2563eb', '#16a34a', '#d97706', '#9333ea', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#4f46e5']
 
   let me = null
   let depts = new Map()
@@ -64,39 +64,38 @@
   }
 
   // ---------- render ----------
-  function avatar(id, name) {
-    let h = 0
-    for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0
-    return `<span class="avatar" style="background:${AVATARS[h % AVATARS.length]}" aria-hidden="true">${esc(String(name).slice(0, 1))}</span>`
-  }
+  const avatar = (name) => `<span class="avatar" aria-hidden="true">${esc(String(name).slice(0, 1))}</span>`
+  const act = (name, cls, attrs, body) => `<button class="th-btn th-btn-ghost th-btn-sm ${cls}" data-act="${name}" ${attrs}>${body}</button>`
   const names = (list) => (list.length ? esc(list.join(', ')) : '')
 
   function postHtml(p) {
     const dept = depts.get(p.authorId)
     const facts = factsOf(p)
     const open = openComments.has(p.key)
-    return `<article class="post" data-key="${esc(p.key)}">
-      <div class="post-head">
-        ${avatar(p.authorId, p.authorName)}
-        <div class="who"><b>${esc(p.authorName)}</b><span class="muted small">${dept ? esc(dept) + ' · ' : ''}${M.timeAgo(p.at)}${p.editedAt ? ' · 고침' : ''}</span></div>
-        ${p.mine ? '<button data-act="edit">고치기</button><button data-act="del">지우기</button>' : ''}
+    return `<article class="th-card post" data-key="${esc(p.key)}">
+      <div class="post-main">
+        <div class="post-head">
+          ${avatar(p.authorName)}
+          <div class="who"><b>${esc(p.authorName)}</b><span class="th-xs th-muted">${dept ? esc(dept) + ' · ' : ''}${M.timeAgo(p.at)}${p.editedAt ? ' · 고침' : ''}</span></div>
+          ${p.mine ? `${act('edit', '', '', `${icon('pencil')} 고치기`)}${act('del', '', '', `${icon('trash-2')} 지우기`)}` : ''}
+        </div>
+        <div class="place"><strong>${esc(p.name)}</strong><span class="th-badge">${esc(p.cat)}</span><span class="stars" aria-label="별점 ${p.rating}점">${starsHtml(p.rating)}</span></div>
+        ${facts.length ? `<div class="facts th-xs th-muted">${facts.map((f) => `<span>${f}</span>`).join('')}</div>` : ''}
+        ${p.tags.length ? `<div class="facts">${p.tags.map((t) => `<span class="th-badge th-badge-muted">#${esc(t)}</span>`).join('')}</div>` : ''}
+        ${p.text ? `<p class="text">${esc(p.text)}</p>` : ''}
       </div>
-      <div class="place"><strong>${esc(p.name)}</strong><span class="badge">${esc(p.cat)}</span><span class="stars" aria-label="별점 ${p.rating}점">${starsHtml(p.rating)}</span></div>
-      ${facts.length ? `<div class="facts">${facts.map((f) => `<span>${f}</span>`).join('')}</div>` : ''}
-      ${p.tags.length ? `<div class="facts">${p.tags.map((t) => `<span class="badge tag">#${esc(t)}</span>`).join('')}</div>` : ''}
-      ${p.text ? `<p class="text">${esc(p.text)}</p>` : ''}
       <div class="actions">
-        <button data-act="like" class="${p.liked ? 'on' : ''}" aria-pressed="${p.liked}" title="${names(p.likes)}">${icon('heart', { fill: p.liked })} 좋아요 ${p.likes.length || ''}</button>
-        <button data-act="visit" class="${p.visited ? 'on' : ''}" aria-pressed="${p.visited}" title="${names(p.visits)}">${icon('circle-check')} 가봤어요 ${p.visits.length || ''}</button>
-        <button data-act="comments" aria-expanded="${open}">${icon('message-circle')} 댓글 ${p.comments.length || ''}</button>
-        <span class="grow"></span>
-        <button data-act="share" title="메신저에 붙여넣을 수 있게 복사">${icon('copy')} 복사</button>
+        ${act('like', p.liked ? 'on like' : 'like', `aria-pressed="${p.liked}" title="${names(p.likes)}"`, `${icon('heart', { fill: p.liked })} 좋아요 <b class="th-nums">${p.likes.length || ''}</b>`)}
+        ${act('visit', p.visited ? 'on visit' : 'visit', `aria-pressed="${p.visited}" title="${names(p.visits)}"`, `${icon('circle-check')} 가봤어요 <b class="th-nums">${p.visits.length || ''}</b>`)}
+        ${act('comments', '', `aria-expanded="${open}"`, `${icon('message-circle')} 댓글 <b class="th-nums">${p.comments.length || ''}</b>`)}
+        <span class="th-grow"></span>
+        ${act('share', '', 'title="메신저에 붙여넣을 수 있게 복사"', `${icon('copy')} 복사`)}
       </div>
       ${
         open
           ? `<div class="comments">
-        ${p.comments.map((c) => `<div class="comment"><b>${esc(c.authorName)}</b><p>${esc(c.text)}</p><span class="muted small">${M.timeAgo(c.at)}</span>${c.mine ? `<button data-act="delComment" data-id="${esc(c.id)}" aria-label="댓글 지우기">${icon('x') || '×'}</button>` : ''}</div>`).join('')}
-        <form class="comment-form" data-act="comment"><input maxlength="200" placeholder="댓글 달기" aria-label="댓글" /><button type="submit">등록</button></form>
+        ${p.comments.map((c) => `<div class="comment"><b>${esc(c.authorName)}</b><p>${esc(c.text)}</p><span class="th-xs th-muted">${M.timeAgo(c.at)}</span>${c.mine ? `<button class="x" data-act="delComment" data-id="${esc(c.id)}" aria-label="댓글 지우기" title="댓글 지우기">${icon('x') || '지우기'}</button>` : ''}</div>`).join('')}
+        <form class="comment-form" data-act="comment"><input class="th-input" maxlength="200" placeholder="댓글 달기" aria-label="댓글" /><button type="submit" class="th-btn th-btn-sm">등록</button></form>
       </div>`
           : ''
       }
@@ -107,13 +106,15 @@
   const starsHtml = (n) => (icon('star') ? [1, 2, 3, 4, 5].map((i) => icon('star', { fill: i <= n, cls: i <= n ? '' : 'off' })).join('') : `${n}점`)
   const factsOf = (p) => [p.menu && `${icon('utensils', { label: '대표 메뉴' })} ${esc(p.menu)}`, p.price && `${icon('coins', { label: '가격대' })} ${esc(p.price)}`, p.walk !== null && `${icon('footprints')} 걸어서 ${p.walk}분`].filter(Boolean)
 
-  function empty(pic, title, body) {
-    return `<div class="empty"><div class="big">${pic}</div><h2>${esc(title)}</h2><p>${esc(body)}</p></div>`
+  function empty(pic, title, body, action) {
+    return `<div class="th-empty empty">${pic}<p class="th-empty-title">${esc(title)}</p><p>${esc(body)}</p>${action || ''}</div>`
   }
 
   function render() {
     document.querySelectorAll('nav [role=tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)))
-    $('filters').style.display = tab === 'rank' ? 'none' : ''
+    // the ranking is of every place: no kind, search or order to choose
+    $('filters').classList.toggle('hidden', tab === 'rank')
+    $('cats').classList.toggle('hidden', tab === 'rank')
     const list = $('list')
     if (!room) return
     // keep what is being typed in comment boxes across a redraw (other people's changes arrive at any time)
@@ -131,16 +132,18 @@
     if (tab === 'rank') {
       const rows = M.ranking(all)
       list.innerHTML = rows.length
-        ? `<div class="rank">${rows
+        ? `<div class="th-card rank">
+          <div class="th-card-header"><h2 class="th-card-title">맛집 랭킹</h2><span class="th-xs th-muted">같은 가게의 추천을 모아 평균 별점과 좋아요·가봤어요로 순위를 매깁니다. 누르면 그 가게의 추천 글을 봅니다.</span></div>
+          <div class="rows">${rows
             .map(
               (r, i) => `<button class="rank-row" data-act="rank" data-name="${esc(r.name)}">
-            <span class="rank-no${i < 3 ? ` top r${i + 1}` : ''}">${i + 1}</span>
-            <span class="rank-main"><b>${esc(r.name)}</b> <span class="badge">${esc(r.cat)}</span><br /><span class="muted small">${r.menus.length ? esc(r.menus.join(', ')) + ' · ' : ''}추천 ${r.posts}건</span></span>
-            <span class="stars">${icon('star', { fill: true })} ${r.avg.toFixed(1)}</span>
-            <span class="muted small">${icon('heart', { label: '좋아요' })} ${r.likes} · ${icon('circle-check', { label: '가봤어요' })} ${r.visits}</span>
+            <span class="rank-no th-nums${i < 3 ? ' top' : ''}">${i + 1}</span>
+            <span class="rank-main"><span class="rank-name"><b>${esc(r.name)}</b><span class="th-badge">${esc(r.cat)}</span></span><span class="th-xs th-muted">${r.menus.length ? esc(r.menus.join(', ')) + ' · ' : ''}추천 ${r.posts}건</span></span>
+            <span class="stars th-nums">${icon('star', { fill: true })} <b>${r.avg.toFixed(1)}</b></span>
+            <span class="rank-counts th-xs th-muted th-nums">${icon('heart', { label: '좋아요' })} ${r.likes} · ${icon('circle-check', { label: '가봤어요' })} ${r.visits}</span>
           </button>`
             )
-            .join('')}</div>`
+            .join('')}</div></div>`
         : empty(icon('trophy'), '아직 랭킹이 없습니다', '맛집을 추천하면 별점과 좋아요로 순위가 매겨집니다.')
     } else {
       const shown = M.sortFeed(M.filterFeed(all, { cat, q: $('q').value, mine: tab === 'mine' }), sort)
@@ -162,16 +165,16 @@
   function renderCats() {
     $('cats').innerHTML = ['']
       .concat(M.CATS)
-      .map((c) => `<button class="chip" role="radio" aria-checked="${cat === c}" data-cat="${esc(c)}">${c ? esc(c) : '전체'}</button>`)
+      .map((c) => `<button class="th-chip" role="radio" aria-checked="${cat === c}" data-cat="${esc(c)}">${c ? esc(c) : '전체'}</button>`)
       .join('')
   }
 
   // ---------- editor ----------
   function renderRating() {
-    $('fRating').innerHTML = [1, 2, 3, 4, 5].map((n) => `<button type="button" role="radio" aria-checked="${rating === n}" aria-label="${n}점" data-n="${n}" class="${n <= rating ? 'on' : ''}">${icon('star', { fill: true }) || '*'}</button>`).join('')
+    $('fRating').innerHTML = [1, 2, 3, 4, 5].map((n) => `<button type="button" role="radio" aria-checked="${rating === n}" aria-label="${n}점" data-n="${n}" class="${n <= rating ? 'on' : ''}">${icon('star', { fill: n <= rating }) || `${n}점`}</button>`).join('')
   }
   function renderTags() {
-    $('fTags').innerHTML = M.TAGS.map((t) => `<button type="button" class="chip" aria-pressed="${tags.has(t)}" data-tag="${esc(t)}">${esc(t)}</button>`).join('')
+    $('fTags').innerHTML = M.TAGS.map((t) => `<button type="button" class="th-chip" aria-pressed="${tags.has(t)}" data-tag="${esc(t)}">${esc(t)}</button>`).join('')
   }
   function openEditor(post) {
     editing = post || null
@@ -219,10 +222,10 @@
     // not the same place twice in a row when there is a choice
     for (let i = 0; i < 5 && pool.length > 1 && lastPick === p.key; i++) p = M.pick(pool)
     lastPick = p.key
-    $('pickResult').innerHTML = `<div class="place"><strong>${esc(p.name)}</strong><span class="badge">${esc(p.cat)}</span><span class="stars">${starsHtml(p.rating)}</span></div>
-      <div class="facts">${factsOf(p).map((f) => `<span>${f}</span>`).join('')}</div>
+    $('pickResult').innerHTML = `<div class="place"><strong>${esc(p.name)}</strong><span class="th-badge">${esc(p.cat)}</span><span class="stars">${starsHtml(p.rating)}</span></div>
+      <div class="facts th-xs th-muted">${factsOf(p).map((f) => `<span>${f}</span>`).join('')}</div>
       ${p.text ? `<p class="text">${esc(p.text)}</p>` : ''}
-      <p class="muted small">${esc(p.authorName)}님의 추천${cat ? ` · ${esc(cat)} 중에서` : ''}</p>`
+      <p class="th-hint">${esc(p.authorName)}님의 추천${cat ? ` · ${esc(cat)} 중에서` : ''}</p>`
     if (!$('picker').open) $('picker').showModal()
   }
 
@@ -279,6 +282,9 @@
       if (again) again.value = text
     }
   }
+
+  // an older TeamHub does not give extension frames its look (__ui.css): say so
+  window.addEventListener('load', () => ($('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim()))
 
   async function init() {
     $('fCat').innerHTML = M.CATS.map((c) => `<option>${esc(c)}</option>`).join('')
@@ -340,7 +346,7 @@
       await loadRoom()
       render()
     } catch (e) {
-      $('list').innerHTML = empty(icon('wifi-off'), '맛집 게시판을 불러오지 못했습니다', e.message || '서버 연결을 확인하세요.') + '<p style="text-align:center"><button id="retry" class="primary">다시 시도</button></p>'
+      $('list').innerHTML = empty(icon('wifi-off'), '맛집 게시판을 불러오지 못했습니다', e.message || '서버 연결을 확인하세요.', `<button id="retry" class="th-btn">${icon('refresh-cw')} 다시 시도</button>`)
       $('retry').addEventListener('click', () => location.reload())
     }
 

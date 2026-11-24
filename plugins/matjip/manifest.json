@@ -1,7 +1,7 @@
 {
   "id": "matjip",
   "name": "맛집 추천",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "사무실 주변 맛집을 팀원끼리 추천하고 좋아요·댓글로 이야기하는 맛집 게시판. 랭킹과 '오늘 뭐 먹지?' 뽑기.",
   "author": "TeamHub",
   "icon": "맛",

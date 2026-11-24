@@ -27,5 +27,7 @@ and work only on the next unchecked step in 13.12. Record progress in 13.14.
 - Personal data lives only in the local DB (`src/main/localdb`), which must never import network code (ESLint enforced).
 - Shared data lives in the server DB; every shared item has a scope (team/group/members) checked on the server.
 - UI text Korean; code, identifiers and comments English.
+- No emoji anywhere in the product (UI, toasts, manual, site): line icons only — lucide in the renderer, `TeamHub.icon()` in extension frames (`tests/shared/no-emoji.test.ts`).
+- One look for every screen, extensions included: page header, toolbar/tabs, cards, tables, buttons, colours and fonts come from the app (`src/renderer/styles.css`) and, inside extension frames, from `resources/ui/base.css` (`__ui.css`, `th-*` classes) and `__fonts.css`. 근무현황 is the reference layout. Check new screens by screenshot in light and dark.
 - Tests: `tests/**/*.test.ts` (vitest, Node). Use `TEAMHUB_USERDATA` to isolate app data in E2E.
 - Commit only when asked. Commit trailer: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`

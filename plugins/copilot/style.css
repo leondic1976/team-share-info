@@ -1,204 +1,101 @@
-:root {
-  --bg: #ffffff;
-  --card: #f8fafc;
-  --fg: #0f172a;
-  --muted: #64748b;
-  --line: #e2e8f0;
-  --primary: #2563eb;
-  --warn: #b45309;
-}
-[data-theme='dark'] {
-  --bg: #0f172a;
-  --card: #111a2e;
-  --fg: #e2e8f0;
-  --muted: #94a3b8;
-  --line: #1e293b;
-  --primary: #3b82f6;
-  --warn: #fbbf24;
-}
-* {
-  box-sizing: border-box;
-}
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font: 14px/1.5 'Pretendard', 'Malgun Gothic', system-ui, sans-serif;
-}
-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--line);
-}
-h1 {
-  font-size: 18px;
-  margin: 0;
-}
-h1 small {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--muted);
-}
-h2 {
-  font-size: 15px;
-  margin: 0;
-}
-.panel > h2:not(:first-child) {
-  margin-top: 8px;
-}
-.grow {
-  flex: 1;
-}
-.muted {
-  color: var(--muted);
-}
-.small {
-  font-size: 12px;
-}
-.hidden {
+/* AI 도우미: layout only. Colours, buttons, cards, fields, the notice and the page frame come
+ * from TeamHub (__ui.css = resources/ui/base.css, the th-* classes). */
+.hidden,
+[hidden] {
   display: none !important;
 }
-.notice {
-  margin: 12px 20px 0;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
+#oldApp {
+  margin: 0;
+  padding: 8px 20px;
+  background: #fef3c7;
+  color: #92400e;
 }
-button,
-input,
-select,
-textarea {
-  font: inherit;
-  color: var(--fg);
+
+/* ---------- content rhythm ---------- */
+.stack {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
 }
-button {
-  cursor: pointer;
-  border-radius: 6px;
-  padding: 6px 12px;
-  border: 1px solid var(--line);
-  background: var(--bg);
+.stack.tight {
+  gap: 0.75rem;
 }
-button:hover {
-  border-color: var(--primary);
+.stack > * {
+  min-width: 0;
 }
-button.primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-  font-weight: 600;
-}
-button.link {
-  align-self: flex-start;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  color: var(--primary);
-}
-input,
-select,
-textarea {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 6px 8px;
-}
-textarea {
-  resize: vertical;
-  line-height: 1.6;
-}
-main {
+.cols {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 14px;
-  padding: 12px 20px 28px;
+  gap: 1rem;
   align-items: start;
 }
 @media (max-width: 820px) {
-  main {
-    grid-template-columns: 1fr;
+  .cols {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 14px;
-}
-#tasks {
+.row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-}
-#tasks button {
-  border-radius: 999px;
-  padding: 4px 12px;
-}
-#tasks button[aria-checked='true'] {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-}
-#tasks .del {
-  margin-left: 4px;
-  opacity: 0.7;
-}
-label {
-  display: block;
-  font-weight: 600;
+  align-items: center;
+  gap: 0.5rem;
 }
 .row3 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 0.75rem;
 }
-.row3 select {
-  margin-top: 2px;
-  font-weight: 400;
+.push {
+  margin-left: auto;
 }
-.bar {
-  display: flex;
-  flex-wrap: wrap;
+.th-card-header.center {
   align-items: center;
-  gap: 8px;
 }
-.howto {
-  margin: 4px 0 0;
-  padding-left: 18px;
+.card-foot {
+  border-top: 1px solid var(--border);
+  padding: 0.75rem 1rem;
 }
-dialog {
-  width: min(600px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg);
-  color: var(--fg);
-  padding: 16px 18px;
+.rows > * + * {
+  border-top: 1px solid var(--border);
 }
-dialog::backdrop {
-  background: rgba(15, 23, 42, 0.5);
+
+/* ---------- what to ask: one chip per task (th-chip; the chosen one is tinted) ---------- */
+#tasks .del {
+  display: inline-flex;
+  margin-left: 0.125rem;
+  opacity: 0.7;
 }
-dialog label {
-  margin: 10px 0 4px;
+#tasks .del:hover {
+  opacity: 1;
+}
+#text,
+#prompt {
+  line-height: 1.6;
+}
+ol.howto {
+  margin: 0;
+  padding-left: 2.25rem;
+}
+
+/* ---------- dialogs ---------- */
+.th-dialog.wide {
+  width: min(40rem, calc(100vw - 2rem));
+}
+.hist-list {
+  max-height: min(24rem, 50vh);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
 }
 .hist {
   display: flex;
-  gap: 10px;
   align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
 }
-.hist div {
-  flex: 1;
+.hist > div {
   min-width: 0;
+  flex: 1;
 }
 .hist b {
   display: block;
@@ -206,20 +103,14 @@ dialog label {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-#toast {
-  position: fixed;
-  left: 50%;
-  bottom: 24px;
-  transform: translateX(-50%);
-  max-width: calc(100vw - 40px);
-  background: var(--fg);
-  color: var(--bg);
-  padding: 8px 16px;
-  border-radius: 8px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s;
+.th-empty.compact {
+  min-height: 8rem;
+  padding: 1.25rem;
 }
-#toast.show {
-  opacity: 1;
+.dlg-btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
 }

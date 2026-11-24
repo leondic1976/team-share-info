@@ -5,6 +5,12 @@
   const $ = (id) => document.getElementById(id)
   const T = window.OcrText
   const call = (m, p) => window.TeamHub.call(m, p)
+  // an older TeamHub does not give extension frames its look (__ui.css): say so once the page has loaded
+  const lookCheck = () => ($('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim())
+  if (document.readyState === 'complete') lookCheck()
+  else window.addEventListener('load', lookCheck)
+  // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
+  const icon = (n, o) => (window.TeamHub.icon ? window.TeamHub.icon(n, o) : '')
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
   const LANG_NAMES = { ko: '한국어', en: '영어', ja: '일본어', zh: '중국어' }
 
@@ -50,7 +56,7 @@
     current = i
     sel = null
     const it = images[i]
-    $('drop').classList.toggle('hidden', !it)
+    $('drop').classList.toggle('hidden', !!it)
     $('stage').classList.toggle('hidden', !it)
     $('run').disabled = !it || busy
     $('sel').classList.add('hidden')
@@ -177,10 +183,10 @@
           .map((h, i) => {
             const d = new Date(h.at)
             const n = T.count(h.text)
-            return `<div class="hist"><div><b>${esc(T.titleOf(h.text))}</b><span class="muted small">${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} · ${n.chars}자</span></div><button type="button" data-use="${i}">불러오기</button><button type="button" data-copy="${i}">복사</button></div>`
+            return `<div class="hist"><div><b>${esc(T.titleOf(h.text))}</b><span class="th-xs th-muted th-nums">${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} · ${n.chars}자</span></div><button type="button" class="th-btn th-btn-outline th-btn-sm" data-use="${i}">불러오기</button><button type="button" class="th-btn th-btn-outline th-btn-sm" data-copy="${i}">${icon('copy')} 복사</button></div>`
           })
           .join('')
-      : '<p class="muted">아직 읽은 글자가 없습니다.</p>'
+      : `<div class="th-empty compact">${icon('scan-text')}<p class="th-empty-title">아직 읽은 글자가 없습니다</p><p>글자를 읽으면 여기에 20개까지 남습니다.</p></div>`
   }
 
   async function init() {

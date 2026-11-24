@@ -51,10 +51,21 @@ describe('organisation management (조직 관리)', () => {
     const post = (payload: Record<string, unknown>) => s!.req(s!.admin, { method: 'POST', url: '/api/admin/departments', payload })
     const patch = (id: string, payload: Record<string, unknown>) => s!.req(s!.admin, { method: 'PATCH', url: `/api/admin/departments/${id}`, payload })
     expect((await post({ name: 'A과' })).statusCode).toBe(400)
+    expect((await post({ name: ' a 과 ' })).statusCode).toBe(400) // case and spacing do not make it another name
+    expect((await post({ name: 'A>B' })).statusCode).toBe(400)
     expect((await post({ name: 'X', parentId: 'nope' })).statusCode).toBe(400)
     expect((await post({ name: 'X', headId: 'nope' })).statusCode).toBe(400)
-    expect((await patch(a1, { name: 'A과' })).statusCode).toBe(400)
-    expect((await patch(a1, { name: 'A1팀' })).statusCode).toBe(200) // its own name is not a duplicate
+    // a name is unique among the departments of one parent, not in the whole tree
+    const b = (await post({ name: 'B과' })).json().data.id as string
+    expect((await post({ name: 'A1팀', parentId: b })).statusCode).toBe(200)
+    expect((await post({ name: 'A1팀', parentId: a })).statusCode).toBe(400)
+    expect((await post({ name: '서무팀', parentId: a })).statusCode).toBe(200)
+    expect((await patch(a1, { name: '서무팀' })).statusCode).toBe(400)
+    expect((await patch(a1, { parentId: b })).statusCode).toBe(400) // B과 has an A1팀 already
+    expect((await patch(a1, { name: 'A과' })).statusCode).toBe(200) // under A과, not beside it
+    expect((await patch(a1, { parentId: null })).statusCode).toBe(400) // beside A과 it is taken
+    expect((await patch(a1, { name: 'A1팀' })).statusCode).toBe(200)
+    expect((await patch(a1, { name: 'A1팀', phone: '1' })).statusCode).toBe(200) // its own name is not a duplicate
     expect((await patch(a, { parentId: a })).statusCode).toBe(400)
     expect((await patch(a, { parentId: a11 })).statusCode).toBe(400)
     expect((await patch('nope', { name: 'Y' })).statusCode).toBe(404)

@@ -1,12 +1,15 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import type { Page } from 'playwright-core'
 import { go, joinAndApprove, launch, runWizard, type Launched } from './helpers'
 
 const PORT = '47906'
 const ROOT = resolve(import.meta.dirname, '..')
-const BUNDLE = join(ROOT, 'release', 'plugins', 'ladder-1.0.0.thplugin')
+// the bundle the pack script writes for the version in the manifest
+const VERSION = (JSON.parse(readFileSync(join(ROOT, 'plugins', 'ladder', 'manifest.json'), 'utf8')) as { version: string }).version
+const BUNDLE = join(ROOT, 'release', 'plugins', `ladder-${VERSION}.thplugin`)
 
 const frame = (p: Page) => p.frameLocator('[data-testid="plugin-frame"]')
 

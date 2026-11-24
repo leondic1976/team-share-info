@@ -2,7 +2,8 @@
  *
  * A register is a head room plus volume rooms made by its manager (bipum.js). The manager
  * writes the items (shared data); everybody writes their own lending, issuing and inventory
- * check records into their own entry of the head room. */
+ * check records into their own entry of the head room.
+ * The look comes from TeamHub (__ui.css, the th-* classes); style.css holds the layout only. */
 ;(function () {
   'use strict'
   // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
@@ -59,8 +60,14 @@
     clearTimeout(toast.t)
     toast.t = setTimeout(() => t.classList.remove('show'), 3200)
   }
-  const empty = (icon, title, body, action) => `<div class="empty"><div class="big">${icon}</div><h2>${esc(title)}</h2><p>${esc(body)}</p>${action || ''}</div>`
-  const badge = (it) => `<span class="badge st${it.status}">${B.STATUS[it.status]}</span>`
+  const empty = (pic, title, body, action) => `<div class="th-empty empty">${pic}<p class="th-empty-title">${esc(title)}</p>${body ? `<p>${esc(body)}</p>` : ''}${action || ''}</div>`
+  const mark = (kind, text) => `<span class="th-badge${kind ? ` th-badge-${kind}` : ''}">${text}</span>`
+  // 사용중 · 보관 · 수리중 · 불용 · 폐기
+  const STATUS_KIND = ['success', '', 'important', 'muted', 'muted']
+  const badge = (it) => mark(STATUS_KIND[it.status], B.STATUS[it.status])
+  const tool = (attrs, body, cls) => `<button class="th-btn th-btn-sm ${cls || 'th-btn-outline'}" ${attrs}>${body}</button>`
+  const chipBtn = (attrs, on, label, n, cls) => `<button class="th-chip ${cls || ''}" ${attrs} aria-pressed="${on}">${label} <b>${num(n)}</b></button>`
+  const sub = (text, cls) => `<div class="sub th-xs ${cls || 'th-muted'}">${text}</div>`
 
   async function syncClock() {
     try {
@@ -169,68 +176,70 @@
   // ---------- 대장 ----------
   const options = (list, cur, any) => `<option value="">${any}</option>${list.map((x) => `<option value="${esc(x)}" ${String(cur) === String(x) ? 'selected' : ''}>${esc(x)}</option>`).join('')}`
   function listShell() {
-    return `<div class="toolbar no-print">
-        <input id="q" type="search" placeholder="품명·규격·관리번호·위치·사용자 찾기" value="${esc(filter.q)}" aria-label="찾기" />
-        <select id="fKind" aria-label="구분"><option value="">구분 전체</option>${B.KINDS.map((k, i) => `<option value="${i}" ${filter.kind === String(i) ? 'selected' : ''}>${k}</option>`).join('')}</select>
-        <select id="fCat" aria-label="분류"></select>
-        <select id="fStatus" aria-label="상태"><option value="">상태 전체(폐기 제외)</option>${B.STATUS.map((k, i) => `<option value="${i}" ${filter.status === String(i) ? 'selected' : ''}>${k}</option>`).join('')}</select>
-        <select id="fLoc" aria-label="보관 위치"></select>
-        <span class="grow"></span>
-        <button id="csvOut">CSV 저장</button>
-        ${isManager() ? '<button id="csvIn">CSV 가져오기</button>' : ''}
-        <button id="printBtn">인쇄</button>
+    return `<div class="stack">
+      <div class="filters th-no-print">
+        <input class="th-input q" id="q" type="search" placeholder="품명·규격·관리번호·위치·사용자 찾기" value="${esc(filter.q)}" aria-label="찾기" />
+        <select class="th-input" id="fKind" aria-label="구분"><option value="">구분 전체</option>${B.KINDS.map((k, i) => `<option value="${i}" ${filter.kind === String(i) ? 'selected' : ''}>${k}</option>`).join('')}</select>
+        <select class="th-input" id="fCat" aria-label="분류"></select>
+        <select class="th-input" id="fStatus" aria-label="상태"><option value="">상태 전체(폐기 제외)</option>${B.STATUS.map((k, i) => `<option value="${i}" ${filter.status === String(i) ? 'selected' : ''}>${k}</option>`).join('')}</select>
+        <select class="th-input" id="fLoc" aria-label="보관 위치"></select>
+        <span class="th-grow"></span>
+        ${tool('id="csvOut"', `${icon('download')} CSV 저장`)}
+        ${isManager() ? tool('id="csvIn"', `${icon('upload')} CSV 가져오기`) : ''}
+        ${tool('id="printBtn"', `${icon('file-text')} 인쇄`)}
       </div>
-      <div class="chips no-print" id="chips"></div>
-      <div id="listBody"></div>`
+      <div class="th-chips th-no-print" id="chips"></div>
+      <div id="listBody"></div>
+    </div>`
   }
   const visible = () => B.sortItems(B.filterItems(items, filter, ctx()), sort.key, sort.dir, ctx())
   function qtyCell(it) {
     const out = B.outQty(loans, it.id)
     if (it.kind === 1) {
       const stock = B.stockOf(it, loans)
-      return `<b>${num(stock)}</b> ${esc(it.unit)}${B.isLow(it, loans) ? ' <span class="badge warn">재고 부족</span>' : ''}${it.min ? `<div class="sub">최소 ${num(it.min)}</div>` : ''}`
+      return `${B.isLow(it, loans) ? `${mark('important', '재고 부족')} ` : ''}<b>${num(stock)}</b> ${esc(it.unit)}${it.min ? sub(`최소 ${num(it.min)}`) : ''}`
     }
-    return `<b>${num(it.qty)}</b> ${esc(it.unit)}${out ? `<div class="sub out">대여 중 ${num(out)}</div>` : ''}`
+    return `<b>${num(it.qty)}</b> ${esc(it.unit)}${out ? sub(`대여 중 ${num(out)}`, 'out') : ''}`
   }
   function listBody() {
     const c = ctx()
     const count = (flag) => B.filterItems(items, { flag }, c).length
-    const chip = (flag, label, n, cls) => `<button class="chip ${filter.flag === flag ? 'on' : ''} ${n && cls ? cls : ''}" data-flag="${flag}">${label} <b>${num(n)}</b></button>`
+    const chip = (flag, label, n, cls) => chipBtn(`data-flag="${flag}"`, filter.flag === flag, label, n, n && cls ? cls : '')
     $('chips').innerHTML = chip('', '전체', count('')) + chip('low', '재고 부족', count('low'), 'warn') + chip('out', '대여 중', count('out')) + chip('lend', '대여 가능', count('lend')) + chip('over', '내용연수 지남', count('over'), 'warn')
     $('fCat').innerHTML = options(B.catsOf(items), filter.cat, '분류 전체')
     $('fLoc').innerHTML = options(B.locsOf(items), filter.loc, '위치 전체')
     const list = visible()
     if (!items.length) {
-      $('listBody').innerHTML = empty(icon('archive'), '등록된 물품이 없습니다', isManager() ? '[＋ 물품 등록]으로 하나씩 넣거나, 엑셀 자료를 [CSV 가져오기]로 한 번에 넣으세요.' : '담당자가 물품을 등록하면 여기에 나타납니다.', isManager() ? '<div class="btns center"><button id="tplBtn">CSV 양식 받기</button></div>' : '')
+      $('listBody').innerHTML = empty(icon('archive'), '등록된 물품이 없습니다', isManager() ? '[물품 등록]으로 하나씩 넣거나, 엑셀 자료를 [CSV 가져오기]로 한 번에 넣으세요.' : '담당자가 물품을 등록하면 여기에 나타납니다.', isManager() ? tool('id="tplBtn"', `${icon('download')} CSV 양식 받기`) : '')
       return
     }
     if (!list.length) {
       $('listBody').innerHTML = empty(icon('search'), '맞는 물품이 없습니다', '찾는 말이나 필터를 바꿔 보세요.')
       return
     }
-    const th = (key, label, cls) => `<th class="${cls || ''}" data-sort="${key}" aria-sort="${sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}">${label}${sort.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}</th>`
+    const th = (key, label, cls) => `<th class="${cls || ''}" data-sort="${key}" aria-sort="${sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}">${label}${sort.key === key ? ` ${icon(sort.dir === 'asc' ? 'arrow-up' : 'arrow-down')}` : ''}</th>`
     const shown = showAll ? list : list.slice(0, SHOW_MAX)
     const t = today()
-    $('listBody').innerHTML = `<table class="grid" id="itemTable">
+    $('listBody').innerHTML = `<div class="th-card"><div class="th-table-wrap"><table class="th-table grid" id="itemTable">
         <thead><tr>${th('no', '관리번호')}${th('name', '품명')}${th('cat', '분류')}${th('stock', '수량', 'r')}${th('loc', '보관 위치')}${th('holder', '사용자')}${th('got', '취득일')}${th('amount', '금액', 'r')}${th('status', '상태')}</tr></thead>
         <tbody>${shown
           .map(
             (it) => `<tr data-item="${esc(it.id)}" tabindex="0">
-            <td class="mono">${esc(it.no)}</td>
-            <td><b>${esc(it.name)}</b>${it.kind === 1 ? ' <span class="tag">소모품</span>' : it.lend ? ' <span class="tag lend">대여용</span>' : ''}${it.spec ? `<div class="sub">${esc(it.spec)}</div>` : ''}</td>
+            <td class="th-nums">${esc(it.no)}</td>
+            <td><b>${esc(it.name)}</b>${it.kind === 1 ? ` ${mark('muted', '소모품')}` : it.lend ? ` ${mark('', '대여용')}` : ''}${it.spec ? sub(esc(it.spec)) : ''}</td>
             <td>${esc(it.cat)}</td>
             <td class="r">${qtyCell(it)}</td>
             <td>${esc(it.loc)}</td>
             <td>${esc(it.holder)}</td>
-            <td class="mono">${esc(it.got)}${B.lifeOver(it, t) ? '<div class="sub over">내용연수 지남</div>' : ''}</td>
+            <td class="th-nums">${esc(it.got)}${B.lifeOver(it, t) ? sub('내용연수 지남', 'over') : ''}</td>
             <td class="r">${won(it.price * it.qty)}</td>
             <td>${badge(it)}</td>
           </tr>`
           )
           .join('')}</tbody>
-        <tfoot><tr><td colspan="3">${num(list.length)}개 품목${list.length < items.length ? ` <span class="muted">(전체 ${num(items.length)}개 가운데)</span>` : ''}</td><td class="r">${num(list.reduce((n, it) => n + it.qty, 0))}</td><td colspan="3"></td><td class="r">${won(list.reduce((n, it) => n + it.price * it.qty, 0))}</td><td></td></tr></tfoot>
-      </table>
-      ${shown.length < list.length ? `<div class="btns center no-print"><span class="muted small">${num(shown.length)}개만 보여 줍니다.</span><button id="moreRows">모두 보기 (${num(list.length)}개)</button></div>` : ''}`
+        <tfoot><tr><td colspan="3">${num(list.length)}개 품목${list.length < items.length ? ` <span class="th-muted">(전체 ${num(items.length)}개 가운데)</span>` : ''}</td><td class="r">${num(list.reduce((n, it) => n + it.qty, 0))}</td><td colspan="3"></td><td class="r">${won(list.reduce((n, it) => n + it.price * it.qty, 0))}</td><td></td></tr></tfoot>
+      </table></div></div>
+      ${shown.length < list.length ? `<div class="btns center th-no-print"><span class="th-xs th-muted">${num(shown.length)}개만 보여 줍니다.</span>${tool('id="moreRows"', `모두 보기 (${num(list.length)}개)`)}</div>` : ''}`
   }
   let shellFor = ''
   function renderList() {
@@ -336,31 +345,31 @@
     const can = lendable && it.status < 2 && stock > 0
     const row = (k, v) => (v ? `<div><dt>${k}</dt><dd>${v}</dd></div>` : '')
     $('detailBody').innerHTML = `
-      <div class="card-top"><h2>${esc(it.name)}</h2>${badge(it)}</div>
+      <div class="card-top"><h2 class="th-dialog-title">${esc(it.name)}</h2>${badge(it)}</div>
       <dl class="info">
         ${row('구분', B.KINDS[it.kind] + (it.lend ? ' · 대여용' : ''))}
         ${row('분류', esc(it.cat))}
         ${row('규격·모델', esc(it.spec))}
         ${row('관리번호', esc(it.no))}
-        ${row(it.kind === 1 ? '현재 재고' : '수량', `${num(it.kind === 1 ? stock : it.qty)} ${esc(it.unit)}${it.kind === 1 && it.min ? ` <span class="muted">(최소 ${num(it.min)})</span>` : ''}${B.isLow(it, loans) ? ' <span class="badge warn">재고 부족</span>' : ''}${out ? ` <span class="muted">· 대여 중 ${num(out)}, 남은 수량 ${num(stock)}</span>` : ''}`)}
+        ${row(it.kind === 1 ? '현재 재고' : '수량', `${num(it.kind === 1 ? stock : it.qty)} ${esc(it.unit)}${it.kind === 1 && it.min ? ` <span class="th-muted">(최소 ${num(it.min)})</span>` : ''}${B.isLow(it, loans) ? ` ${mark('important', '재고 부족')}` : ''}${out ? ` <span class="th-muted">· 대여 중 ${num(out)}, 남은 수량 ${num(stock)}</span>` : ''}`)}
         ${row('취득일', esc(it.got))}
-        ${row('취득가액', it.price ? `${won(it.price)}${it.qty > 1 ? ` <span class="muted">× ${num(it.qty)} = ${won(it.price * it.qty)}</span>` : ''}` : '')}
-        ${row('내용연수', it.life ? `${it.life}년${end ? ` <span class="${B.lifeOver(it, t) ? 'over' : 'muted'}">(${end} ${B.lifeOver(it, t) ? '지남' : '까지'})</span>` : ''}` : '')}
+        ${row('취득가액', it.price ? `${won(it.price)}${it.qty > 1 ? ` <span class="th-muted">× ${num(it.qty)} = ${won(it.price * it.qty)}</span>` : ''}` : '')}
+        ${row('내용연수', it.life ? `${it.life}년${end ? ` <span class="${B.lifeOver(it, t) ? 'over' : 'th-muted'}">(${end} ${B.lifeOver(it, t) ? '지남' : '까지'})</span>` : ''}` : '')}
         ${row('보관 위치', esc(it.loc))}
         ${row('사용자', esc(it.holder))}
         ${row('최근 조사일', esc(it.auditAt))}
         ${row('비고', esc(it.note))}
       </dl>
       <div class="btns">
-        ${lendable ? `<button class="primary" data-act="take" ${can ? '' : 'disabled'}>${it.kind === 1 ? '지급 받기' : '대여하기'}</button>` : ''}
-        ${isManager() && it.kind === 1 ? '<button data-act="stock">입고·재고 조정</button>' : ''}
-        ${lendable && !can ? `<span class="muted small">${it.status >= 2 ? `${B.STATUS[it.status]} 상태라 ${it.kind === 1 ? '지급' : '대여'}할 수 없습니다.` : '남은 수량이 없습니다.'}</span>` : ''}
-        <span class="grow"></span>
-        ${isManager() ? '<button data-act="edit">수정</button><button class="danger" data-act="del">삭제</button>' : ''}
-        <button data-close>닫기</button>
+        ${lendable ? `<button class="th-btn" data-act="take" ${can ? '' : 'disabled'}>${it.kind === 1 ? '지급 받기' : '대여하기'}</button>` : ''}
+        ${isManager() && it.kind === 1 ? '<button class="th-btn th-btn-outline" data-act="stock">입고·재고 조정</button>' : ''}
+        ${lendable && !can ? `<span class="th-xs th-muted">${it.status >= 2 ? `${B.STATUS[it.status]} 상태라 ${it.kind === 1 ? '지급' : '대여'}할 수 없습니다.` : '남은 수량이 없습니다.'}</span>` : ''}
+        <span class="th-grow"></span>
+        ${isManager() ? `<button class="th-btn th-btn-outline" data-act="edit">${icon('pencil')} 수정</button><button class="th-btn th-btn-ghost danger" data-act="del">${icon('trash-2')} 삭제</button>` : ''}
+        <button class="th-btn th-btn-outline" data-close>닫기</button>
       </div>
-      <h3>대여·지급 이력 <span class="muted small">${hist.length ? `${num(hist.length)}건` : ''}</span></h3>
-      ${hist.length ? loanTable(hist.slice(0, 50), false) : '<p class="muted small">기록이 없습니다.</p>'}`
+      <div class="sub-head"><h3>대여·지급 이력</h3><span class="th-xs th-muted">${hist.length ? `${num(hist.length)}건` : ''}</span></div>
+      ${hist.length ? `<div class="th-card">${loanTable(hist.slice(0, 50), false)}</div>` : '<p class="th-hint">기록이 없습니다.</p>'}`
     return true
   }
 
@@ -402,43 +411,45 @@
   }
   function loanTable(list, withItem) {
     const t = today()
-    return `<table class="grid loans">
-      <thead><tr><th>일시</th>${withItem ? '<th>품명</th>' : ''}<th class="r">수량</th><th>받은 사람</th><th>반납 예정</th><th>상태</th><th>비고</th><th class="no-print"></th></tr></thead>
+    return `<div class="th-table-wrap"><table class="th-table grid loans">
+      <thead><tr><th>일시</th>${withItem ? '<th>품명</th>' : ''}<th class="r">수량</th><th>받은 사람</th><th>반납 예정</th><th>상태</th><th>비고</th><th class="th-no-print"></th></tr></thead>
       <tbody>${list
         .map((l) => {
           const it = byId(l.itemId)
           const mine = l.memberId === me.id
-          const state = l.type === 1 ? '<span class="badge">지급</span>' : l.open ? (B.isOverdue(l, t) ? '<span class="badge warn">반납 지연</span>' : '<span class="badge todo">대여 중</span>') : `<span class="badge done">반납</span> <span class="sub">${dt(l.backAt)}</span>`
+          const state = l.type === 1 ? mark('muted', '지급') : l.open ? (B.isOverdue(l, t) ? mark('urgent', '반납 지연') : mark('', '대여 중')) : `${mark('success', '반납')} <span class="th-xs th-muted th-nums">${dt(l.backAt)}</span>`
           const acts = []
-          if (l.open && (mine || isManager())) acts.push(`<button data-return="${esc(l.key)}">반납</button>`)
+          if (l.open && (mine || isManager())) acts.push(tool(`data-return="${esc(l.key)}"`, '반납'))
           // a slip of the hand can be taken back for a day
-          if (mine && now() - l.at < B.DAY && (l.type === 1 || l.open)) acts.push(`<button class="danger" data-cancel="${esc(l.id)}">기록 취소</button>`)
+          if (mine && now() - l.at < B.DAY && (l.type === 1 || l.open)) acts.push(tool(`data-cancel="${esc(l.id)}"`, '기록 취소', 'th-btn-ghost danger'))
           return `<tr>
-            <td class="mono">${dt(l.at)}</td>
-            ${withItem ? `<td>${it ? `<a href="#" data-item="${esc(it.id)}"><b>${esc(it.name)}</b></a>${it.no ? ` <span class="sub">${esc(it.no)}</span>` : ''}` : '<span class="muted">(지운 물품)</span>'}</td>` : ''}
+            <td class="th-nums">${dt(l.at)}</td>
+            ${withItem ? `<td>${it ? `<a href="#" data-item="${esc(it.id)}"><b>${esc(it.name)}</b></a>${it.no ? ` <span class="th-xs th-muted th-nums">${esc(it.no)}</span>` : ''}` : '<span class="th-muted">(지운 물품)</span>'}</td>` : ''}
             <td class="r">${num(l.qty)}${it ? ` ${esc(it.unit)}` : ''}</td>
-            <td>${esc(l.name)}${l.who ? ` <span class="sub">${esc(l.by)} 기록</span>` : ''}</td>
-            <td class="mono">${esc(l.due)}</td>
+            <td>${esc(l.name)}${l.who ? ` <span class="th-xs th-muted">${esc(l.by)} 기록</span>` : ''}</td>
+            <td class="th-nums">${esc(l.due)}</td>
             <td>${state}</td>
             <td>${esc(l.note)}</td>
-            <td class="no-print acts">${acts.join('')}</td>
+            <td class="th-no-print acts">${acts.join('')}</td>
           </tr>`
         })
-        .join('')}</tbody></table>`
+        .join('')}</tbody></table></div>`
   }
   function renderLoans() {
     const open = loans.filter((l) => l.open)
     const mine = loans.filter((l) => l.memberId === me.id || l.name === me.name)
     const list = loanView === 'open' ? open : loanView === 'mine' ? mine : loans
-    const chip = (v, label, n) => `<button class="chip ${loanView === v ? 'on' : ''}" data-loanview="${v}">${label} <b>${num(n)}</b></button>`
-    $('main').innerHTML = `<div class="toolbar no-print">
-        <div class="chips">${chip('open', '대여 중', open.length)}${chip('mine', '내 기록', mine.length)}${chip('all', '전체 이력', loans.length)}</div>
-        <span class="grow"></span>
-        <button id="loanCsv" ${loans.length ? '' : 'disabled'}>CSV 저장</button>
-        <button id="printBtn" ${list.length ? '' : 'disabled'}>인쇄</button>
+    const chip = (v, label, n) => chipBtn(`data-loanview="${v}"`, loanView === v, label, n)
+    $('main').innerHTML = `<div class="stack">
+      <div class="filters th-no-print">
+        <div class="th-chips">${chip('open', '대여 중', open.length)}${chip('mine', '내 기록', mine.length)}${chip('all', '전체 이력', loans.length)}</div>
+        <span class="th-grow"></span>
+        ${tool(`id="loanCsv" ${loans.length ? '' : 'disabled'}`, `${icon('download')} CSV 저장`)}
+        ${tool(`id="printBtn" ${list.length ? '' : 'disabled'}`, `${icon('file-text')} 인쇄`)}
       </div>
-      <p class="muted small no-print">대여하거나 소모품을 받으려면 [대장]에서 물품을 눌러 기록합니다. 빌린 사람과 담당자가 반납을 기록할 수 있습니다.</p>
-      ${list.length ? loanTable(list.slice(0, 500), true) : empty(icon('package'), loanView === 'open' ? '대여 중인 물품이 없습니다' : '기록이 없습니다', '대여·반납과 소모품 지급 기록이 여기에 모입니다.')}`
+      <p class="th-hint th-no-print">대여하거나 소모품을 받으려면 [대장]에서 물품을 눌러 기록합니다. 빌린 사람과 담당자가 반납을 기록할 수 있습니다.</p>
+      ${list.length ? `<div class="th-card">${loanTable(list.slice(0, 500), true)}</div>` : empty(icon('package'), loanView === 'open' ? '대여 중인 물품이 없습니다' : '기록이 없습니다', '대여·반납과 소모품 지급 기록이 여기에 모입니다.')}
+    </div>`
   }
   function returnLoan(key) {
     const l = loans.find((x) => x.key === key)
@@ -454,29 +465,32 @@
   function auditRow(it) {
     const c = checks.get(it.id)
     const want = B.expected(it, loans)
-    const btn = (code, label) => `<button class="ck c${code} ${c && c.code === code ? 'on' : ''}" data-check="${code}" aria-pressed="${!!(c && c.code === code)}">${label}</button>`
+    const btn = (code, label) => `<button class="th-chip ck c${code} ${c && c.code === code ? 'on' : ''}" data-check="${code}" aria-pressed="${!!(c && c.code === code)}">${label}</button>`
     return `<tr data-audit="${esc(it.id)}" class="${c ? `r${c.code}` : ''}">
-      <td class="mono">${esc(it.no)}</td>
-      <td><b>${esc(it.name)}</b>${it.spec ? `<div class="sub">${esc(it.spec)}</div>` : ''}</td>
-      <td>${esc(it.loc)}${it.holder ? `<div class="sub">${esc(it.holder)}</div>` : ''}</td>
+      <td class="th-nums">${esc(it.no)}</td>
+      <td><b>${esc(it.name)}</b>${it.spec ? sub(esc(it.spec)) : ''}</td>
+      <td>${esc(it.loc)}${it.holder ? sub(esc(it.holder)) : ''}</td>
       <td class="r">${num(want)} ${esc(it.unit)}</td>
-      <td class="r"><input class="qty" type="number" min="0" step="1" value="${c ? c.qty : ''}" placeholder="${want}" aria-label="조사 수량" data-keep /><span class="print-only">${c ? num(c.qty) : ''}</span></td>
-      <td class="no-print cks">${btn(1, '확인')}${btn(2, '없음')}${btn(3, '이상')}</td>
-      <td class="print-only">${c ? B.CHECKS[c.code] : ''}</td>
-      <td><input class="memo" maxlength="200" value="${c ? esc(c.note) : ''}" placeholder="메모" aria-label="메모" data-keep /><span class="print-only">${c ? esc(c.note) : ''}</span></td>
-      <td class="sub who">${c ? `${esc(c.name)}<br />${dt(c.at)}` : ''}</td>
+      <td class="r"><input class="th-input th-nums qty" type="number" min="0" step="1" value="${c ? c.qty : ''}" placeholder="${want}" aria-label="조사 수량" data-keep /><span class="th-print-only">${c ? num(c.qty) : ''}</span></td>
+      <td class="th-no-print cks">${btn(1, '확인')}${btn(2, '없음')}${btn(3, '이상')}</td>
+      <td class="th-print-only">${c ? B.CHECKS[c.code] : ''}</td>
+      <td><input class="th-input memo" maxlength="200" value="${c ? esc(c.note) : ''}" placeholder="메모" aria-label="메모" data-keep /><span class="th-print-only">${c ? esc(c.note) : ''}</span></td>
+      <td class="th-xs th-muted th-nums who">${c ? `${esc(c.name)}<br />${dt(c.at)}` : ''}</td>
     </tr>`
   }
+  const stats = (s) => `<span>확인 <b>${num(s.ok)}</b></span><span>이상 <b>${num(s.bad)}</b></span><span>없음 <b>${num(s.missing)}</b></span><span>미확인 <b>${num(s.todo)}</b></span><span>수량 차이 <b>${num(s.diff)}</b></span>`
   function auditHead() {
     const s = B.auditStats(items, checks, loans)
     const done = s.total - s.todo
-    return `<div class="card-top"><h2>${esc(audit().title)}</h2><span class="badge todo">진행 중 · ${B.ymd(audit().at)} 시작</span></div>
-      <div class="progress"><div class="bar"><i style="width:${s.total ? Math.round((done / s.total) * 100) : 0}%"></i></div><b>${num(done)} / ${num(s.total)}</b></div>
-      <div class="meta"><span>확인 ${num(s.ok)}</span><span>이상 ${num(s.bad)}</span><span>없음 ${num(s.missing)}</span><span>미확인 ${num(s.todo)}</span><span>수량 차이 ${num(s.diff)}</span></div>`
+    return `<div class="th-card-header card-top"><h2 class="th-card-title">${esc(audit().title)}</h2>${mark('', `진행 중 · ${B.ymd(audit().at)} 시작`)}</div>
+      <div class="th-card-body stack tight">
+        <div class="progress"><div class="th-meter"><i style="width:${s.total ? Math.round((done / s.total) * 100) : 0}%"></i></div><b class="th-nums">${num(done)} / ${num(s.total)}</b></div>
+        <div class="meta th-xs th-muted th-nums">${stats(s)}</div>
+      </div>`
   }
   function auditChips() {
     const s = B.auditStats(items, checks, loans)
-    const chip = (v, label, n) => `<button class="chip ${auditView === v ? 'on' : ''}" data-auditview="${v}">${label} <b>${num(n)}</b></button>`
+    const chip = (v, label, n) => chipBtn(`data-auditview="${v}"`, auditView === v, label, n)
     return chip('todo', '미확인', s.todo) + chip('issue', '없음·이상', s.missing + s.bad) + chip('all', '전체', s.total)
   }
   function auditList() {
@@ -495,29 +509,31 @@
     const a = audit()
     if (!a) {
       const last = book.head.shared.last
-      $('main').innerHTML = `<div class="wrap">
-        ${empty(icon('clipboard-list'), '진행 중인 재물조사가 없습니다', isManager() ? '재물조사를 시작하면 대장을 볼 수 있는 모두가 물품을 나누어 확인할 수 있습니다.' : '담당자가 재물조사를 시작하면 여기서 물품을 확인합니다.', isManager() ? `<div class="btns center"><input id="auditTitle" maxlength="40" value="${esc(`${today().slice(0, 4)}년 ${Number(today().slice(5, 7))}월 재물조사`)}" aria-label="재물조사 이름" /><button class="primary" id="auditStart" ${items.length ? '' : 'disabled'}>재물조사 시작</button></div>` : '')}
-        ${last ? `<section class="card"><h3>지난 재물조사</h3><b>${esc(last.title)}</b><div class="meta"><span>${B.ymd(last.at)} ~ ${B.ymd(last.closedAt)}</span><span>대상 ${num(last.total)}</span><span>확인 ${num(last.ok)}</span><span>이상 ${num(last.bad)}</span><span>없음 ${num(last.missing)}</span><span>미확인 ${num(last.todo)}</span><span>수량 차이 ${num(last.diff)}</span></div></section>` : ''}
+      $('main').innerHTML = `<div class="stack">
+        ${empty(icon('clipboard-list'), '진행 중인 재물조사가 없습니다', isManager() ? '재물조사를 시작하면 대장을 볼 수 있는 모두가 물품을 나누어 확인할 수 있습니다.' : '담당자가 재물조사를 시작하면 여기서 물품을 확인합니다.', isManager() ? `<div class="btns center"><input class="th-input" id="auditTitle" maxlength="40" value="${esc(`${today().slice(0, 4)}년 ${Number(today().slice(5, 7))}월 재물조사`)}" aria-label="재물조사 이름" /><button class="th-btn" id="auditStart" ${items.length ? '' : 'disabled'}>재물조사 시작</button></div>` : '')}
+        ${last ? `<section class="th-card last"><div class="th-card-header"><h2 class="th-card-title">지난 재물조사</h2><span>${esc(last.title)}</span><span class="th-xs th-muted th-nums">${B.ymd(last.at)} ~ ${B.ymd(last.closedAt)}</span></div><div class="th-card-body meta th-xs th-muted th-nums"><span>대상 <b>${num(last.total)}</b></span>${stats(last)}</div></section>` : ''}
       </div>`
       return
     }
     const list = auditList()
     const locs = Array.from(new Set(B.auditTargets(items).map((it) => it.loc || '위치 없음'))).sort((x, y) => x.localeCompare(y, 'ko', { numeric: true }))
-    $('main').innerHTML = `<section class="card" id="auditHead">${auditHead()}</section>
-      <div class="toolbar no-print">
-        <div class="chips" id="auditChips">${auditChips()}</div>
-        <select id="auditLoc" aria-label="보관 위치">${options(locs, auditLoc, '위치 전체')}</select>
-        <span class="grow"></span>
-        <button id="auditCsv">결과 CSV 저장</button>
-        <button id="printBtn">조사표 인쇄</button>
-        ${isManager() ? '<button class="primary" id="auditClose">조사 마감</button>' : ''}
+    $('main').innerHTML = `<div class="stack">
+      <section class="th-card" id="auditHead">${auditHead()}</section>
+      <div class="filters th-no-print">
+        <div class="th-chips" id="auditChips">${auditChips()}</div>
+        <select class="th-input" id="auditLoc" aria-label="보관 위치">${options(locs, auditLoc, '위치 전체')}</select>
+        <span class="th-grow"></span>
+        ${tool('id="auditCsv"', `${icon('download')} 결과 CSV 저장`)}
+        ${tool('id="printBtn"', `${icon('file-text')} 조사표 인쇄`)}
+        ${isManager() ? tool('id="auditClose"', `${icon('lock')} 조사 마감`, 'primary') : ''}
       </div>
-      <p class="muted small no-print">물품을 눈으로 확인하고 [확인]·[없음]·[이상]을 누르세요. 수량이 다르면 조사 수량을 고치고, 다시 누르면 지워집니다. 누가 눌렀든 가장 나중 것이 결과입니다.</p>
+      <p class="th-hint th-no-print">물품을 눈으로 확인하고 [확인]·[없음]·[이상]을 누르세요. 수량이 다르면 조사 수량을 고치고, 다시 누르면 지워집니다. 누가 눌렀든 가장 나중 것이 결과입니다.</p>
       ${
         list.length
-          ? `<table class="grid audit"><thead><tr><th>관리번호</th><th>품명</th><th>위치·사용자</th><th class="r">장부 수량</th><th class="r">조사 수량</th><th class="no-print">결과</th><th class="print-only">결과</th><th>메모</th><th>조사한 사람</th></tr></thead><tbody>${list.slice(0, 1000).map(auditRow).join('')}</tbody></table>`
+          ? `<div class="th-card"><div class="th-table-wrap"><table class="th-table grid audit"><thead><tr><th>관리번호</th><th>품명</th><th>위치·사용자</th><th class="r">장부 수량</th><th class="r">조사 수량</th><th class="th-no-print">결과</th><th class="th-print-only">결과</th><th>메모</th><th>조사한 사람</th></tr></thead><tbody>${list.slice(0, 1000).map(auditRow).join('')}</tbody></table></div></div>`
           : empty(icon('circle-check'), auditView === 'todo' ? '모두 확인했습니다' : '해당하는 물품이 없습니다', auditView === 'todo' ? '[전체]에서 결과를 볼 수 있습니다.' : '')
-      }`
+      }
+    </div>`
   }
   function doCheck(tr, code) {
     const it = byId(tr.dataset.audit)
@@ -550,11 +566,12 @@
   // ---------- 현황 ----------
   function renderSummary() {
     const s = B.summary(items, loans, today())
-    const tile = (label, value, cls, go) => `<button class="tile ${cls || ''}" ${go ? `data-go="${go}"` : 'disabled'}><span class="muted small">${label}</span><b>${value}</b></button>`
+    const tile = (label, value, cls, go) => `<button class="th-card tile ${cls || ''}" ${go ? `data-go="${go}"` : 'disabled'}><span class="th-xs th-muted">${label}</span><b class="th-nums">${value}</b></button>`
     const max = (list, k) => Math.max(1, ...list.map((x) => x[k]))
-    const bars = (list, k, fmt) => list.map((r) => `<div class="bar-row"><span>${esc(r.name)}</span><div class="bar"><i style="width:${Math.round((r[k] / max(list, k)) * 100)}%"></i></div><span class="count">${fmt(r)}</span></div>`).join('')
-    $('main').innerHTML = `<div class="wrap wide">
-      <div class="toolbar no-print"><span class="muted small">폐기한 물품은 합계에서 뺍니다.</span><span class="grow"></span><button id="printBtn">인쇄</button></div>
+    const bars = (list, k, fmt) => list.map((r) => `<div class="bar-row"><span class="bar-label">${esc(r.name)}</span><div class="th-meter"><i style="width:${Math.round((r[k] / max(list, k)) * 100)}%"></i></div><span class="count th-xs th-muted th-nums">${fmt(r)}</span></div>`).join('')
+    const group = (title, body) => `<section class="th-card"><div class="th-card-header"><h2 class="th-card-title">${title}</h2></div><div class="th-card-body bars">${body || '<p class="th-hint">없음</p>'}</div></section>`
+    $('main').innerHTML = `<div class="stack">
+      <div class="filters th-no-print"><span class="th-xs th-muted note">폐기한 물품은 합계에서 뺍니다. 재고 부족·대여 중·내용연수 지남 칸을 누르면 해당 목록으로 갑니다.</span><span class="th-grow"></span>${tool('id="printBtn"', `${icon('file-text')} 인쇄`)}</div>
       <div class="tiles">
         ${tile('품목', `${num(s.count)}개`)}
         ${tile('수량 합계', num(s.qty))}
@@ -565,9 +582,11 @@
       </div>
       ${
         s.count || s.disposed
-          ? `<section class="card"><h3>분류별</h3>${bars(s.byCat, 'count', (r) => `${num(r.count)}개 · ${won(r.amount) || '0원'}`) || '<p class="muted small">없음</p>'}</section>
-             <section class="card"><h3>상태별</h3>${bars(s.byStatus, 'count', (r) => `${num(r.count)}개 · 수량 ${num(r.qty)}`)}</section>
-             <section class="card"><h3>보관 위치별</h3>${bars(s.byLoc, 'count', (r) => `${num(r.count)}개 · 수량 ${num(r.qty)}`) || '<p class="muted small">없음</p>'}</section>`
+          ? `<div class="groups">
+             ${group('분류별', bars(s.byCat, 'count', (r) => `${num(r.count)}개 · ${won(r.amount) || '0원'}`))}
+             ${group('상태별', bars(s.byStatus, 'count', (r) => `${num(r.count)}개 · 수량 ${num(r.qty)}`))}
+             ${group('보관 위치별', bars(s.byLoc, 'count', (r) => `${num(r.count)}개 · 수량 ${num(r.qty)}`))}
+             </div>`
           : empty(icon('chart-column'), '등록된 물품이 없습니다', '물품을 등록하면 분류·상태·위치별 현황이 보입니다.')
       }
     </div>`
@@ -576,23 +595,25 @@
   // ---------- register: pick, make, hand over, delete ----------
   const scopeText = (r) => (r.scope.type === 'team' ? '팀 전체' : r.scope.type === 'group' ? `그룹 ${r.scope.groups.map((x) => x.name).join(', ')}` : `지정한 사람 ${r.scope.members.length}명`)
   function drawManage() {
-    $('manageBody').innerHTML = `<h2>대장 관리</h2>
+    $('manageBody').innerHTML = `<h2 class="th-dialog-title">대장 관리</h2>
+      <div class="form">
       ${
         book
-          ? `<dl class="info">
+          ? `<dl class="info one">
               <div><dt>대장</dt><dd><b>${esc(book.head.title)}</b></dd></div>
-              <div><dt>담당자</dt><dd>${esc(book.head.createdByName)} <span class="muted">(대장을 만든 사람. 물품 등록·수정·재물조사 시작)</span></dd></div>
+              <div><dt>담당자</dt><dd>${esc(book.head.createdByName)} <span class="th-muted">(대장을 만든 사람. 물품 등록·수정·재물조사 시작)</span></dd></div>
               <div><dt>볼 수 있는 사람</dt><dd>${esc(scopeText(book.head))}</dd></div>
-              <div><dt>물품</dt><dd>${num(items.length)}개 ${book.vols.length ? `<span class="muted">(${book.vols.length + 1}권에 나누어 저장)</span>` : ''}</dd></div>
+              <div><dt>물품</dt><dd>${num(items.length)}개 ${book.vols.length ? `<span class="th-muted">(${book.vols.length + 1}권에 나누어 저장)</span>` : ''}</dd></div>
             </dl>
             <div class="btns">
-              <button id="tplBtn2">CSV 양식 받기</button>
-              ${isManager() ? '<button id="backupBtn">백업 파일 저장</button><button class="danger" id="delBook">이 대장 삭제</button>' : ''}
+              ${tool('id="tplBtn2"', `${icon('download')} CSV 양식 받기`)}
+              ${isManager() ? `${tool('id="backupBtn"', `${icon('save')} 백업 파일 저장`)}<span class="th-grow"></span>${tool('id="delBook"', `${icon('trash-2')} 이 대장 삭제`, 'th-btn-ghost danger')}` : ''}
             </div>
-            <p class="muted small">담당자가 바뀌면: 지금 담당자가 [백업 파일 저장] → 새 담당자가 [새 대장 만들기]에서 그 파일을 고름 → 예전 대장 삭제. 대여·지급 기록은 옮겨지지 않습니다(소모품은 지금 재고로 저장).</p>`
-          : '<p class="muted">아직 볼 수 있는 대장이 없습니다.</p>'
+            <p class="th-hint">담당자가 바뀌면: 지금 담당자가 [백업 파일 저장] → 새 담당자가 [새 대장 만들기]에서 그 파일을 고름 → 예전 대장 삭제. 대여·지급 기록은 옮겨지지 않습니다(소모품은 지금 재고로 저장).</p>`
+          : '<p class="th-muted">아직 볼 수 있는 대장이 없습니다.</p>'
       }
-      <div class="btns"><button class="primary" id="newBook">＋ 새 대장 만들기</button><span class="grow"></span><button data-close>닫기</button></div>`
+      </div>
+      <div class="dlg-btns"><button class="th-btn" id="newBook">${icon('plus')} 새 대장 만들기</button><span class="th-grow"></span><button class="th-btn th-btn-outline" data-close>닫기</button></div>`
   }
   function openNew() {
     backup = null
@@ -600,7 +621,7 @@
     $('nBackupInfo').textContent = '고르지 않으면 빈 대장으로 시작합니다. 엑셀 자료는 만든 뒤 [CSV 가져오기]로 넣습니다.'
     document.querySelector('[name=nScope][value=team]').checked = true
     $('nMembers').classList.add('hidden')
-    $('nMembers').innerHTML = members.filter((m) => m.id !== me.id).map((m) => `<label class="inline"><input type="checkbox" value="${esc(m.id)}" /> ${esc(m.name)} <small>${esc(m.deptName || '')}</small></label>`).join('') || '<p class="muted small">팀원이 없습니다.</p>'
+    $('nMembers').innerHTML = members.filter((m) => m.id !== me.id).map((m) => `<label class="th-check"><input type="checkbox" value="${esc(m.id)}" /> ${esc(m.name)} <small>${esc(m.deptName || '')}</small></label>`).join('') || '<p class="th-hint">팀원이 없습니다.</p>'
     $('newError').textContent = ''
     if ($('manageDlg').open) $('manageDlg').close()
     $('newDlg').showModal()
@@ -697,10 +718,11 @@
     $('bookSel').classList.toggle('hidden', bookList.length < 2)
     $('bookSel').innerHTML = bookList.map((b) => `<option value="${esc(b.head.id)}" ${book && b.head.id === book.head.id ? 'selected' : ''}>${esc(b.head.title)}</option>`).join('')
     $('addBtn').classList.toggle('hidden', !isManager())
-    document.querySelector('nav').classList.toggle('hidden', !book)
+    $('bar').classList.toggle('hidden', !book)
+    $('bookInfo').textContent = book ? `${book.head.title} · 담당자 ${book.head.createdByName}` : ''
     document.title = book ? book.head.title : '비품관리대장'
     if (!book) {
-      $('main').innerHTML = empty(icon('archive'), '비품관리대장을 만드세요', '대장을 만든 사람이 담당자가 되어 물품을 등록하고, 팀원은 찾아보고 대여·지급·재물조사를 기록합니다.', '<div class="btns center"><button class="primary" id="firstBook">＋ 대장 만들기</button></div>')
+      $('main').innerHTML = empty(icon('archive'), '비품관리대장을 만드세요', '대장을 만든 사람이 담당자가 되어 물품을 등록하고, 팀원은 찾아보고 대여·지급·재물조사를 기록합니다.', `<button class="th-btn" id="firstBook">${icon('plus')} 대장 만들기</button>`)
       return
     }
     if (tab === 'list') renderList()
@@ -914,6 +936,9 @@
     showAll = false
     if (tab === 'list' && $('listBody')) listBody()
   })
+
+  // an older TeamHub does not give extension frames its look (__ui.css): say so
+  window.addEventListener('load', () => ($('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim()))
 
   let again = 0
   async function changed() {

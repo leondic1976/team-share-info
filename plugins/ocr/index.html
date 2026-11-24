@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" class="th-ui">
   <head>
     <meta charset="utf-8" />
     <title>이미지 글자 읽기</title>
@@ -7,57 +7,79 @@
     <script src="__sdk.js"></script>
   </head>
   <body>
-    <header>
-      <h1><i data-icon="scan-text"></i> 이미지 글자 읽기</h1>
-      <span class="muted small">인터넷을 쓰지 않고 이 PC의 Windows 글자 인식으로 처리합니다. 이미지는 저장하지 않습니다.</span>
-      <span class="grow"></span>
-      <button id="historyBtn">최근 결과</button>
-    </header>
+    <div class="th-page">
+      <header class="th-page-header">
+        <div>
+          <h1>이미지 글자 읽기</h1>
+          <p>인터넷을 쓰지 않고 이 PC의 Windows 글자 인식으로 처리합니다. 이미지는 저장하지 않습니다.</p>
+        </div>
+        <div class="th-actions">
+          <button type="button" id="historyBtn" class="th-btn th-btn-outline"><i data-icon="history"></i> 최근 결과</button>
+        </div>
+      </header>
+      <p id="oldApp" hidden>이 화면은 TeamHub를 최신 버전으로 업데이트해야 제대로 보입니다.</p>
 
-    <main>
-      <section class="panel" id="left">
-        <div id="drop" tabindex="0" role="button" aria-label="이미지 넣기">
-          <div class="big"><i data-icon="image"></i></div>
-          <p><b>여기에 이미지를 붙여넣거나(Ctrl+V) 끌어다 놓으세요</b></p>
-          <p class="muted small">화면 일부는 <b>Windows 키 + Shift + S</b>로 캡처한 뒤 붙여넣으면 됩니다. PNG·JPG·BMP·GIF·WebP, 여러 장 가능</p>
-          <button type="button" id="pick" class="primary">이미지 파일 고르기</button>
-          <input type="file" id="file" accept="image/*" multiple hidden />
-        </div>
-        <div id="stage" class="hidden">
-          <div id="canvasWrap"><canvas id="canvas"></canvas><div id="sel" class="hidden"></div></div>
-          <p class="muted small" id="hint">이미지 위를 끌면 그 부분만 읽습니다. 한 번 누르면 선택이 풀립니다.</p>
-          <div id="thumbs"></div>
-        </div>
-        <div class="opts">
-          <label>언어 <select id="lang"></select></label>
-          <label class="inline"><input type="checkbox" id="enlarge" checked /> 작은 글자 키우기</label>
-          <label class="inline"><input type="checkbox" id="contrast" /> 흑백 대비 높이기</label>
-          <span class="grow"></span>
-          <button type="button" id="another">다른 이미지</button>
-          <button type="button" id="run" class="primary" disabled>글자 읽기</button>
-        </div>
-      </section>
+      <main class="th-body split">
+        <section class="th-card pane" id="left">
+          <div class="th-card-header center">
+            <h2 class="th-card-title">이미지</h2>
+            <span class="th-xs th-muted">PNG·JPG·BMP·GIF·WebP, 여러 장 가능</span>
+          </div>
+          <div class="th-card-body fill">
+            <div id="drop" class="th-empty" tabindex="0" role="button" aria-label="이미지 넣기">
+              <i data-icon="image"></i>
+              <p class="th-empty-title">여기에 이미지를 붙여넣거나(Ctrl+V) 끌어다 놓으세요</p>
+              <p>화면 일부는 <b>Windows 키 + Shift + S</b>로 캡처한 뒤 붙여넣으면 됩니다.</p>
+              <button type="button" id="pick" class="th-btn th-btn-outline"><i data-icon="upload"></i> 이미지 파일 고르기</button>
+              <input type="file" id="file" accept="image/*" multiple hidden />
+            </div>
+            <div id="stage" class="hidden">
+              <div id="canvasWrap"><canvas id="canvas"></canvas><div id="sel" class="hidden"></div></div>
+              <p class="th-hint" id="hint">이미지 위를 끌면 그 부분만 읽습니다. 한 번 누르면 선택이 풀립니다.</p>
+              <div id="thumbs"></div>
+            </div>
+          </div>
+          <div class="card-foot row">
+            <label class="opt" for="lang">언어 <select class="th-input" id="lang"></select></label>
+            <label class="th-check"><input type="checkbox" id="enlarge" checked /> 작은 글자 키우기</label>
+            <label class="th-check"><input type="checkbox" id="contrast" /> 흑백 대비 높이기</label>
+            <span class="th-grow"></span>
+            <button type="button" id="another" class="th-btn th-btn-outline">다른 이미지</button>
+            <button type="button" id="run" class="th-btn" disabled>글자 읽기</button>
+          </div>
+        </section>
 
-      <section class="panel" id="right">
-        <div class="bar">
-          <h2>읽은 글자</h2>
-          <span id="status" class="muted small" role="status"></span>
-          <span class="grow"></span>
-          <button type="button" id="joinLines" title="줄 끝에서 끊긴 문장을 한 문단으로 잇습니다">줄바꿈 정리</button>
-          <button type="button" id="save">파일로 저장</button>
-          <button type="button" id="copy" class="primary">복사</button>
-        </div>
-        <textarea id="text" spellcheck="false" placeholder="이미지를 넣고 [글자 읽기]를 누르면 여기에 나옵니다. 틀린 글자는 바로 고칠 수 있습니다."></textarea>
-        <p class="muted small">인식 결과는 틀릴 수 있습니다. 숫자·이름·금액은 원본과 꼭 맞춰 보세요.</p>
-      </section>
-    </main>
+        <section class="th-card pane" id="right">
+          <div class="th-card-header center">
+            <h2 class="th-card-title">읽은 글자</h2>
+            <span id="status" class="th-xs th-muted" role="status"></span>
+          </div>
+          <div class="th-card-body fill">
+            <textarea class="th-input" id="text" spellcheck="false" placeholder="이미지를 넣고 [글자 읽기]를 누르면 여기에 나옵니다. 틀린 글자는 바로 고칠 수 있습니다."></textarea>
+            <p class="th-hint">인식 결과는 틀릴 수 있습니다. 숫자·이름·금액은 원본과 꼭 맞춰 보세요.</p>
+          </div>
+          <div class="card-foot row">
+            <button type="button" id="joinLines" class="th-btn th-btn-outline" title="줄 끝에서 끊긴 문장을 한 문단으로 잇습니다">줄바꿈 정리</button>
+            <span class="th-grow"></span>
+            <button type="button" id="save" class="th-btn th-btn-outline"><i data-icon="save"></i> 파일로 저장</button>
+            <button type="button" id="copy" class="th-btn"><i data-icon="copy"></i> 복사</button>
+          </div>
+        </section>
+      </main>
+    </div>
 
-    <dialog id="history">
-      <div class="bar"><h2>최근 결과</h2><span class="muted small">이 PC에만 보관(20개)</span><span class="grow"></span><button type="button" id="historyClear">모두 지우기</button><button type="button" id="historyClose">닫기</button></div>
-      <div id="historyList"></div>
+    <dialog id="history" class="th-dialog wide">
+      <h2 class="th-dialog-title">최근 결과</h2>
+      <div id="historyList" class="hist-list rows"></div>
+      <div class="dlg-btns">
+        <span class="th-xs th-muted">이 PC에만 보관(20개)</span>
+        <span class="th-grow"></span>
+        <button type="button" id="historyClear" class="th-btn th-btn-ghost"><i data-icon="trash-2"></i> 모두 지우기</button>
+        <button type="button" id="historyClose" class="th-btn th-btn-outline">닫기</button>
+      </div>
     </dialog>
 
-    <div id="toast" role="status"></div>
+    <div id="toast" class="th-toast" role="status"></div>
     <script src="ocrtext.js"></script>
     <script src="app.js"></script>
   </body>

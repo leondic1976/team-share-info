@@ -1,3 +1,4 @@
+import { EmptyNote } from '@renderer/components/EmptyState'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -207,7 +208,7 @@ export function SecurityTab(): React.JSX.Element {
         )}
       </div>
       <p className="mb-3 text-xs text-muted-foreground">점검 결과는 이 PC에만 저장되고 관리자나 서버로 보내지 않습니다. 권한이 없어 읽을 수 없는 항목은 "확인 불가"로 표시됩니다. 30일 넘게 점검하지 않으면 알림이 옵니다.</p>
-      {!last && !run.isPending && <p className="text-sm text-muted-foreground">아직 점검한 적이 없습니다.</p>}
+      {!last && !run.isPending && <EmptyNote>아직 점검한 적이 없습니다.</EmptyNote>}
       <div className="space-y-2" data-testid="security-items">
         {last?.items.map((i) => {
           const s = STATUS[i.status]
@@ -313,7 +314,7 @@ export function TempTab(): React.JSX.Element {
             <span className="w-24 shrink-0 text-right text-xs text-muted-foreground">{format(e.mtime, 'yyyy-MM-dd')}</span>
           </label>
         ))}
-        {list.data && !list.data.length && <p className="p-4 text-center text-sm text-muted-foreground">임시 파일이 없습니다.</p>}
+        {list.data && !list.data.length && <EmptyNote>임시 파일이 없습니다.</EmptyNote>}
       </div>
     </div>
   )

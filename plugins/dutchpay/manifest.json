@@ -1,7 +1,7 @@
 {
   "id": "dutchpay",
   "name": "N분의 1 정산",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "회식비·간식비·경조사비를 N명으로 나눕니다. 간단 N빵, 항목별 정산(누가 냈고 누가 먹었는지), 차등 분담, 송금 정리, 결과 복사.",
   "author": "TeamHub",
   "icon": "N",

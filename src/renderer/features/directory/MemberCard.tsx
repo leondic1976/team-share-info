@@ -8,6 +8,7 @@ import { PresenceDot, PRESENCE_LABEL } from '@renderer/components/PresenceDot'
 import { useMe } from '@renderer/lib/queries'
 import { openChatWith } from '@renderer/features/chat/dock-store'
 import { displayName, roleLabel, type MemberDto } from '@shared/schemas/auth'
+import { affiliationText } from '@shared/org'
 
 /**
  * A team member's details with the quick actions (메시지 / 쪽지); used by the
@@ -31,8 +32,8 @@ export function MemberCard({ m, onClose, today }: { m: MemberDto; onClose: () =>
         </div>
         {today}
         <dl className="selectable grid grid-cols-[5rem_1fr] gap-y-1.5">
-          <dt className="text-muted-foreground">부서</dt>
-          <dd>{m.deptName ?? '-'}</dd>
+          <dt className="text-muted-foreground">소속</dt>
+          <dd data-testid="member-affiliation">{affiliationText(m) || '-'}</dd>
           <dt className="text-muted-foreground">직위</dt>
           <dd>{m.title ?? '-'}</dd>
           {m.rank && (

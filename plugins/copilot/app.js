@@ -8,6 +8,10 @@
   // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
   const icon = (n, o) => (window.TeamHub.icon ? window.TeamHub.icon(n, o) : '')
   const call = (m, p) => window.TeamHub.call(m, p)
+  // an older TeamHub does not give extension frames its look (__ui.css): say so once the page has loaded
+  const lookCheck = () => ($('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim())
+  if (document.readyState === 'complete') lookCheck()
+  else window.addEventListener('load', lookCheck)
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 
   let task = 'summary'
@@ -27,7 +31,7 @@
 
   function renderTasks() {
     $('tasks').innerHTML = P.TASKS.concat(custom)
-      .map((t) => `<button type="button" role="radio" aria-checked="${t.id === task}" data-task="${esc(t.id)}">${icon(t.icon, { fallback: 'star' })} ${esc(t.name)}${t.custom ? `<span class="del" data-del="${esc(t.id)}" title="이 틀 지우기">${icon('x') || '×'}</span>` : ''}</button>`)
+      .map((t) => `<button type="button" class="th-chip" role="radio" aria-checked="${t.id === task}" data-task="${esc(t.id)}">${icon(t.icon, { fallback: 'star' })} ${esc(t.name)}${t.custom ? `<span class="del" data-del="${esc(t.id)}" title="이 틀 지우기">${icon('x', { label: '이 틀 지우기' }) || '(지우기)'}</span>` : ''}</button>`)
       .join('')
     const t = P.taskOf(task, custom)
     $('inputLabel').textContent = `2. ${t.input || '내용'}`
@@ -88,10 +92,10 @@
       ? history
           .map((h, i) => {
             const d = new Date(h.at)
-            return `<div class="hist"><div><b>${esc(P.titleOf(h.prompt))}</b><span class="muted small">${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} · ${h.prompt.length.toLocaleString()}자</span></div><button type="button" data-use="${i}">다시 쓰기</button></div>`
+            return `<div class="hist"><div><b>${esc(P.titleOf(h.prompt))}</b><span class="th-xs th-muted th-nums">${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} · ${h.prompt.length.toLocaleString()}자</span></div><button type="button" class="th-btn th-btn-outline th-btn-sm" data-use="${i}">다시 쓰기</button></div>`
           })
           .join('')
-      : '<p class="muted">아직 보낸 질문이 없습니다.</p>'
+      : `<div class="th-empty compact">${icon('message-circle')}<p class="th-empty-title">아직 보낸 질문이 없습니다</p><p>복사한 질문이 여기에 20개까지 남습니다.</p></div>`
   }
 
   async function init() {

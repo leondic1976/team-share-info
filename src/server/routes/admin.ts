@@ -32,6 +32,18 @@ interface JoinRow {
   decided_at: number | null
   pc_uid: string | null
   shared_pc: number
+  dept_path: string | null
+}
+
+/** The affiliation of a join request, top level first (requests from before paths: the one name). */
+function joinDeptPath(r: Pick<JoinRow, 'dept_name' | 'dept_path'>): string[] {
+  try {
+    const v = JSON.parse(r.dept_path || 'null') as unknown
+    if (Array.isArray(v)) return v.filter((x): x is string => typeof x === 'string' && !!x.trim())
+  } catch {
+    // fall through to the plain name
+  }
+  return r.dept_name ? [r.dept_name] : []
 }
 
 /**
@@ -70,7 +82,7 @@ export function approveJoinRequest(ctx: ServerContext, id: string, req: FastifyR
         suspended.push(other)
       }
     }
-    const memberId = known?.member.id ?? createMember(ctx.db, { name: row.name, deptName: row.dept_name ?? '', title: row.title ?? '', ext: row.ext ?? '' })
+    const memberId = known?.member.id ?? createMember(ctx.db, { name: row.name, deptPath: joinDeptPath(row), title: row.title ?? '', ext: row.ext ?? '' })
     const dev = createDevice(ctx.db, {
       memberId,
       pcUid: row.pc_uid,
@@ -122,6 +134,7 @@ export function registerAdminRoutes(
       id: r.id,
       name: r.name,
       deptName: r.dept_name,
+      deptPath: joinDeptPath(r),
       title: r.title,
       ext: r.ext,
       pcName: r.pc_name,

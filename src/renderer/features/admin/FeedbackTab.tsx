@@ -1,3 +1,4 @@
+import { EmptyNote } from '@renderer/components/EmptyState'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, Send, Trash2 } from 'lucide-react'
@@ -119,7 +120,7 @@ export function FeedbackTab(): React.JSX.Element {
               )}
             </div>
           ))}
-          {d && items.length === 0 && <p className="px-4 py-3 text-sm text-muted-foreground">받은 글이 없습니다.</p>}
+          {d && items.length === 0 && <EmptyNote>받은 글이 없습니다.</EmptyNote>}
         </Card>
       </div>
 
@@ -146,7 +147,7 @@ export function FeedbackTab(): React.JSX.Element {
               </div>
             )
           })}
-          {d && d.bundles.length === 0 && <p className="px-4 py-3 text-sm text-muted-foreground">아직 만든 묶음이 없습니다.</p>}
+          {d && d.bundles.length === 0 && <EmptyNote>아직 만든 묶음이 없습니다.</EmptyNote>}
         </Card>
       </div>
     </div>

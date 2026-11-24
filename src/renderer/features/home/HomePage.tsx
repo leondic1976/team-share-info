@@ -9,7 +9,7 @@ import { Button } from '@renderer/components/ui/button'
 import { PresenceDot, PRESENCE_LABEL } from '@renderer/components/PresenceDot'
 import { MemberLink } from '@renderer/components/MemberLink'
 import { displayName } from '@shared/schemas/auth'
-import { Loading, OfflineState } from '@renderer/components/EmptyState'
+import { Loading, OfflineState, EmptyNote } from '@renderer/components/EmptyState'
 import { ScopeTags } from '@renderer/components/ScopePicker'
 import { useMembers, useMe } from '@renderer/lib/queries'
 import { api } from '@renderer/lib/api'
@@ -24,6 +24,7 @@ import type { DocSummaryDto } from '@shared/schemas/docs'
 import { BookOpen } from 'lucide-react'
 import { FavoritesWidget, TodayWorkWidget } from '@renderer/features/memos/widgets'
 import { LiveMeetingsWidget } from '@renderer/features/meetings/MeetingsPage'
+import { affiliationText } from '@shared/org'
 
 const ORDER = { online: 0, away: 1, absent: 2, offline: 3 } as const
 
@@ -60,7 +61,9 @@ export function PresenceWidget(): React.JSX.Element {
               <MemberLink memberId={m.id} name={m.name} className="font-medium">
                 {displayName(m)}
               </MemberLink>
-              <span className="truncate text-xs text-muted-foreground">{[m.deptName, m.title].filter(Boolean).join(' · ')}</span>
+              <span className="truncate text-xs text-muted-foreground" title={affiliationText(m) || undefined}>
+                {[m.deptName, m.title].filter(Boolean).join(' · ')}
+              </span>
               <span className="ml-auto truncate text-xs text-muted-foreground">{m.statusMessage || PRESENCE_LABEL[m.presence]}</span>
             </div>
           ))}
@@ -96,7 +99,7 @@ function NoticesWidget(): React.JSX.Element {
       {!online && !q.data ? (
         <OfflineState />
       ) : !list.length ? (
-        <p className="px-2 py-4 text-center text-sm text-muted-foreground">공지가 없습니다.</p>
+        <EmptyNote>공지가 없습니다.</EmptyNote>
       ) : (
         list.map((n) => {
           const un = !!n.my && !n.my.readAt

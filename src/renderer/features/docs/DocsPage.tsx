@@ -10,7 +10,7 @@ import { Badge } from '@renderer/components/ui/badge'
 import { RichView } from '@renderer/components/Editor'
 import { AttachmentList } from '@renderer/components/Attachments'
 import { ScopeTags } from '@renderer/components/ScopePicker'
-import { EmptyState, Loading, OfflineState } from '@renderer/components/EmptyState'
+import { EmptyState, Loading, OfflineState, EmptyNote } from '@renderer/components/EmptyState'
 import { api, errorMessage } from '@renderer/lib/api'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
@@ -116,7 +116,7 @@ function DocView({ id, onEdit, onDeleted }: { id: string; onEdit: (d: DocDto) =>
       {panel === 'revisions' && (
         <div className="space-y-1 rounded-md border border-border p-3 text-sm">
           <b>변경 이력</b>
-          {revs.data?.length === 0 && <p className="text-xs text-muted-foreground">이전 버전이 없습니다.</p>}
+          {revs.data?.length === 0 && <EmptyNote>이전 버전이 없습니다.</EmptyNote>}
           {revs.data?.map((r) => (
             <details key={r.id} className="rounded bg-muted/50 px-2 py-1">
               <summary className="cursor-pointer text-xs">

@@ -38,7 +38,7 @@ describe('관리대장 (built-in ledger: personal, team and designated-people le
     expect(menu.slice(menu.indexOf('메신저'), menu.indexOf('메신저') + 2)).toEqual(['메신저', '게시판'])
     expect(menu.slice(menu.indexOf('확장 기능'), menu.indexOf('확장 기능') + 2)).toEqual(['확장 기능', '관리대장'])
     await openLedger(a.page)
-    expect(await frame(a.page).locator('#side h1').textContent()).toContain('관리대장')
+    expect(await frame(a.page).locator('.th-page-header h1').textContent()).toContain('관리대장')
     expect(await frame(a.page).locator('#teamBooks').textContent()).toContain('팀용 대장이 없습니다')
     expect(await frame(a.page).locator('#pickBooks').textContent()).toContain('지정자용 대장이 없습니다')
   }, 90000)

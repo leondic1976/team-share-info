@@ -14,6 +14,7 @@ import { BanDialog, BlockedPcsCard, type BanTarget } from './PcBlock'
 import { MemberEditDialog } from './MemberEditDialog'
 import { displayName, roleLabel } from '@shared/schemas/auth'
 import { OwnerOnlyNote, useIsOwner } from './owner'
+import { affiliationText } from '@shared/org'
 
 export function MembersTab(): React.JSX.Element {
   const qc = useQueryClient()
@@ -63,7 +64,7 @@ export function MembersTab(): React.JSX.Element {
                     <PresenceDot presence={m.presence} /> {displayName(m)}
                   </span>
                 </td>
-                <td className="text-muted-foreground">{[m.deptName, m.title].filter(Boolean).join(' · ')}</td>
+                <td className="text-muted-foreground">{[affiliationText(m), m.title].filter(Boolean).join(' · ')}</td>
                 <td>{m.role === 'admin' ? <Badge variant={m.isOwner ? 'important' : undefined}>{roleLabel(m)}</Badge> : <span className="text-muted-foreground">일반</span>}</td>
                 <td>{m.status === 'active' ? <Badge variant="success">사용 중</Badge> : <Badge variant="urgent">중지</Badge>}</td>
                 <td className="space-x-1 pr-4 text-right">

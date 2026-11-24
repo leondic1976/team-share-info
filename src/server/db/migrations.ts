@@ -885,5 +885,20 @@ CREATE TABLE feedback_bundles (
 );
 CREATE INDEX idx_feedback_bundles_state ON feedback_bundles(state, created_at);
 `
+  },
+  {
+    id: 22,
+    name: 'dept-entered',
+    sql: `
+-- 소속 (affiliation) is a path through the department tree. A person may type their own
+-- affiliation (내 정보, the join screen): levels that did not exist are created and marked with
+-- who typed them and when, so the 최종관리자 can tidy them in 조직 관리. NULL: made on the server PC,
+-- or looked at there since. Names are unique among the departments of one parent (checked in code).
+ALTER TABLE departments ADD COLUMN entered_by TEXT;
+ALTER TABLE departments ADD COLUMN entered_at INTEGER;
+-- the affiliation typed on the join screen, top level first (a JSON array); dept_name keeps it as text
+ALTER TABLE join_requests ADD COLUMN dept_path TEXT;
+CREATE INDEX idx_departments_parent ON departments(parent_id);
+`
   }
 ]

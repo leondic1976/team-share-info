@@ -17,7 +17,13 @@ export type Hello = z.infer<typeof helloSchema>
 
 export const joinRequestInputSchema = z.object({
   name: z.string().trim().min(1, '이름을 입력하세요').max(40),
+  /** The last level of the affiliation (all of it from older versions, which know one level only). */
   deptName: z.string().trim().max(40).default(''),
+  /**
+   * 소속 as typed, top level first ("본부 > 과 > 팀" → three entries). On approval existing levels
+   * are matched and missing ones created. Older versions send `deptName` only.
+   */
+  deptPath: z.array(z.string().trim().max(40)).max(6).optional(),
   title: z.string().trim().max(40).default(''),
   ext: z.string().trim().max(20).default(''),
   pcName: z.string().trim().min(1).max(80),
@@ -47,7 +53,10 @@ export interface MemberDto {
   id: string
   name: string
   deptId: string | null
+  /** the department the member belongs to: its own name (the last level of the affiliation) */
   deptName: string | null
+  /** 소속 in full, top level first (e.g. 본부, 과, 팀). Absent from servers older than multi-level affiliations. */
+  deptPath?: string[]
   title: string | null
   ext: string | null
   mobile: string | null
@@ -115,6 +124,12 @@ export interface MeDto extends MemberDto {
   ledgerUnseen: number
 }
 
+/**
+ * 내 정보 → 소속: an existing department (`deptId`, null: none) or the affiliation as typed
+ * (`path`, top level first; levels that do not exist yet are created and marked as person-entered).
+ */
+export const meDeptSchema = z.union([z.strictObject({ deptId: z.string().nullable() }), z.strictObject({ path: z.array(z.string().max(200)).min(1).max(12) })])
+
 export const mePatchSchema = z.object({
   deptId: z.string().nullable().optional(),
   statusMessage: z.string().trim().max(60).nullable().optional(),
@@ -129,7 +144,10 @@ export const mePatchSchema = z.object({
 export interface JoinRequestDto {
   id: string
   name: string
+  /** the affiliation as typed, as one text ("본부 > 과 > 팀") */
   deptName: string | null
+  /** the same, level by level (absent from older servers) */
+  deptPath?: string[]
   title: string | null
   ext: string | null
   pcName: string

@@ -3,6 +3,8 @@ import { z } from 'zod'
 import type { ServerContext } from '../context'
 import { parse, ok } from '../validate'
 import { visibleWhere } from '../scope'
+import { deptPathOf } from '../repos/members'
+import { deptPathText } from '../../shared/org'
 
 export interface SearchResultDto {
   type: 'notice' | 'event' | 'doc' | 'post' | 'file' | 'message' | 'contact' | 'member' | 'worklog'
@@ -128,11 +130,16 @@ export function registerSearchRoutes(app: FastifyInstance, ctx: ServerContext, g
     }
     add(
       db
-        .all<{ id: string; name: string; dept: string | null; title: string | null; updated_at: number }>(
-          `SELECT m.id, m.name, d.name AS dept, m.title, m.updated_at FROM members m LEFT JOIN departments d ON d.id = m.dept_id WHERE m.status = 'active' AND (m.name LIKE ? ${E} OR d.name LIKE ? ${E} OR m.title LIKE ? ${E}) ORDER BY m.name LIMIT ?`,
+        .all<{ id: string; name: string; dept_id: string | null; title: string | null; updated_at: number }>(
+          // a department name finds the people of that department and of everything below it
+          `SELECT m.id, m.name, m.dept_id, m.title, m.updated_at FROM members m WHERE m.status = 'active' AND (m.name LIKE ? ${E} OR m.title LIKE ? ${E} OR m.dept_id IN (
+             WITH RECURSIVE sub(id, lvl) AS (
+               SELECT id, 0 FROM departments WHERE name LIKE ? ${E}
+               UNION SELECT c.id, sub.lvl + 1 FROM departments c JOIN sub ON c.parent_id = sub.id WHERE sub.lvl < 20
+             ) SELECT id FROM sub)) ORDER BY m.name LIMIT ?`,
           [like, like, like, limit]
         )
-        .map((r) => ({ type: 'member', id: r.id, title: r.name, snippet: [r.dept, r.title].filter(Boolean).join(' · '), route: '/directory', at: r.updated_at }))
+        .map((r) => ({ type: 'member', id: r.id, title: r.name, snippet: [r.dept_id ? deptPathText(deptPathOf(db, r.dept_id)) : '', r.title].filter(Boolean).join(' · '), route: '/directory', at: r.updated_at }))
     )
     {
       const w = visibleWhere('w', 'worklog', me)

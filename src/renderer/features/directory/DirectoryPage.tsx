@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, Users, BookUser, UserCog, Plus, Upload, Download, Phone, Smartphone, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
-import { Input, Select, Textarea } from '@renderer/components/ui/input'
+import { Input, Textarea } from '@renderer/components/ui/input'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Dialog } from '@renderer/components/Dialog'
 import { PresenceDot } from '@renderer/components/PresenceDot'
@@ -11,7 +11,7 @@ import { ScopePicker, ScopeTags, defaultScope } from '@renderer/components/Scope
 import { EmptyState, OfflineState } from '@renderer/components/EmptyState'
 import { Field } from '@renderer/features/setup/SetupFrame'
 import { api, errorMessage } from '@renderer/lib/api'
-import { useMembers, useMe } from '@renderer/lib/queries'
+import { useHello, useMembers, useMe } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
 import { displayName, type MemberDto } from '@shared/schemas/auth'
@@ -20,37 +20,30 @@ import type { ScopeInput } from '@shared/schemas/scope'
 import { CONTACT_COLUMNS, csvToContacts, parseCsv, toCsv } from '@shared/csv'
 import { MemberCard } from './MemberCard'
 import { MemberLink } from '@renderer/components/MemberLink'
+import { DeptPicker, deptPathError, type DeptChoice } from '@renderer/components/DeptPicker'
+import { useDepartments } from '@renderer/features/org/useOrgData'
+import type { DepartmentDto } from '@shared/schemas/org'
+import { DEPT_SEP, affiliationText, deptOptions, deptPathText } from '@shared/org'
 
-interface Dept {
-  id: string
-  name: string
-  parentId: string | null
-  sort: number
-}
-
-function useDepartments() {
-  const online = useConn((s) => s.state === 'online')
-  return useQuery({ queryKey: ['members', 'departments'], queryFn: () => api.get<Dept[]>('/api/departments'), enabled: online })
-}
+type Dept = DepartmentDto
 
 function MembersTab(): React.JSX.Element {
   const { data: members } = useMembers()
   const { data: depts } = useDepartments()
   const [q, setQ] = useState('')
   const [card, setCard] = useState<MemberDto | null>(null)
-  const list = (members ?? []).filter((m) => !q.trim() || `${m.name} ${m.nickname ?? ''} ${m.deptName ?? ''} ${m.title ?? ''} ${m.duty ?? ''} ${m.ext ?? ''}`.includes(q.trim()))
+  // the whole affiliation is searched: "총무과" also finds the people of the teams below it
+  const list = (members ?? []).filter((m) => !q.trim() || `${m.name} ${m.nickname ?? ''} ${affiliationText(m)} ${m.title ?? ''} ${m.duty ?? ''} ${m.ext ?? ''}`.includes(q.trim()))
   // Org chart: department tree order, members under each department.
   const tree = useMemo(() => {
-    const out: { dept: Dept | null; depth: number; members: MemberDto[] }[] = []
-    const walk = (parent: string | null, depth: number): void => {
-      for (const d of (depts ?? []).filter((x) => x.parentId === parent).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))) {
-        out.push({ dept: d, depth, members: list.filter((m) => m.deptId === d.id) })
-        walk(d.id, depth + 1)
-      }
-    }
-    walk(null, 0)
+    const out: { dept: Dept | null; depth: number; path: string[]; members: MemberDto[] }[] = deptOptions(depts ?? []).map((o) => ({
+      dept: (depts ?? []).find((d) => d.id === o.id) ?? null,
+      depth: o.depth,
+      path: o.path,
+      members: list.filter((m) => m.deptId === o.id)
+    }))
     const none = list.filter((m) => !m.deptId || !(depts ?? []).some((d) => d.id === m.deptId))
-    if (none.length) out.push({ dept: null, depth: 0, members: none })
+    if (none.length) out.push({ dept: null, depth: 0, path: [], members: none })
     return out
   }, [depts, list])
   return (
@@ -63,12 +56,18 @@ function MembersTab(): React.JSX.Element {
         .filter((t) => t.members.length || !q)
         .map((t) => (
           <section key={t.dept?.id ?? 'none'} style={{ marginLeft: t.depth * 20 }}>
-            <h3 className="mb-1.5 text-sm font-semibold text-muted-foreground">
+            <h3 className="mb-1.5 text-sm font-semibold text-muted-foreground" title={deptPathText(t.path) || undefined} data-testid={t.dept ? `directory-dept-${deptPathText(t.path)}` : undefined}>
+              {t.path.length > 1 && (
+                <span className="font-normal">
+                  {deptPathText(t.path.slice(0, -1))}
+                  {DEPT_SEP}
+                </span>
+              )}
               {t.dept?.name ?? '부서 미지정'} <span className="font-normal">({t.members.length})</span>
             </h3>
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {t.members.map((m) => (
-                <button key={m.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-left hover:border-primary" onClick={() => setCard(m)} data-testid={`member-card-${m.name}`}>
+                <button key={m.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-left hover:border-primary" title={affiliationText(m) || undefined} onClick={() => setCard(m)} data-testid={`member-card-${m.name}`}>
                   <PresenceDot presence={m.presence} />
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold">
@@ -94,25 +93,54 @@ export function ProfileTab(): React.JSX.Element {
   const qc = useQueryClient()
   const { data: me } = useMe()
   const { data: depts } = useDepartments()
+  const online = useConn((s) => s.state === 'online')
+  const hello = useHello()
   const [f, setF] = useState<Record<string, string> | null>(null)
+  /** the affiliation chosen or typed here; null: as it is on the server */
+  const [dept, setDept] = useState<DeptChoice | null>(null)
+  /** a new picker after each save, so what was typed does not stay in it */
+  const [round, setRound] = useState(0)
   const [msg, setMsg] = useState('')
-  const cur = f ?? { nickname: me?.nickname ?? '', name: me?.name ?? '', deptId: me?.deptId ?? '', title: me?.title ?? '', ext: me?.ext ?? '', mobile: me?.mobile ?? '', duty: me?.duty ?? '', statusMessage: me?.statusMessage ?? '' }
+  const cur = f ?? { nickname: me?.nickname ?? '', name: me?.name ?? '', title: me?.title ?? '', ext: me?.ext ?? '', mobile: me?.mobile ?? '', duty: me?.duty ?? '', statusMessage: me?.statusMessage ?? '' }
   const set = (k: string, v: string): void => setF({ ...cur, [k]: v })
+  const deptFixed = !!me?.adminFields.includes('deptId')
+  // a server older than multi-level affiliations takes the department with the other details
+  const paths = hello.data?.caps?.includes('deptpath') === true
   const save = useMutation({
-    mutationFn: () => api.patch('/api/me', { ...cur, deptId: cur.deptId || null, statusMessage: cur.statusMessage || null, nickname: cur.nickname || null }),
-    onSuccess: () => {
-      setMsg('저장했습니다.')
+    mutationFn: async (): Promise<number> => {
+      let created = 0
+      const rest = { ...cur, statusMessage: cur.statusMessage || null, nickname: cur.nickname || null }
+      if (dept && !deptFixed) {
+        if (!paths) {
+          await api.patch('/api/me', { ...rest, deptId: 'deptId' in dept ? dept.deptId : null })
+          return 0
+        }
+        created = (await api.put<{ created: number }>('/api/me/dept', dept)).created
+      }
+      await api.patch('/api/me', rest)
+      return created
+    },
+    onSuccess: (created) => {
+      setMsg(created > 0 ? `저장했습니다. 새로 입력한 소속 ${created}개는 최종관리자(서버 PC)가 조직 관리에서 확인합니다.` : '저장했습니다.')
+      setDept(null)
+      setRound((n) => n + 1)
       void qc.invalidateQueries({ queryKey: ['me'] })
       void qc.invalidateQueries({ queryKey: ['members'] })
     },
-    onError: (e) => setMsg(errorMessage(e))
+    onError: (e) => {
+      setMsg(errorMessage(e))
+      // the affiliation may have been saved before the rest failed
+      void qc.invalidateQueries({ queryKey: ['me'] })
+      void qc.invalidateQueries({ queryKey: ['members'] })
+    }
   })
   if (!me) return <OfflineState />
   // details the admin (server PC) set are shown but cannot be changed here
   const fixed = (k: string): boolean => me.adminFields.includes(k)
   const fixedHint = (k: string): string | undefined => (fixed(k) ? '서버 PC에서 정한 항목 (바꿀 수 없음)' : undefined)
+  const deptError = dept && 'path' in dept ? deptPathError(dept.path) : ''
   return (
-    <Card className="max-w-xl">
+    <Card className="max-w-xl" data-testid="profile-card">
       <CardContent className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <Field label="이름 (본명)" hint={fixedHint('name')}>
@@ -121,16 +149,11 @@ export function ProfileTab(): React.JSX.Element {
           <Field label="필명 (선택)" hint={`나만 정하고 바꿀 수 있습니다(서버 PC·서무는 못 바꿈). 정하면 "${cur.name || '본명'}(${cur.nickname || '필명'})"으로 표시됩니다.`}>
             <Input aria-label="내 필명" value={cur.nickname} maxLength={20} onChange={(e) => set('nickname', e.target.value)} />
           </Field>
-          <Field label="부서" hint={fixedHint('deptId')}>
-            <Select aria-label="내 부서" value={cur.deptId} disabled={fixed('deptId')} onChange={(e) => set('deptId', e.target.value)}>
-              <option value="">미지정</option>
-              {(depts ?? []).map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <div className="col-span-2">
+            <Field label="소속" hint={fixedHint('deptId') ?? '여러 단계로 된 조직에서 내가 속한 곳을 고릅니다. 예: 본부 > 과 > 팀'}>
+              <DeptPicker key={round} depts={depts ?? []} value={dept ?? { deptId: me.deptId ?? null }} onChange={setDept} disabled={deptFixed} allowTyping={paths} fallbackText={dept ? '' : affiliationText(me)} />
+            </Field>
+          </div>
           <Field label="직위" hint={fixedHint('title')}>
             <Input aria-label="내 직위" value={cur.title} disabled={fixed('title')} onChange={(e) => set('title', e.target.value)} />
           </Field>
@@ -148,9 +171,16 @@ export function ProfileTab(): React.JSX.Element {
           <Textarea aria-label="담당 업무" value={cur.duty} disabled={fixed('duty')} onChange={(e) => set('duty', e.target.value)} />
         </Field>
         <p className="text-xs text-muted-foreground">휴대폰 번호는 팀원 모두에게 보입니다. 원하지 않으면 비워 두세요.</p>
+        {!online && <p className="text-xs text-important">서버 PC에 연결되어 있지 않습니다. 소속 목록은 마지막으로 받은 내용이며, 내 정보는 서버에 연결된 뒤에 저장할 수 있습니다.</p>}
         <div className="flex items-center gap-3">
-          <Button onClick={() => save.mutate()}>저장</Button>
-          {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
+          <Button onClick={() => save.mutate()} disabled={!online || save.isPending || !!deptError}>
+            저장
+          </Button>
+          {msg && (
+            <span className="text-sm text-muted-foreground" data-testid="profile-msg">
+              {msg}
+            </span>
+          )}
         </div>
       </CardContent>
     </Card>

@@ -6,7 +6,7 @@ import { TAG_COLORS, type TaggedItem } from '@shared/organize'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { confirmDialog } from '@renderer/components/Dialog'
-import { EmptyState } from '@renderer/components/EmptyState'
+import { EmptyState, EmptyNote } from '@renderer/components/EmptyState'
 import { invoke } from '@renderer/lib/bridge'
 import { cn } from '@renderer/lib/utils'
 import { FileIcon, TagChips, fmtSize, useCollections, useFileActions, useTags } from './common'
@@ -122,7 +122,7 @@ export function OrganizeTab({ notify }: { notify: (s: string) => void }): React.
               <span className="ml-auto text-xs text-muted-foreground">{t.count}</span>
             </button>
           ))}
-          {!tags.data?.length && <p className="px-2 text-xs text-muted-foreground">아직 태그가 없습니다.</p>}
+          {!tags.data?.length && <EmptyNote>아직 태그가 없습니다.</EmptyNote>}
         </section>
         <section>
           <div className="mb-1 flex items-center px-2">

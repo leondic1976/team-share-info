@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Building2, ChevronDown, ChevronUp, KeyRound, Network, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Building2, Check, ChevronDown, ChevronUp, Combine, KeyRound, Network, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
@@ -14,7 +14,7 @@ import { useMe, useMembers, useOrgDisplay } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { displayName, type MemberDto } from '@shared/schemas/auth'
 import type { DepartmentDto } from '@shared/schemas/org'
-import { buildOrgTree, flattenOrg, subtreeIds, type OrgNode } from '@shared/org'
+import { DEPT_MAX_DEPTH, affiliationText, buildOrgTree, deptPath, deptPathText, flattenOrg, subtreeIds, type OrgNode } from '@shared/org'
 
 type Node = OrgNode<MemberDto>
 type Editing = { edit: DepartmentDto } | { parentId: string | null }
@@ -64,7 +64,7 @@ function DeptDialog({ state, depts, members, onClose, onSaved }: { state: Editin
           <Field label="부서 이름">
             <Input aria-label="부서 이름" value={f.name} maxLength={40} onChange={(e) => set('name', e.target.value)} />
           </Field>
-          <Field label="상위 부서">
+          <Field label="상위 부서" hint={edit ? '다른 부서를 고르면 하위 부서·구성원과 함께 그 아래로 옮겨집니다.' : undefined}>
             <Select aria-label="상위 부서" value={f.parentId} onChange={(e) => set('parentId', e.target.value)}>
               <option value="">(최상위)</option>
               {depts
@@ -84,7 +84,7 @@ function DeptDialog({ state, depts, members, onClose, onSaved }: { state: Editin
                 <option key={m.id} value={m.id}>
                   {displayName(m)}
                   {m.title ? ` · ${m.title}` : ''}
-                  {m.deptName ? ` (${m.deptName})` : ''}
+                  {m.deptName ? ` (${affiliationText(m)})` : ''}
                 </option>
               ))}
             </Select>
@@ -99,6 +99,62 @@ function DeptDialog({ state, depts, members, onClose, onSaved }: { state: Editin
         <Field label="담당 업무" hint="부서가 맡은 일을 간단히 적습니다. 조직도의 부서 칸에 표시됩니다.">
           <Textarea aria-label="부서 담당 업무" value={f.duties} maxLength={500} onChange={(e) => set('duties', e.target.value)} />
         </Field>
+        {err && <p className="text-sm text-urgent">{err}</p>}
+      </div>
+    </Dialog>
+  )
+}
+
+/** 합치기: the people and the departments below one department go to another, then it is removed. */
+function MergeDialog({ from, depts, onClose, onSaved }: { from: Node; depts: Node[]; onClose: () => void; onSaved: () => void }): React.JSX.Element {
+  const [targetId, setTargetId] = useState('')
+  const [err, setErr] = useState('')
+  const all = depts.map((n) => n.dept)
+  // not into itself or a department of its own
+  const below = useMemo(() => subtreeIds(all, from.dept.id), [all, from.dept.id])
+  const merge = useMutation({
+    mutationFn: () => api.post(`/api/admin/departments/${from.dept.id}/merge`, { targetId }),
+    onSuccess: () => {
+      onSaved()
+      onClose()
+    },
+    onError: (e) => setErr(errorMessage(e))
+  })
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="부서 합치기"
+      width="max-w-lg"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            취소
+          </Button>
+          <Button onClick={() => merge.mutate()} disabled={!targetId || merge.isPending}>
+            합치기
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3 text-sm" data-testid="dept-merge-dialog">
+        <p>
+          <b>{deptPathText(deptPath(all, from.dept.id))}</b>을(를) 다른 부서에 합칩니다. 소속 구성원 {from.members.length}명과 바로 아래 부서 {from.children.length}개가 고른 부서로 옮겨지고, 이 부서는 없어집니다.
+        </p>
+        <Field label="합칠 대상 부서" hint="같은 부서가 이름만 조금 다르게 두 번 만들어졌을 때 씁니다. 되돌릴 수 없습니다.">
+          <Select aria-label="합칠 대상 부서" value={targetId} onChange={(e) => setTargetId(e.target.value)}>
+            <option value="">(부서를 고르세요)</option>
+            {depts
+              .filter((n) => !below.has(n.dept.id))
+              .map((n) => (
+                <option key={n.dept.id} value={n.dept.id} title={deptPathText(deptPath(all, n.dept.id))}>
+                  {indent(n.depth)}
+                  {n.dept.name}
+                </option>
+              ))}
+          </Select>
+        </Field>
+        {targetId && <p className="text-xs text-muted-foreground">합친 뒤 소속: {deptPathText(deptPath(all, targetId))}</p>}
         {err && <p className="text-sm text-urgent">{err}</p>}
       </div>
     </Dialog>
@@ -120,6 +176,7 @@ export function OrgManageCard(): React.JSX.Element | null {
   const org = useOrgDisplay()
   const ref = useRef<HTMLDivElement>(null)
   const [dialog, setDialog] = useState<Editing | null>(null)
+  const [merging, setMerging] = useState<Node | null>(null)
   const [err, setErr] = useState('')
   const [pin, setPin] = useState('')
   const [unlocked, setUnlocked] = useState(hasAdminPin())
@@ -143,6 +200,7 @@ export function OrgManageCard(): React.JSX.Element | null {
     onError: (e: unknown) => setErr(errorMessage(e))
   }
   const delDept = useMutation({ mutationFn: (id: string) => api.del(`/api/admin/departments/${id}`), ...done })
+  const confirmDept = useMutation({ mutationFn: (id: string) => api.patch(`/api/admin/departments/${id}`, { confirmed: true }), ...done })
   const orderDepts = useMutation({ mutationFn: (body: { parentId: string | null; ids: string[] }) => api.put('/api/admin/departments/order', body), ...done })
   const patchMember = useMutation({ mutationFn: ({ id, body }: { id: string; body: Record<string, unknown> }) => api.patch(`/api/admin/org/members/${id}`, body), ...done })
   const orderMembers = useMutation({ mutationFn: (body: { deptId: string | null; ids: string[] }) => api.put('/api/admin/org/members/order', body), ...done })
@@ -182,6 +240,13 @@ export function OrgManageCard(): React.JSX.Element | null {
     if (n.members.length) return setErr(`${n.dept.name}에 소속 구성원이 있어 지울 수 없습니다. 먼저 아래 "구성원 배치"에서 구성원의 부서를 바꾸세요.`)
     const note = n.children.length ? ' 하위 부서는 지워지지 않고 한 단계 위로 올라갑니다.' : ''
     if (window.confirm(`${n.dept.name} 부서를 지울까요?${note}`)) delDept.mutate(n.dept.id)
+  }
+
+  /** departments a member made by typing their own affiliation, not looked at here yet */
+  const entered = flat.filter((n) => n.dept.enteredBy)
+  const whoEntered = (n: Node): string => {
+    const m = people.find((x) => x.id === n.dept.enteredBy)
+    return m ? displayName(m) : '구성원'
   }
 
   const groups: { key: string; deptId: string | null; name: string; headId: string | null; list: MemberDto[] }[] = [
@@ -235,6 +300,11 @@ export function OrgManageCard(): React.JSX.Element | null {
                   <Plus /> 부서 추가
                 </Button>
               </div>
+              {entered.length > 0 && (
+                <p className="rounded-md bg-[var(--notice-bg)] px-3 py-2 text-xs text-[var(--notice-fg)]" data-testid="org-entered-notice">
+                  구성원이 입력한 소속이 {entered.length}개 있습니다. 맞으면 확인을 누르고, 이름이나 자리가 다르면 수정에서 이름·상위 부서를 바꾸거나, 이미 있는 부서와 같은 곳이면 합치기로 정리하세요.
+                </p>
+              )}
               {flat.length === 0 ? (
                 <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">부서가 없습니다. 부서 추가를 눌러 만드세요.</p>
               ) : (
@@ -252,13 +322,26 @@ export function OrgManageCard(): React.JSX.Element | null {
                         </Button>
                         <span className="min-w-0 flex-1 truncate" style={{ paddingLeft: `${n.depth * 1.25}rem` }}>
                           {n.depth > 0 && <span className="text-muted-foreground">└ </span>}
-                          <b>{n.dept.name}</b>
+                          <b title={deptPathText(deptPath(depts.data ?? [], n.dept.id))}>{n.dept.name}</b>
+                          {n.dept.enteredBy && (
+                            <Badge variant="important" className="ml-2" title={`${whoEntered(n)} 님이 내 정보 또는 사용 신청에서 직접 입력해 만들어진 부서입니다.`} data-testid={`org-entered-${n.dept.name}`}>
+                              구성원이 입력한 소속 · {whoEntered(n)}
+                            </Badge>
+                          )}
                           <span className="ml-2 text-xs text-muted-foreground">
                             {[n.head && `부서장 ${n.head.name}`, n.dept.phone, n.dept.location, `${n.members.length}명${n.total !== n.members.length ? ` (하위 포함 ${n.total}명)` : ''}`].filter(Boolean).join(' · ')}
                           </span>
                         </span>
-                        <Button size="sm" variant="ghost" aria-label={`${n.dept.name} 아래에 부서 추가`} title="이 부서 아래에 부서를 추가합니다" onClick={() => setDialog({ parentId: n.dept.id })}>
+                        {n.dept.enteredBy && (
+                          <Button size="sm" variant="outline" aria-label={`${n.dept.name} 확인`} title="입력한 대로 두고 표시를 지웁니다" onClick={() => confirmDept.mutate(n.dept.id)}>
+                            <Check /> 확인
+                          </Button>
+                        )}
+                        <Button size="sm" variant="ghost" aria-label={`${n.dept.name} 아래에 부서 추가`} title={n.depth + 1 >= DEPT_MAX_DEPTH ? `부서는 ${DEPT_MAX_DEPTH}단계까지 둘 수 있습니다` : '이 부서 아래에 부서를 추가합니다'} disabled={n.depth + 1 >= DEPT_MAX_DEPTH} onClick={() => setDialog({ parentId: n.dept.id })}>
                           <Plus /> 하위
+                        </Button>
+                        <Button size="icon-sm" variant="ghost" aria-label={`${n.dept.name} 합치기`} title="다른 부서에 합치기" disabled={flat.length < 2} onClick={() => setMerging(n)}>
+                          <Combine />
                         </Button>
                         <Button size="icon-sm" variant="ghost" aria-label={`${n.dept.name} 수정`} onClick={() => setDialog({ edit: n.dept })}>
                           <Pencil />
@@ -271,7 +354,9 @@ export function OrgManageCard(): React.JSX.Element | null {
                   })}
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">▲▼로 같은 상위 부서 안에서 순서를 바꿉니다. 부서장·대표 전화·위치·담당 업무·상위 부서는 연필 모양의 수정 단추에서 정합니다.</p>
+              <p className="text-xs text-muted-foreground">
+                부서는 {DEPT_MAX_DEPTH}단계까지 둘 수 있고, 이름은 같은 상위 부서 안에서만 겹치지 않으면 됩니다. ▲▼로 같은 상위 부서 안에서 순서를 바꿉니다. 하위로 그 부서 아래에 부서를 만들고, 연필 모양의 수정 단추에서 이름·상위 부서(다른 곳으로 옮기기)·부서장·대표 전화·위치·담당 업무를 정합니다. 겹쳐 만든 부서는 합치기 단추로 다른 부서에 합칩니다.
+              </p>
             </section>
 
             <section className="space-y-1.5">
@@ -336,6 +421,7 @@ export function OrgManageCard(): React.JSX.Element | null {
         )}
       </CardContent>
       {dialog && <DeptDialog state={dialog} depts={flat} members={people} onClose={() => setDialog(null)} onSaved={done.onSuccess} />}
+      {merging && <MergeDialog from={merging} depts={flat} onClose={() => setMerging(null)} onSaved={done.onSuccess} />}
     </Card>
     </div>
   )

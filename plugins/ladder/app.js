@@ -6,6 +6,13 @@
   const COLORS = ['#ef4444', '#2563eb', '#16a34a', '#d97706', '#9333ea', '#0891b2', '#db2777', '#65a30d', '#ea580c', '#4f46e5']
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
   const call = (m, p) => window.TeamHub.call(m, p)
+  // an older TeamHub does not give extension frames its look (__ui.css): say so once the page has loaded
+  const lookCheck = () => ($('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim())
+  if (document.readyState === 'complete') lookCheck()
+  else window.addEventListener('load', lookCheck)
+  // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
+  const icon = (n, o) => (window.TeamHub.icon ? window.TeamHub.icon(n, o) : '')
+  const empty = (name, title, body) => `<div class="th-empty compact">${icon(name)}<p class="th-empty-title">${esc(title)}</p>${body ? `<p>${esc(body)}</p>` : ''}</div>`
 
   let me = null
   let members = []
@@ -41,11 +48,11 @@
     const o = $('presetOpts')
     o.innerHTML =
       kind === 'winner'
-        ? '<label class="inline">당첨 <input id="optWinners" type="number" min="1" max="29" value="1" style="width:64px"> 명</label><label class="inline">당첨 이름 <input id="optPrize" placeholder="당첨" style="width:140px"></label>'
+        ? '<label class="opt">당첨 <input class="th-input" id="optWinners" type="number" min="1" max="29" value="1"> 명</label><label class="opt">당첨 이름 <input class="th-input" id="optPrize" placeholder="당첨"></label>'
         : kind === 'teams'
-          ? '<label class="inline"><input id="optTeams" type="number" min="2" max="6" value="2" style="width:64px"> 팀으로</label>'
+          ? '<label class="opt"><input class="th-input" id="optTeams" type="number" min="2" max="6" value="2"> 팀으로</label>'
           : kind === 'coffee'
-            ? '<label class="inline">문구 <input id="optPrize" placeholder="커피 쏘기" style="width:160px"></label>'
+            ? '<label class="opt">문구 <input class="th-input" id="optPrize" placeholder="커피 쏘기"></label>'
             : ''
     o.querySelectorAll('input').forEach((i) => i.addEventListener('input', fillPreset))
     fillPreset()
@@ -91,10 +98,10 @@
           if (on) s += `<line class="rung" x1="${g.x(x)}" y1="${g.y(r)}" x2="${g.x(x + 1)}" y2="${g.y(r)}"/>`
         })
       )
-    else s += `<text x="${g.w / 2}" y="${g.top + (game.rows * g.rowH) / 2}" text-anchor="middle" class="name free">가로줄은 모두 고른 뒤 공개할 때 만들어집니다</text>`
+    else s += `<text x="${g.w / 2}" y="${g.top + (game.rows * g.rowH) / 2}" text-anchor="middle" class="name free note">가로줄은 모두 고른 뒤 공개할 때 만들어집니다</text>`
     for (let i = 0; i < n; i++) {
       const l = startLabel(i)
-      s += `<g class="start" data-i="${i}"><rect x="${g.x(i) - g.gap / 2 + 4}" y="4" width="${g.gap - 8}" height="30" rx="6" fill="${l.taken ? COLORS[i % COLORS.length] : 'transparent'}" opacity="${l.taken ? 0.15 : 1}" stroke="${l.taken ? 'none' : 'var(--line)'}"/><text class="name${l.taken ? '' : ' free'}" x="${g.x(i)}" y="24" text-anchor="middle">${esc(l.text)}</text></g>`
+      s += `<g class="start" data-i="${i}"><rect x="${g.x(i) - g.gap / 2 + 4}" y="4" width="${g.gap - 8}" height="30" rx="6" ${l.taken ? `fill="${COLORS[i % COLORS.length]}" opacity="0.18"` : 'class="free-box"'}/><text class="name${l.taken ? '' : ' free'}" x="${g.x(i)}" y="24" text-anchor="middle">${esc(l.text)}</text></g>`
     }
     const m = game.grid ? L.mapping(game.grid, n) : null
     for (let j = 0; j < n; j++) {
@@ -165,8 +172,8 @@
   function renderTable() {
     const rows = pairs().filter((p) => !game.hide || game.revealed.has(p.i))
     $('resultTable').innerHTML = rows.length
-      ? `<table><thead><tr><th>이름</th><th>결과</th></tr></thead><tbody>${rows
-          .map((p) => `<tr><td><span class="chip" style="background:${COLORS[p.i % COLORS.length]}">&nbsp;</span> ${esc(p.name)}</td><td><b>${esc(p.result)}</b></td></tr>`)
+      ? `<table class="th-table"><thead><tr><th>이름</th><th>결과</th></tr></thead><tbody>${rows
+          .map((p) => `<tr><td><span class="swatch" style="background:${COLORS[p.i % COLORS.length]}"></span>${esc(p.name)}</td><td><b>${esc(p.result)}</b></td></tr>`)
           .join('')}</tbody></table>`
       : ''
   }
@@ -300,10 +307,10 @@
             .map((r) => {
               const n = r.shared && r.shared.config ? r.shared.config.people.length : 0
               const k = Object.keys(r.entries || {}).length
-              return `<div class="room"><b>${esc(r.title)}</b><span class="muted">${esc(r.createdByName)} · ${r.closed ? '결과 공개됨' : `${k}/${n}명 고름`}</span><span class="grow"></span><button data-room="${r.id}" class="${r.closed ? 'ghost' : 'primary'}">${r.closed ? '결과 보기' : '참여'}</button>${me && r.createdBy === me.id ? `<button data-del="${r.id}" class="ghost">지우기</button>` : ''}</div>`
+              return `<div class="item"><span class="name">${esc(r.title)}</span><span class="th-badge ${r.closed ? 'th-badge-success' : ''} th-nums">${r.closed ? '결과 공개됨' : `${k}/${n}명 고름`}</span><span class="th-xs th-muted">${esc(r.createdByName)}</span><span class="th-grow"></span><button type="button" data-room="${r.id}" class="th-btn th-btn-sm ${r.closed ? 'th-btn-outline' : ''}">${r.closed ? '결과 보기' : '참여'}</button>${me && r.createdBy === me.id ? `<button type="button" data-del="${r.id}" class="th-btn th-btn-ghost th-btn-sm">${icon('trash-2')} 지우기</button>` : ''}</div>`
             })
             .join('')
-        : '<p class="muted">진행 중인 방이 없습니다. 위에서 방을 만드세요.</p>'
+        : empty('users', '진행 중인 방이 없습니다', '위에서 방을 만들면 여기에 보입니다.')
       box.querySelectorAll('[data-room]').forEach((b) => b.addEventListener('click', () => openRoom(b.getAttribute('data-room'))))
       box.querySelectorAll('[data-del]').forEach((b) =>
         b.addEventListener('click', async () => {
@@ -313,7 +320,7 @@
         })
       )
     } catch (e) {
-      box.innerHTML = `<p class="muted">방 목록을 불러오지 못했습니다(서버 연결 필요). ${esc(e.message)}</p>`
+      box.innerHTML = empty('wifi-off', '방 목록을 불러오지 못했습니다', `서버 연결이 필요합니다. ${e.message || ''}`)
     }
   }
 
@@ -324,10 +331,10 @@
       ? hist
           .map(
             (h) =>
-              `<div class="room" style="display:block"><b>${esc(h.title)}</b> <span class="muted small">${new Date(h.at).toLocaleString('ko-KR')} · ${h.mode === 'room' ? '함께' : '바로'}</span><div class="small">${h.pairs.map((p) => `${esc(p.name)} → <b>${esc(p.result)}</b>`).join(' · ')}</div></div>`
+              `<div class="item"><span class="name">${esc(h.title)}</span><span class="th-badge th-badge-muted">${h.mode === 'room' ? '함께' : '바로'}</span><span class="th-xs th-muted th-nums">${new Date(h.at).toLocaleString('ko-KR')}</span><div class="pairs th-xs">${h.pairs.map((p) => `${esc(p.name)} → <b>${esc(p.result)}</b>`).join(' · ')}</div></div>`
           )
           .join('')
-      : '<p class="muted">아직 기록이 없습니다.</p>'
+      : empty('history', '아직 기록이 없습니다', '사다리의 결과가 모두 공개되면 여기에 남습니다.')
   }
 
   // ---------- tabs & wiring ----------

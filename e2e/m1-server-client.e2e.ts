@@ -26,7 +26,7 @@ describe('M1 server + member', () => {
     await p.getByLabel('서버 주소').fill(`127.0.0.1:${PORT}`)
     await p.getByRole('button', { name: '연결 확인' }).click()
     await p.getByLabel('이름', { exact: true }).fill('팀원B')
-    await p.getByLabel('부서', { exact: true }).fill('검증팀')
+    await p.getByLabel('소속', { exact: true }).fill('검증팀')
     await p.getByLabel('안내 동의').check()
     await p.getByRole('button', { name: '사용 신청' }).click()
     await expect.poll(() => p.getByTestId('pending').isVisible(), { timeout: 10000 }).toBe(true)

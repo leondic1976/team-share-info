@@ -2,6 +2,8 @@ import { useMe } from '@renderer/lib/queries'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { MemberDto } from '@shared/schemas/auth'
+import type { DepartmentDto } from '@shared/schemas/org'
+import { deptOptions, deptPathText } from '@shared/org'
 import { api, errorMessage } from '@renderer/lib/api'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Select, Textarea } from '@renderer/components/ui/input'
@@ -15,7 +17,7 @@ import { Field } from '@renderer/features/setup/SetupFrame'
  */
 export function MemberEditDialog({ member, onClose }: { member: MemberDto; onClose: () => void }): React.JSX.Element {
   const qc = useQueryClient()
-  const depts = useQuery({ queryKey: ['members', 'departments'], queryFn: () => api.get<{ id: string; name: string }[]>('/api/departments') })
+  const depts = useQuery({ queryKey: ['members', 'departments'], queryFn: () => api.get<DepartmentDto[]>('/api/departments') })
   const first = { name: member.name, deptId: member.deptId ?? '', title: member.title ?? '', ext: member.ext ?? '', mobile: member.mobile ?? '', duty: member.duty ?? '' }
   const [f, setF] = useState(first)
   const [err, setErr] = useState('')
@@ -61,12 +63,12 @@ export function MemberEditDialog({ member, onClose }: { member: MemberDto; onClo
           <Field label="이름">
             <Input aria-label="구성원 이름" value={f.name} maxLength={40} disabled={nameLocked} title={nameLocked ? '본명은 최종관리자(서버 PC)만 고칠 수 있습니다.' : undefined} onChange={(e) => set('name', e.target.value)} />
           </Field>
-          <Field label="부서">
+          <Field label="소속">
             <Select aria-label="구성원 부서" value={f.deptId} onChange={(e) => set('deptId', e.target.value)}>
               <option value="">미지정</option>
-              {(depts.data ?? []).map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
+              {deptOptions(depts.data ?? []).map((d) => (
+                <option key={d.id} value={d.id} title={deptPathText(d.path)}>
+                  {d.label}
                 </option>
               ))}
             </Select>

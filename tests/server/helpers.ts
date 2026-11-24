@@ -21,7 +21,7 @@ export interface TestServer extends BuiltApp {
   close: () => Promise<void>
   req: (cred: Cred | null, opts: InjectOptions & { ip?: string }) => Promise<LightMyRequestResponse>
   /** Create a member through the real join + approve flow. */
-  join: (name: string, opts?: { ip?: string; winUser?: string; deptName?: string }) => Promise<Cred>
+  join: (name: string, opts?: { ip?: string; winUser?: string; deptName?: string; deptPath?: string[] }) => Promise<Cred>
 }
 
 export function setupInput(over: Partial<ServerSetupInput> = {}): ServerSetupInput {
@@ -60,7 +60,7 @@ export async function createTestServer(over: Partial<ServerSetupInput> = {}): Pr
       method: 'POST',
       url: '/api/join',
       ip,
-      payload: { name, deptName: o.deptName ?? '행정팀', pcName: `PC-${name}`, winUser, appVersion: '0.1.0' }
+      payload: { name, deptName: o.deptName ?? (o.deptPath ? (o.deptPath[o.deptPath.length - 1] ?? '') : '행정팀'), ...(o.deptPath ? { deptPath: o.deptPath } : {}), pcName: `PC-${name}`, winUser, appVersion: '0.1.0' }
     })
     if (r.statusCode !== 200) throw new Error(`join failed: ${r.body}`)
     const { requestId, pollToken } = r.json().data

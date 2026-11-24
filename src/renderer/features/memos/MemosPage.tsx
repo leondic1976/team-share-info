@@ -26,7 +26,7 @@ import { Switch } from '@renderer/components/ui/switch'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Editor } from '@renderer/components/Editor'
 import { Dialog, confirmDialog } from '@renderer/components/Dialog'
-import { EmptyState } from '@renderer/components/EmptyState'
+import { EmptyState, EmptyNote } from '@renderer/components/EmptyState'
 import { invoke } from '@renderer/lib/bridge'
 import { startOfDay, DAY, ymd } from '@renderer/lib/dates'
 import { cn } from '@renderer/lib/utils'
@@ -73,7 +73,7 @@ function MemoTab({ notify }: { notify: (s: string) => void }): React.JSX.Element
           )}
         </div>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3" data-testid="memo-list">
-          {!list.length && <p className="py-8 text-center text-sm text-muted-foreground">메모가 없습니다.</p>}
+          {!list.length && <EmptyNote>메모가 없습니다.</EmptyNote>}
           {list.map((m) => (
             <button
               key={m.id}

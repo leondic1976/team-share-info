@@ -12,7 +12,7 @@ import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Select } from '@renderer/components/ui/input'
 import { Dialog } from '@renderer/components/Dialog'
-import { EmptyState, ErrorState, Loading, OfflineState } from '@renderer/components/EmptyState'
+import { EmptyState, ErrorState, Loading, OfflineState, EmptyNote } from '@renderer/components/EmptyState'
 import { MemberPicker } from '@renderer/components/ScopePicker'
 import { Field } from '@renderer/features/setup/SetupFrame'
 import { api, errorMessage } from '@renderer/lib/api'
@@ -457,7 +457,7 @@ export function DutyPage(): React.JSX.Element {
                     </div>
                   </div>
                 ))}
-                {!st.away.length && <p className="px-4 py-2 text-xs text-muted-foreground">사고 인원 없음</p>}
+                {!st.away.length && <EmptyNote>사고 인원 없음</EmptyNote>}
                 <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 text-sm">
                   <span className="mr-1 w-24 shrink-0 text-xs text-muted-foreground">현재원 {inOffice.length}명</span>
                   {inOffice.map((m) =>

@@ -9,8 +9,8 @@ import { parse, ok } from '../validate'
 import { logActivity } from '../activity'
 import { audienceOf, canSee, inGroupWhere, scopeDto, setScope, visibleWhere } from '../scope'
 import { adminFieldsOf, getMember, listDepartments, setAdminFields, updateMember } from '../repos/members'
-import { subtreeIds } from '../../shared/org'
-import { departmentCreateSchema, departmentOrderSchema, departmentPatchSchema, orgMemberOrderSchema, orgMemberPatchSchema } from '../../shared/schemas/org'
+import { DEPT_MAX_DEPTH, deptDepth, deptHeight, deptNameError, cleanDeptName, siblingNameTaken, subtreeIds } from '../../shared/org'
+import { departmentCreateSchema, departmentMergeSchema, departmentOrderSchema, departmentPatchSchema, orgMemberOrderSchema, orgMemberPatchSchema } from '../../shared/schemas/org'
 import { ADMIN_SET_FIELDS } from '../../shared/schemas/auth'
 
 interface ContactRow {
@@ -158,13 +158,20 @@ export function registerDirectoryRoutes(app: FastifyInstance, ctx: ServerContext
     if (!r) throw notFound('부서')
     return r
   }
-  const checkName = (name: string, selfId = ''): void => {
-    if (db.get('SELECT 1 FROM departments WHERE name = ? AND id <> ?', [name, selfId])) throw badRequest('같은 이름의 부서가 있습니다.')
+  /** A name is unique among the departments of one parent (ignoring case and spacing), not in the whole tree. */
+  const checkName = (name: string, parentId: string | null, selfId?: string): void => {
+    const err = deptNameError(name)
+    if (err) throw badRequest(err.replaceAll('소속 이름', '부서 이름'))
+    if (siblingNameTaken(listDepartments(db), parentId, name, selfId)) throw badRequest(parentId ? '같은 상위 부서 아래에 같은 이름의 부서가 있습니다.' : '최상위에 같은 이름의 부서가 있습니다.')
   }
+  const tooDeep = (): Error => badRequest(`부서는 ${DEPT_MAX_DEPTH}단계까지 둘 수 있습니다.`)
+  /** `selfId`: the department being moved (with everything below it) under `parentId`. */
   const checkParent = (parentId: string | null | undefined, selfId?: string): void => {
     if (!parentId) return
-    if (!db.get('SELECT 1 FROM departments WHERE id = ?', [parentId])) throw badRequest('상위 부서를 찾을 수 없습니다.')
-    if (selfId && subtreeIds(listDepartments(db), selfId).has(parentId)) throw badRequest('자기 자신이나 하위 부서를 상위 부서로 정할 수 없습니다.')
+    const all = listDepartments(db)
+    if (!all.some((d) => d.id === parentId)) throw badRequest('상위 부서를 찾을 수 없습니다.')
+    if (selfId && subtreeIds(all, selfId).has(parentId)) throw badRequest('자기 자신이나 하위 부서를 상위 부서로 정할 수 없습니다.')
+    if (deptDepth(all, parentId) + (selfId ? deptHeight(all, selfId) : 1) > DEPT_MAX_DEPTH) throw tooDeep()
   }
   const checkHead = (headId: string | null | undefined): void => {
     if (headId && !getMember(db, headId)) throw badRequest('부서장으로 정한 구성원을 찾을 수 없습니다.')
@@ -173,7 +180,8 @@ export function registerDirectoryRoutes(app: FastifyInstance, ctx: ServerContext
 
   app.post('/api/admin/departments', owner, async (req) => {
     const d = parse(departmentCreateSchema, req.body)
-    checkName(d.name)
+    d.name = cleanDeptName(d.name)
+    checkName(d.name, d.parentId)
     checkParent(d.parentId)
     checkHead(d.headId)
     const id = newId()
@@ -211,11 +219,17 @@ export function registerDirectoryRoutes(app: FastifyInstance, ctx: ServerContext
   app.patch('/api/admin/departments/:id', owner, async (req) => {
     const { id } = req.params as { id: string }
     const d = parse(departmentPatchSchema, req.body)
-    deptRow(id)
-    if (d.name !== undefined) checkName(d.name, id)
-    checkParent(d.parentId, id)
+    const cur = deptRow(id)
+    if (d.name !== undefined) d.name = cleanDeptName(d.name)
+    const parentId = d.parentId === undefined ? cur.parent_id : d.parentId
+    // a new name, or the same name in a new place: it must be free among the departments there
+    if (d.name !== undefined || parentId !== cur.parent_id) checkName(d.name ?? cur.name, parentId, id)
+    if (parentId !== cur.parent_id) checkParent(parentId, id)
     checkHead(d.headId)
+    // renamed, moved or confirmed on the server PC: no longer "typed by a member"
+    const tidied = d.confirmed === true || (d.name !== undefined && d.name !== cur.name) || parentId !== cur.parent_id
     const cols: Record<string, string | number | null | undefined> = {
+      ...(tidied ? { entered_by: null, entered_at: null } : {}),
       name: d.name,
       parent_id: d.parentId,
       sort: d.sort,
@@ -232,6 +246,44 @@ export function registerDirectoryRoutes(app: FastifyInstance, ctx: ServerContext
   })
 
   /**
+   * 합치기: two departments that are the same one (e.g. a member typed "총무 1과" beside 총무과).
+   * The members and the departments below `id` go to the target, then `id` is removed. All or nothing.
+   */
+  app.post('/api/admin/departments/:id/merge', owner, async (req) => {
+    const { id } = req.params as { id: string }
+    const { targetId } = parse(departmentMergeSchema, req.body)
+    const from = deptRow(id)
+    if (targetId === id) throw badRequest('같은 부서로는 합칠 수 없습니다.')
+    const all = listDepartments(db)
+    const to = all.find((d) => d.id === targetId)
+    if (!to) throw badRequest('합칠 대상 부서를 찾을 수 없습니다.')
+    if (subtreeIds(all, id).has(targetId)) throw badRequest('자기 하위 부서로는 합칠 수 없습니다. 먼저 그 하위 부서를 다른 곳으로 옮기세요.')
+    const below = all.filter((d) => d.parentId === id)
+    const clash = below.find((c) => siblingNameTaken(all, targetId, c.name, c.id))
+    if (clash) throw badRequest(`하위 부서 "${clash.name}"와(과) 같은 이름의 부서가 대상 부서 아래에도 있습니다. 먼저 그 둘을 합치거나 이름을 바꾸세요.`)
+    if (below.length && deptDepth(all, targetId) + Math.max(...below.map((c) => deptHeight(all, c.id))) > DEPT_MAX_DEPTH) throw tooDeep()
+    const moved = db.tx(() => {
+      const t = Date.now()
+      const last = db.get<{ n: number | null }>('SELECT MAX(sort) AS n FROM departments WHERE parent_id IS ?', [targetId])?.n ?? 0
+      // the departments below keep their order, after the ones the target already has
+      db.run('UPDATE departments SET parent_id = ?, sort = sort + ?, updated_at = ? WHERE parent_id = ?', [targetId, last, t, id])
+      // the people go to the end of the target's list until an order is given there
+      const members = db.run('UPDATE members SET dept_id = ?, org_sort = 0, updated_at = ? WHERE dept_id = ?', [targetId, t, id]).changes
+      // what the target has not set comes over from the merged one
+      db.run(
+        `UPDATE departments SET head_id = COALESCE(head_id, (SELECT head_id FROM departments WHERE id = ?)), phone = COALESCE(phone, (SELECT phone FROM departments WHERE id = ?)),
+         duties = COALESCE(duties, (SELECT duties FROM departments WHERE id = ?)), location = COALESCE(location, (SELECT location FROM departments WHERE id = ?)), updated_at = ? WHERE id = ?`,
+        [id, id, id, id, t, targetId]
+      )
+      db.run('DELETE FROM departments WHERE id = ?', [id])
+      return Number(members)
+    })
+    logActivity(ctx, req, 'department.merge', { type: 'department', id: targetId }, { from: from.name, fromId: id, into: to.name, members: moved, departments: below.length })
+    orgChanged()
+    return ok({ id: targetId, members: moved, departments: below.length })
+  })
+
+  /**
    * A department with people in it cannot be removed (move them first). Departments below it
    * are kept: they move up to the parent of the removed one.
    */
@@ -239,6 +291,10 @@ export function registerDirectoryRoutes(app: FastifyInstance, ctx: ServerContext
     const { id } = req.params as { id: string }
     const r = deptRow(id)
     if (db.get('SELECT 1 FROM members WHERE dept_id = ?', [id])) throw badRequest('소속 구성원이 있는 부서는 지울 수 없습니다. 먼저 구성원의 부서를 바꾸세요.')
+    // the departments below move up one level: their names must be free there
+    const all = listDepartments(db)
+    const clash = all.filter((d) => d.parentId === id).find((c) => siblingNameTaken(all, r.parent_id, c.name, id))
+    if (clash) throw badRequest(`하위 부서 "${clash.name}"이(가) 올라갈 자리에 같은 이름의 부서가 있습니다. 먼저 이름을 바꾸거나 합치세요.`)
     db.tx(() => {
       db.run('UPDATE departments SET parent_id = ?, updated_at = ? WHERE parent_id = ?', [r.parent_id, Date.now(), id])
       db.run('DELETE FROM departments WHERE id = ?', [id])

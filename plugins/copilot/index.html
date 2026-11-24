@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" class="th-ui">
   <head>
     <meta charset="utf-8" />
     <title>AI 도우미 (Copilot)</title>
@@ -7,74 +7,112 @@
     <script src="__sdk.js"></script>
   </head>
   <body>
-    <header>
-      <h1><i data-icon="sparkles"></i> AI 도우미 <small>Windows Copilot</small></h1>
-      <span class="grow"></span>
-      <button id="openOnly">Copilot만 열기</button>
-      <button id="historyBtn">최근 질문</button>
-    </header>
+    <div class="th-page">
+      <header class="th-page-header">
+        <div>
+          <h1>AI 도우미</h1>
+          <p>Windows Copilot에게 시킬 질문을 만들어 복사하고 Copilot을 엽니다. 붙여넣기(Ctrl+V)만 하면 됩니다.</p>
+        </div>
+        <div class="th-actions">
+          <button type="button" id="historyBtn" class="th-btn th-btn-outline"><i data-icon="history"></i> 최근 질문</button>
+          <button type="button" id="openOnly" class="th-btn th-btn-outline"><i data-icon="external-link"></i> Copilot만 열기</button>
+        </div>
+      </header>
+      <p id="oldApp" hidden>이 화면은 TeamHub를 최신 버전으로 업데이트해야 제대로 보입니다.</p>
 
-    <div class="notice" role="note">
-      Copilot에 붙여넣은 내용은 <b>인터넷을 통해 Microsoft로 전송</b>됩니다. 개인정보, 비공개 문서, 보안 내용은 넣지 마세요. 답은 틀릴 수 있으니 사실·숫자·법령은 꼭 확인하세요.
+      <main class="th-body">
+        <div class="stack">
+          <div class="th-notice" role="note">
+            Copilot에 붙여넣은 내용은 <b>인터넷을 통해 Microsoft로 전송</b>됩니다. 개인정보, 비공개 문서, 보안 내용은 넣지 마세요. 답은 틀릴 수 있으니 사실·숫자·법령은 꼭 확인하세요.
+          </div>
+
+          <div class="cols">
+            <section class="th-card">
+              <div class="th-card-header center">
+                <h2 class="th-card-title">질문 만들기</h2>
+                <span class="th-xs th-muted">할 일을 고르고 내용을 적습니다</span>
+              </div>
+              <div class="th-card-body stack">
+                <div class="th-field">
+                  <span class="th-label" id="tasksLabel">1. 무엇을 시킬까요?</span>
+                  <div id="tasks" class="th-chips" role="radiogroup" aria-label="할 일"></div>
+                  <div><button type="button" id="addTask" class="th-btn th-btn-ghost th-btn-sm"><i data-icon="plus"></i> 내 질문 틀 만들기</button></div>
+                </div>
+                <div class="th-field">
+                  <label class="th-label" for="text" id="inputLabel">2. 내용</label>
+                  <textarea class="th-input" id="text" rows="9" placeholder="여기에 글을 붙여넣거나 적으세요."></textarea>
+                </div>
+                <div id="extraBox" class="th-field hidden">
+                  <label class="th-label" for="extra" id="extraLabel"></label>
+                  <input class="th-input" id="extra" maxlength="200" />
+                </div>
+                <div class="row3">
+                  <div class="th-field"><label class="th-label" for="tone">말투</label><select class="th-input" id="tone"></select></div>
+                  <div class="th-field"><label class="th-label" for="length">분량</label><select class="th-input" id="length"></select></div>
+                  <div class="th-field"><label class="th-label" for="format">형식</label><select class="th-input" id="format"></select></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="th-card">
+              <div class="th-card-header center">
+                <h2 class="th-card-title">3. Copilot에 보낼 질문</h2>
+                <span class="th-xs th-muted">고쳐 써도 됩니다</span>
+                <span id="count" class="th-xs th-muted th-nums push"></span>
+              </div>
+              <div class="th-card-body stack tight">
+                <textarea class="th-input" id="prompt" rows="14" spellcheck="false" aria-label="Copilot에 보낼 질문" placeholder="왼쪽에 내용을 적으면 Copilot이 잘 알아듣는 질문으로 만들어 줍니다."></textarea>
+                <div class="row">
+                  <span class="th-grow"></span>
+                  <button type="button" id="copyOnly" class="th-btn th-btn-outline"><i data-icon="copy"></i> 복사만</button>
+                  <button type="button" id="go" class="th-btn"><i data-icon="external-link"></i> 복사하고 Copilot 열기</button>
+                </div>
+              </div>
+              <ol class="howto card-foot th-hint">
+                <li>[복사하고 Copilot 열기]를 누릅니다.</li>
+                <li>열린 Copilot의 입력칸을 누르고 <b>Ctrl+V</b>, <b>Enter</b>.</li>
+                <li>받은 답은 복사해서 메모·문서에 붙여 쓰세요.</li>
+              </ol>
+            </section>
+          </div>
+        </div>
+      </main>
     </div>
 
-    <main>
-      <section class="panel">
-        <h2>1. 무엇을 시킬까요?</h2>
-        <div id="tasks" role="radiogroup" aria-label="할 일"></div>
-        <button type="button" id="addTask" class="link">＋ 내 질문 틀 만들기</button>
-
-        <h2 id="inputLabel">2. 내용</h2>
-        <textarea id="text" rows="9" placeholder="여기에 글을 붙여넣거나 적으세요."></textarea>
-        <div id="extraBox" class="hidden">
-          <label for="extra" id="extraLabel"></label>
-          <input id="extra" maxlength="200" />
-        </div>
-        <div class="row3">
-          <label>말투 <select id="tone"></select></label>
-          <label>분량 <select id="length"></select></label>
-          <label>형식 <select id="format"></select></label>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="bar">
-          <h2>3. Copilot에 보낼 질문</h2>
-          <span class="muted small">고쳐 써도 됩니다</span>
-        </div>
-        <textarea id="prompt" rows="14" spellcheck="false" placeholder="왼쪽에 내용을 적으면 Copilot이 잘 알아듣는 질문으로 만들어 줍니다."></textarea>
-        <div class="bar">
-          <span id="count" class="muted small"></span>
-          <span class="grow"></span>
-          <button type="button" id="copyOnly">복사만</button>
-          <button type="button" id="go" class="primary">복사하고 Copilot 열기</button>
-        </div>
-        <ol class="howto muted small">
-          <li>[복사하고 Copilot 열기]를 누릅니다.</li>
-          <li>열린 Copilot의 입력칸을 누르고 <b>Ctrl+V</b>, <b>Enter</b>.</li>
-          <li>받은 답은 복사해서 메모·문서에 붙여 쓰세요.</li>
-        </ol>
-      </section>
-    </main>
-
-    <dialog id="taskDialog">
+    <dialog id="taskDialog" class="th-dialog">
       <form id="taskForm" method="dialog">
-        <h2>내 질문 틀 만들기</h2>
-        <label for="tName">이름</label>
-        <input id="tName" maxlength="30" required placeholder="예: 민원 답변 초안" />
-        <label for="tAsk">Copilot에게 시킬 일</label>
-        <textarea id="tAsk" rows="5" maxlength="500" required placeholder="예: 아래 민원 내용에 대한 답변 초안을 써 주세요. 관련 절차를 단계별로 안내하고, 확실하지 않은 내용은 [확인 필요]로 표시하세요."></textarea>
-        <p class="muted small">내용은 질문을 만들 때 이 문장 아래에 붙습니다. 이 PC에만 저장됩니다.</p>
-        <div class="bar"><span class="grow"></span><button type="button" id="tCancel">취소</button><button type="submit" class="primary">저장</button></div>
+        <h2 class="th-dialog-title">내 질문 틀 만들기</h2>
+        <div class="stack tight">
+          <div class="th-field">
+            <label class="th-label" for="tName">이름</label>
+            <input class="th-input" id="tName" maxlength="30" required placeholder="예: 민원 답변 초안" />
+          </div>
+          <div class="th-field">
+            <label class="th-label" for="tAsk">Copilot에게 시킬 일</label>
+            <textarea class="th-input" id="tAsk" rows="5" maxlength="500" required placeholder="예: 아래 민원 내용에 대한 답변 초안을 써 주세요. 관련 절차를 단계별로 안내하고, 확실하지 않은 내용은 [확인 필요]로 표시하세요."></textarea>
+            <p class="th-hint">내용은 질문을 만들 때 이 문장 아래에 붙습니다. 이 PC에만 저장됩니다.</p>
+          </div>
+        </div>
+        <div class="dlg-btns">
+          <span class="th-grow"></span>
+          <button type="button" id="tCancel" class="th-btn th-btn-outline">취소</button>
+          <button type="submit" class="th-btn">저장</button>
+        </div>
       </form>
     </dialog>
 
-    <dialog id="history">
-      <div class="bar"><h2>최근 질문</h2><span class="muted small">이 PC에만 보관(20개)</span><span class="grow"></span><button type="button" id="historyClear">모두 지우기</button><button type="button" id="historyClose">닫기</button></div>
-      <div id="historyList"></div>
+    <dialog id="history" class="th-dialog wide">
+      <h2 class="th-dialog-title">최근 질문</h2>
+      <div id="historyList" class="hist-list rows"></div>
+      <div class="dlg-btns">
+        <span class="th-xs th-muted">이 PC에만 보관(20개)</span>
+        <span class="th-grow"></span>
+        <button type="button" id="historyClear" class="th-btn th-btn-ghost"><i data-icon="trash-2"></i> 모두 지우기</button>
+        <button type="button" id="historyClose" class="th-btn th-btn-outline">닫기</button>
+      </div>
     </dialog>
 
-    <div id="toast" role="status"></div>
+    <div id="toast" class="th-toast" role="status"></div>
     <script src="prompts.js"></script>
     <script src="app.js"></script>
   </body>

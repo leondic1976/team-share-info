@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" class="th-ui">
   <head>
     <meta charset="utf-8" />
     <title>관리대장</title>
@@ -7,253 +7,260 @@
     <script src="__sdk.js"></script>
   </head>
   <body>
-    <div id="app">
-      <aside id="side">
-        <h1><i data-icon="notebook-tabs"></i> 관리대장</h1>
-        <button id="newBook" class="primary">+ 새 대장</button>
-        <input id="bookSearch" type="search" placeholder="대장 찾기" aria-label="대장 찾기" />
-        <div class="lists">
-          <h2 class="grp" data-list="books" title="접기 · 펴기"><span><i data-icon="lock"></i> 개인용 <small>이 PC · 나만</small></span><i class="cnt" id="cntLocal"></i></h2>
-          <ul id="books" class="books" aria-label="개인용 대장 목록"></ul>
-          <h2 class="grp" data-list="teamBooks" title="접기 · 펴기"><span><i data-icon="users"></i> 팀용 <small>팀 전체 · 그룹</small></span><i class="cnt" id="cntTeam"></i></h2>
-          <ul id="teamBooks" class="books" aria-label="팀용 대장 목록"></ul>
-          <h2 class="grp" data-list="pickBooks" title="접기 · 펴기"><span><i data-icon="user"></i> 지정자용 <small>지정한 사람만</small></span><i class="cnt" id="cntPick"></i></h2>
-          <ul id="pickBooks" class="books" aria-label="지정자용 대장 목록"></ul>
+    <div id="app" class="th-page">
+      <header class="th-page-header">
+        <div>
+          <h1>관리대장</h1>
+          <p>비품·차량·수발신 같은 대장을 표로 관리합니다. 개인용은 이 PC에, 팀용·지정자용은 서버에 고치는 대로 저장됩니다.</p>
         </div>
-        <div class="side-foot">
-          <button id="importFile" class="ghost" title="엑셀(.xlsx) · CSV · 관리대장 파일(.json, .db)"><i data-icon="import"></i> 파일에서 가져오기</button>
-          <button id="trashBtn" class="ghost"><i data-icon="trash-2"></i> 휴지통</button>
-          <button id="sharedBtn" class="ghost"><i data-icon="eye"></i> 공유받은 대장</button>
-          <button id="helpBtn" class="ghost"><i data-icon="circle-help"></i> 사용법 · 함수</button>
+        <div class="th-actions">
+          <button id="importFile" class="th-btn th-btn-outline" title="엑셀(.xlsx) · CSV · 관리대장 파일(.json, .db)"><i data-icon="import"></i> 파일에서 가져오기</button>
+          <button id="newBook" class="th-btn"><i data-icon="plus"></i> 새 대장</button>
         </div>
-      </aside>
+      </header>
 
-      <main id="main">
-        <div id="empty" class="empty">
-          <div class="big"><i data-icon="notebook-tabs"></i></div>
-          <p class="lead">어떤 대장을 만들까요?</p>
-          <div class="kinds">
-            <button type="button" data-new="local"><span class="ic"><i data-icon="lock"></i></span><b>개인용</b><small>이 PC의 로컬 DB에 저장<br />나만 봅니다</small></button>
-            <button type="button" data-new="team"><span class="ic"><i data-icon="users"></i></span><b>팀용</b><small>서버에 저장<br />팀 전체나 그룹이 함께 씁니다</small></button>
-            <button type="button" data-new="members"><span class="ic"><i data-icon="user"></i></span><b>지정자용</b><small>서버에 저장<br />지정한 사람만 함께 씁니다</small></button>
+      <div class="frame">
+        <aside id="side">
+          <input id="bookSearch" class="th-input" type="search" placeholder="대장 찾기" aria-label="대장 찾기" />
+          <div class="lists">
+            <div class="grp" data-list="books" role="button" title="접기 · 펴기"><i data-icon="chevron-down" class="caret"></i><span><i data-icon="lock"></i> 개인용 <small>이 PC · 나만</small></span><span class="cnt th-badge th-badge-muted th-nums" id="cntLocal"></span></div>
+            <ul id="books" class="books" aria-label="개인용 대장 목록"></ul>
+            <div class="grp" data-list="teamBooks" role="button" title="접기 · 펴기"><i data-icon="chevron-down" class="caret"></i><span><i data-icon="users"></i> 팀용 <small>팀 전체 · 그룹</small></span><span class="cnt th-badge th-badge-muted th-nums" id="cntTeam"></span></div>
+            <ul id="teamBooks" class="books" aria-label="팀용 대장 목록"></ul>
+            <div class="grp" data-list="pickBooks" role="button" title="접기 · 펴기"><i data-icon="chevron-down" class="caret"></i><span><i data-icon="user"></i> 지정자용 <small>지정한 사람만</small></span><span class="cnt th-badge th-badge-muted th-nums" id="cntPick"></span></div>
+            <ul id="pickBooks" class="books" aria-label="지정자용 대장 목록"></ul>
           </div>
-          <p class="muted">왼쪽 목록에서 대장을 고르면 이어서 씁니다. 엑셀 파일은 <b>파일에서 가져오기</b>로 엽니다.</p>
-          <p class="muted">모든 대장은 고치는 대로 자동 저장되고, 고치기 전 모습은 <b>변경 이력</b>에 남습니다.</p>
-        </div>
+          <div class="side-foot">
+            <button id="trashBtn" class="th-btn th-btn-ghost th-btn-sm"><i data-icon="trash-2"></i> 휴지통</button>
+            <button id="sharedBtn" class="th-btn th-btn-ghost th-btn-sm"><i data-icon="eye"></i> 공유받은 대장</button>
+            <button id="helpBtn" class="th-btn th-btn-ghost th-btn-sm"><i data-icon="circle-help"></i> 사용법 · 함수</button>
+          </div>
+        </aside>
 
-        <section id="sheet" hidden>
-          <div class="toolbar">
-            <input id="bookName" class="title" aria-label="대장 이름" maxlength="60" />
-            <span id="saveState" class="state" role="status"></span>
-            <span class="spacer"></span>
-            <button id="saveAs" title="엑셀(.xlsx · .xls) · CSV · 데이터베이스(.db)로 저장 (Ctrl+Shift+S)"><i data-icon="save"></i> 다른 이름으로 저장</button>
-            <button id="history" title="고치기 전 모습 보기 · 되돌리기"><i data-icon="history"></i> 변경 이력</button>
-            <div class="menu-wrap">
-              <button id="moreBtn" aria-haspopup="true">더보기 ▾</button>
-              <div id="moreMenu" class="menu" role="menu" hidden>
-                <button data-act="copyAll">표 전체 복사 (엑셀에 붙여넣기)</button>
-                <button data-act="print">인쇄</button>
-                <hr />
-                <button data-act="toTeam">팀용·지정자용으로 올리기 (함께 쓰기)</button>
-                <button data-act="teamScope">볼 수 있는 사람 · 편집 권한</button>
-                <button data-act="share">팀원에게 보기 공유 (사본)</button>
-                <button data-act="dup">대장 복제</button>
-                <button data-act="note">대장 설명 쓰기</button>
-                <hr />
-                <button data-act="delete" class="danger">대장 삭제 (휴지통으로)</button>
+        <main id="main">
+          <div id="empty" class="empty">
+            <div class="th-empty">
+              <i data-icon="notebook-tabs"></i>
+              <p class="th-empty-title">어떤 대장을 만들까요?</p>
+              <p>왼쪽 목록에서 대장을 고르면 이어서 씁니다. 엑셀 파일은 <b>파일에서 가져오기</b>로 엽니다.</p>
+            </div>
+            <div class="kinds">
+              <button type="button" class="th-card kind" data-new="local"><span class="ic"><i data-icon="lock"></i></span><b>개인용</b><small>이 PC의 로컬 DB에 저장<br />나만 봅니다</small></button>
+              <button type="button" class="th-card kind" data-new="team"><span class="ic"><i data-icon="users"></i></span><b>팀용</b><small>서버에 저장<br />팀 전체나 그룹이 함께 씁니다</small></button>
+              <button type="button" class="th-card kind" data-new="members"><span class="ic"><i data-icon="user"></i></span><b>지정자용</b><small>서버에 저장<br />지정한 사람만 함께 씁니다</small></button>
+            </div>
+            <p class="th-hint">모든 대장은 고치는 대로 자동 저장되고, 고치기 전 모습은 <b>변경 이력</b>에 남습니다.</p>
+          </div>
+
+          <section id="sheet" hidden>
+            <div class="th-toolbar toolbar">
+              <input id="bookName" class="title" aria-label="대장 이름" maxlength="60" />
+              <span id="saveState" class="th-badge th-badge-muted state" role="status"></span>
+              <span class="th-grow"></span>
+              <button id="saveAs" class="th-btn th-btn-outline th-btn-sm" title="엑셀(.xlsx · .xls) · CSV · 데이터베이스(.db)로 저장 (Ctrl+Shift+S)"><i data-icon="save"></i> 다른 이름으로 저장</button>
+              <button id="history" class="th-btn th-btn-outline th-btn-sm" title="고치기 전 모습 보기 · 되돌리기"><i data-icon="history"></i> 변경 이력</button>
+              <div class="menu-wrap">
+                <button id="moreBtn" class="th-btn th-btn-outline th-btn-sm" aria-haspopup="true">더보기 <i data-icon="chevron-down"></i></button>
+                <div id="moreMenu" class="th-menu menu" role="menu" hidden>
+                  <button data-act="copyAll">표 전체 복사 (엑셀에 붙여넣기)</button>
+                  <button data-act="print">인쇄</button>
+                  <hr />
+                  <button data-act="toTeam">팀용·지정자용으로 올리기 (함께 쓰기)</button>
+                  <button data-act="teamScope">볼 수 있는 사람 · 편집 권한</button>
+                  <button data-act="share">팀원에게 보기 공유 (사본)</button>
+                  <button data-act="dup">대장 복제</button>
+                  <button data-act="note">대장 설명 쓰기</button>
+                  <hr />
+                  <button data-act="delete" class="th-menu-danger">대장 삭제 (휴지통으로)</button>
+                </div>
               </div>
             </div>
-          </div>
-          <div id="teamBar" class="teambar" hidden></div>
-          <div class="fbar">
-            <button id="undo" class="icon" title="실행 취소 (Ctrl+Z)" aria-label="실행 취소"><i data-icon="undo-2"></i></button>
-            <button id="redo" class="icon" title="다시 실행 (Ctrl+Y)" aria-label="다시 실행"><i data-icon="redo-2"></i></button>
-            <button id="addRow" title="맨 아래에 행 추가">+ 행</button>
-            <button id="addCol" title="맨 오른쪽에 열 추가">+ 열</button>
-            <span class="sep"></span>
-            <span id="addr" class="addr">A1</span>
-            <span class="fx">fx</span>
-            <input id="fx" aria-label="수식 입력줄" placeholder="값 또는 =수식 (Enter로 입력)" autocomplete="off" />
-            <input id="search" type="search" placeholder="찾기 (Ctrl+F)" aria-label="표에서 찾기" />
-            <button id="clearFilter" class="ghost" hidden>필터 해제</button>
-          </div>
-          <textarea id="note" class="note" rows="2" maxlength="2000" placeholder="대장 설명 (작성 기준, 보관 기간, 담당 등)" aria-label="대장 설명" hidden></textarea>
-          <h2 id="printTitle" class="print-title"></h2>
-          <div id="gridWrap" tabindex="0" aria-label="대장 표">
-            <table id="grid"></table>
-            <input id="editor" class="editor" autocomplete="off" list="editorList" hidden />
-            <datalist id="editorList"></datalist>
-          </div>
-          <div class="status"><span id="stat"></span><span id="selInfo"></span></div>
-        </section>
+            <div id="teamBar" class="teambar" hidden></div>
+            <div class="th-toolbar fbar">
+              <button id="undo" class="th-btn th-btn-ghost th-btn-sm th-btn-icon" title="실행 취소 (Ctrl+Z)" aria-label="실행 취소"><i data-icon="undo-2"></i></button>
+              <button id="redo" class="th-btn th-btn-ghost th-btn-sm th-btn-icon" title="다시 실행 (Ctrl+Y)" aria-label="다시 실행"><i data-icon="redo-2"></i></button>
+              <button id="addRow" class="th-btn th-btn-outline th-btn-sm" title="맨 아래에 행 추가"><i data-icon="plus"></i> 행</button>
+              <button id="addCol" class="th-btn th-btn-outline th-btn-sm" title="맨 오른쪽에 열 추가"><i data-icon="plus"></i> 열</button>
+              <span class="sep"></span>
+              <span id="addr" class="addr th-nums">A1</span>
+              <span class="fx">fx</span>
+              <input id="fx" class="th-input th-nums" aria-label="수식 입력줄" placeholder="값 또는 =수식 (Enter로 입력)" autocomplete="off" />
+              <input id="search" class="th-input" type="search" placeholder="찾기 (Ctrl+F)" aria-label="표에서 찾기" />
+              <button id="clearFilter" class="th-btn th-btn-ghost th-btn-sm" hidden>필터 해제</button>
+            </div>
+            <textarea id="note" class="note" rows="2" maxlength="2000" placeholder="대장 설명 (작성 기준, 보관 기간, 담당 등)" aria-label="대장 설명" hidden></textarea>
+            <h2 id="printTitle" class="print-title"></h2>
+            <div id="gridWrap" tabindex="0" aria-label="대장 표">
+              <table id="grid"></table>
+              <input id="editor" class="editor" autocomplete="off" list="editorList" hidden />
+              <datalist id="editorList"></datalist>
+            </div>
+            <div class="status th-nums"><span id="stat"></span><span id="selInfo"></span></div>
+          </section>
 
-        <section id="viewer" hidden>
-          <div class="toolbar">
-            <h2 id="viewTitle"></h2>
-            <span id="viewMeta" class="muted small"></span>
-            <span class="spacer"></span>
-            <button id="viewCopy">내 대장으로 복사</button>
-            <button id="viewClose" class="ghost">닫기</button>
-          </div>
-          <div class="gridWrap readonly"><table id="viewGrid"></table></div>
-        </section>
-      </main>
+          <section id="viewer" hidden>
+            <div class="th-toolbar toolbar">
+              <h2 id="viewTitle" class="th-card-title"></h2>
+              <span id="viewMeta" class="th-muted th-xs"></span>
+              <span class="th-grow"></span>
+              <button id="viewCopy" class="th-btn th-btn-sm"><i data-icon="copy"></i> 내 대장으로 복사</button>
+              <button id="viewClose" class="th-btn th-btn-outline th-btn-sm">닫기</button>
+            </div>
+            <div class="gridWrap readonly"><table id="viewGrid"></table></div>
+          </section>
+        </main>
+      </div>
     </div>
 
-    <div id="ctx" class="menu ctx" role="menu" hidden></div>
-    <div id="filterPop" class="menu pop" hidden></div>
-    <div id="toast" class="toast" hidden></div>
+    <div id="ctx" class="th-menu menu ctx" role="menu" hidden></div>
+    <div id="filterPop" class="th-menu menu pop" hidden></div>
+    <div id="toast" class="th-toast" role="status" hidden></div>
 
-    <dialog id="newDialog">
+    <dialog id="newDialog" class="th-dialog">
       <form method="dialog">
-        <h3>새 대장</h3>
-        <label>이름 <input id="newName" maxlength="60" placeholder="예: 2026년 비품 관리 대장" /></label>
+        <h3 class="th-dialog-title">새 대장</h3>
+        <label class="th-field"><span class="th-label">이름</span><input class="th-input" id="newName" maxlength="60" placeholder="예: 2026년 비품 관리 대장" /></label>
         <div class="where" role="radiogroup" aria-label="저장할 곳">
-          <label><input type="radio" name="newWhere" value="local" checked /> <i data-icon="lock"></i> 개인용 <small class="muted">이 PC에만 저장, 나만 봄</small></label>
-          <label><input type="radio" name="newWhere" value="team" /> <i data-icon="users"></i> 팀용 <small class="muted">팀 전체나 그룹이 함께 씀</small></label>
-          <label><input type="radio" name="newWhere" value="members" /> <i data-icon="user"></i> 지정자용 <small class="muted">지정한 사람만 함께 씀</small></label>
+          <label class="pick"><input type="radio" name="newWhere" value="local" checked /><span><b><i data-icon="lock"></i> 개인용</b><small>이 PC에만 저장, 나만 봄</small></span></label>
+          <label class="pick"><input type="radio" name="newWhere" value="team" /><span><b><i data-icon="users"></i> 팀용</b><small>팀 전체나 그룹이 함께 씀</small></span></label>
+          <label class="pick"><input type="radio" name="newWhere" value="members" /><span><b><i data-icon="user"></i> 지정자용</b><small>지정한 사람만 함께 씀</small></span></label>
         </div>
-        <p class="muted small">아래에서 서식을 고르면 바로 만들어집니다.</p>
+        <p class="th-hint">아래에서 서식을 고르면 바로 만들어집니다.</p>
         <div id="templates" class="templates"></div>
-        <div class="btns"><button value="cancel" class="ghost">취소</button></div>
+        <div class="btns"><span class="th-grow"></span><button value="cancel" class="th-btn th-btn-outline">취소</button></div>
       </form>
     </dialog>
 
-    <dialog id="colDialog">
+    <dialog id="colDialog" class="th-dialog">
       <form method="dialog" id="colForm">
-        <h3 id="colTitle">열 설정</h3>
-        <label>열 이름 <input id="colName" maxlength="40" required /></label>
-        <label
-          >종류
-          <select id="colType"></select>
-        </label>
-        <label id="colOptionsRow">목록 항목 <small class="muted">(한 줄에 하나)</small><textarea id="colOptions" rows="4"></textarea></label>
-        <label id="colCalcRow"
-          >계산식 <small class="muted">(이 열의 모든 행에 적용)</small>
-          <input id="colCalc" placeholder="=[수량]*[단가]" autocomplete="off" />
-          <small class="muted">열 이름은 [ ]로 씁니다. 예: =[수량]*[단가] · =IF([반납일]="","대여중","반납") · =ROUND([금액]*0.1,0) · =CUMSUM([집행액]) (누적)</small>
-          <span id="colCalcPreview" class="small"></span>
+        <h3 class="th-dialog-title" id="colTitle">열 설정</h3>
+        <label class="th-field"><span class="th-label">열 이름</span><input class="th-input" id="colName" maxlength="40" required /></label>
+        <label class="th-field"><span class="th-label">종류</span><select class="th-input" id="colType"></select></label>
+        <label class="th-field" id="colOptionsRow"><span class="th-label">목록 항목 <small class="th-muted">(한 줄에 하나)</small></span><textarea class="th-input" id="colOptions" rows="4"></textarea></label>
+        <label class="th-field" id="colCalcRow">
+          <span class="th-label">계산식 <small class="th-muted">(이 열의 모든 행에 적용)</small></span>
+          <input class="th-input th-nums" id="colCalc" placeholder="=[수량]*[단가]" autocomplete="off" />
+          <span class="th-hint">열 이름은 [ ]로 씁니다. 예: =[수량]*[단가] · =IF([반납일]="","대여중","반납") · =ROUND([금액]*0.1,0) · =CUMSUM([집행액]) (누적)</span>
+          <span id="colCalcPreview" class="th-xs"></span>
         </label>
         <div class="two">
-          <label
-            >표시 형식
-            <select id="colFormat"></select>
-          </label>
-          <label
-            >합계 줄
-            <select id="colTotal"></select>
-          </label>
+          <label class="th-field"><span class="th-label">표시 형식</span><select class="th-input" id="colFormat"></select></label>
+          <label class="th-field"><span class="th-label">합계 줄</span><select class="th-input" id="colTotal"></select></label>
         </div>
-        <label>너비 <input id="colWidth" type="number" min="40" max="600" step="10" /></label>
+        <label class="th-field"><span class="th-label">너비</span><input class="th-input th-nums" id="colWidth" type="number" min="40" max="600" step="10" /></label>
         <div class="btns">
-          <button type="button" id="colDelete" class="danger ghost">열 삭제</button>
-          <span class="spacer"></span>
-          <button value="cancel" class="ghost" formnovalidate>취소</button>
-          <button value="ok" class="primary" id="colOk">저장</button>
+          <button type="button" id="colDelete" class="th-btn th-btn-ghost danger">열 삭제</button>
+          <span class="th-grow"></span>
+          <button value="cancel" class="th-btn th-btn-outline" formnovalidate>취소</button>
+          <button value="ok" class="th-btn" id="colOk">저장</button>
         </div>
       </form>
     </dialog>
 
-    <dialog id="shareDialog">
+    <dialog id="shareDialog" class="th-dialog">
       <form method="dialog">
-        <h3>팀원에게 보기 공유</h3>
-        <p class="muted small">지금 표의 내용(보이는 값)을 사본으로 공유합니다. 받는 사람은 보기만 하고, 필요하면 자기 대장으로 복사할 수 있습니다. 표를 고친 뒤에는 <b>공유 갱신</b>을 누르세요. 공유 내용은 서버에 저장되며 64KB까지 됩니다.</p>
-        <p class="warn small">개인정보(주민등록번호·연락처 등)나 비공개 정보가 들어 있는 대장은 공유하지 마세요.</p>
-        <label><input type="radio" name="shareTo" value="team" checked /> 팀 전체</label>
-        <label><input type="radio" name="shareTo" value="members" /> 고른 팀원만</label>
+        <h3 class="th-dialog-title">팀원에게 보기 공유</h3>
+        <p class="th-hint">지금 표의 내용(보이는 값)을 사본으로 공유합니다. 받는 사람은 보기만 하고, 필요하면 자기 대장으로 복사할 수 있습니다. 표를 고친 뒤에는 <b>공유 갱신</b>을 누르세요. 공유 내용은 서버에 저장되며 64KB까지 됩니다.</p>
+        <p class="th-notice">개인정보(주민등록번호·연락처 등)나 비공개 정보가 들어 있는 대장은 공유하지 마세요.</p>
+        <div class="checks">
+          <label class="th-check"><input type="radio" name="shareTo" value="team" checked /> 팀 전체</label>
+          <label class="th-check"><input type="radio" name="shareTo" value="members" /> 고른 팀원만</label>
+        </div>
         <div id="shareMembers" class="members" hidden></div>
-        <div id="shareState" class="small"></div>
+        <div id="shareState" class="th-xs msg"></div>
         <div class="btns">
-          <button type="button" id="shareStop" class="danger ghost" hidden>공유 그만하기</button>
-          <span class="spacer"></span>
-          <button value="cancel" class="ghost">닫기</button>
-          <button type="button" id="shareGo" class="primary">공유하기</button>
+          <button type="button" id="shareStop" class="th-btn th-btn-ghost danger" hidden>공유 그만하기</button>
+          <span class="th-grow"></span>
+          <button value="cancel" class="th-btn th-btn-outline">닫기</button>
+          <button type="button" id="shareGo" class="th-btn">공유하기</button>
         </div>
       </form>
     </dialog>
 
-    <dialog id="teamDialog">
+    <dialog id="teamDialog" class="th-dialog">
       <form method="dialog">
-        <h3 id="teamTitle">팀용·지정자용으로 올리기</h3>
-        <p class="muted small">팀용·지정자용 대장은 서버에 자동 저장되고 서버 백업에 포함됩니다. 아래에서 정한 사람들이 같은 대장을 함께 고치며, 고친 내용은 저장되는 대로 다른 사람 화면에 보입니다. 두 사람이 같은 칸을 동시에 고치면 먼저 저장된 값이 남고, 나중 사람의 입력은 그 사람의 개인용 대장에 따로 남습니다.</p>
-        <p class="warn small">개인정보(주민등록번호·연락처 등)가 들어 있으면 볼 사람을 꼭 필요한 범위로 정하세요.</p>
-        <label><input type="radio" name="teamTo" value="team" checked /> <i data-icon="users"></i> 팀용 · 팀 전체</label>
-        <label><input type="radio" name="teamTo" value="group" /> <i data-icon="users"></i> 팀용 · 그룹</label>
-        <div id="teamGroups" class="members" hidden></div>
-        <label><input type="radio" name="teamTo" value="members" /> <i data-icon="user"></i> 지정자용 · 지정한 사람만 (만든 나는 항상 포함)</label>
-        <div id="teamMembers" class="members" hidden></div>
-        <label
-          >편집 권한
-          <select id="teamEdit">
+        <h3 class="th-dialog-title" id="teamTitle">팀용·지정자용으로 올리기</h3>
+        <p class="th-hint">팀용·지정자용 대장은 서버에 자동 저장되고 서버 백업에 포함됩니다. 아래에서 정한 사람들이 같은 대장을 함께 고치며, 고친 내용은 저장되는 대로 다른 사람 화면에 보입니다. 두 사람이 같은 칸을 동시에 고치면 먼저 저장된 값이 남고, 나중 사람의 입력은 그 사람의 개인용 대장에 따로 남습니다.</p>
+        <p class="th-notice">개인정보(주민등록번호·연락처 등)가 들어 있으면 볼 사람을 꼭 필요한 범위로 정하세요.</p>
+        <div class="checks">
+          <label class="th-check"><input type="radio" name="teamTo" value="team" checked /> <i data-icon="users"></i> 팀용 · 팀 전체</label>
+          <label class="th-check"><input type="radio" name="teamTo" value="group" /> <i data-icon="users"></i> 팀용 · 그룹</label>
+          <div id="teamGroups" class="members" hidden></div>
+          <label class="th-check"><input type="radio" name="teamTo" value="members" /> <i data-icon="user"></i> 지정자용 · 지정한 사람만 (만든 나는 항상 포함)</label>
+          <div id="teamMembers" class="members" hidden></div>
+        </div>
+        <label class="th-field"
+          ><span class="th-label">편집 권한</span>
+          <select class="th-input" id="teamEdit">
             <option value="all">볼 수 있는 사람 모두 고칠 수 있음</option>
             <option value="owner">만든 사람과 관리자만 고침 (나머지는 보기 전용)</option>
           </select>
         </label>
-        <label id="teamKeepRow"><input type="checkbox" id="teamKeep" /> 개인용 대장(이 PC)에도 사본을 남기기</label>
-        <div id="teamStateMsg" class="small"></div>
+        <label class="th-check" id="teamKeepRow"><input type="checkbox" id="teamKeep" /> 개인용 대장(이 PC)에도 사본을 남기기</label>
+        <div id="teamStateMsg" class="th-xs msg"></div>
         <div class="btns">
-          <span class="spacer"></span>
-          <button value="cancel" class="ghost">취소</button>
-          <button type="button" id="teamGo" class="primary">올리기</button>
+          <span class="th-grow"></span>
+          <button value="cancel" class="th-btn th-btn-outline">취소</button>
+          <button type="button" id="teamGo" class="th-btn">올리기</button>
         </div>
       </form>
     </dialog>
 
-    <dialog id="saveAsDialog">
+    <dialog id="saveAsDialog" class="th-dialog">
       <form method="dialog">
-        <h3>다른 이름으로 저장</h3>
-        <p class="muted small">대장은 고치는 대로 자동 저장됩니다. 여기서는 엑셀 등 다른 프로그램에서 쓸 파일을 따로 만듭니다.</p>
+        <h3 class="th-dialog-title">다른 이름으로 저장</h3>
+        <p class="th-hint">대장은 고치는 대로 자동 저장됩니다. 여기서는 엑셀 등 다른 프로그램에서 쓸 파일을 따로 만듭니다.</p>
         <div class="formats" role="radiogroup" aria-label="파일 형식">
-          <label><input type="radio" name="saveAsFormat" value="xlsx" checked /> <b>Excel 통합 문서 (.xlsx)</b><small class="muted">엑셀 2007 이상 · 숫자·날짜·표시 형식 유지 · 1,048,575행까지</small></label>
-          <label><input type="radio" name="saveAsFormat" value="xls" /> <b>Excel 97-2003 통합 문서 (.xls)</b><small class="muted">옛 엑셀·한셀용 · 65,535행까지</small></label>
-          <label><input type="radio" name="saveAsFormat" value="csv" /> <b>CSV (.csv)</b><small class="muted">쉼표로 나눈 글자 파일 · 어느 프로그램에서나 열림</small></label>
-          <label><input type="radio" name="saveAsFormat" value="db" /> <b>SQLite 데이터베이스 (.db)</b><small class="muted">표 "data"로 저장 · DB 도구로 조회 · 관리대장에서 다시 열면 수식까지 그대로</small></label>
-          <label><input type="radio" name="saveAsFormat" value="json" /> <b>관리대장 파일 (.json)</b><small class="muted">백업·다른 PC로 옮기기 · 수식과 열 설정까지 그대로</small></label>
+          <label class="pick"><input type="radio" name="saveAsFormat" value="xlsx" checked /><span><b>Excel 통합 문서 (.xlsx)</b><small>엑셀 2007 이상 · 숫자·날짜·표시 형식 유지 · 1,048,575행까지</small></span></label>
+          <label class="pick"><input type="radio" name="saveAsFormat" value="xls" /><span><b>Excel 97-2003 통합 문서 (.xls)</b><small>옛 엑셀·한셀용 · 65,535행까지</small></span></label>
+          <label class="pick"><input type="radio" name="saveAsFormat" value="csv" /><span><b>CSV (.csv)</b><small>쉼표로 나눈 글자 파일 · 어느 프로그램에서나 열림</small></span></label>
+          <label class="pick"><input type="radio" name="saveAsFormat" value="db" /><span><b>SQLite 데이터베이스 (.db)</b><small>표 "data"로 저장 · DB 도구로 조회 · 관리대장에서 다시 열면 수식까지 그대로</small></span></label>
+          <label class="pick"><input type="radio" name="saveAsFormat" value="json" /><span><b>관리대장 파일 (.json)</b><small>백업·다른 PC로 옮기기 · 수식과 열 설정까지 그대로</small></span></label>
         </div>
-        <label id="saveAsScope"><input type="checkbox" id="saveAsVisible" /> 찾기·필터로 보이는 행만 저장 <span id="saveAsCount" class="muted small"></span></label>
-        <p class="muted small">수식은 계산된 값으로 저장됩니다(관리대장 파일과 .db 안의 대장 정보는 수식 그대로).</p>
-        <div id="saveAsMsg" class="small warn"></div>
+        <label class="th-check" id="saveAsScope"><input type="checkbox" id="saveAsVisible" /> 찾기·필터로 보이는 행만 저장 <span id="saveAsCount" class="th-muted th-xs"></span></label>
+        <p class="th-hint">수식은 계산된 값으로 저장됩니다(관리대장 파일과 .db 안의 대장 정보는 수식 그대로).</p>
+        <div id="saveAsMsg" class="th-xs msg warn"></div>
         <div class="btns">
-          <span class="spacer"></span>
-          <button value="cancel" class="ghost">취소</button>
-          <button type="button" id="saveAsGo" class="primary">저장할 곳 고르기…</button>
+          <span class="th-grow"></span>
+          <button value="cancel" class="th-btn th-btn-outline">취소</button>
+          <button type="button" id="saveAsGo" class="th-btn">저장할 곳 고르기…</button>
         </div>
       </form>
     </dialog>
 
-    <dialog id="historyDialog" class="wide">
+    <dialog id="historyDialog" class="th-dialog wide">
       <form method="dialog">
-        <h3>변경 이력</h3>
-        <p class="muted small">대장을 고치기 시작할 때(10분 넘게 쉬었다가 다시 고칠 때), 여러 행이나 열을 한꺼번에 지울 때, 되돌릴 때 그 전 모습이 자동으로 보관됩니다. 최근 30개까지 남습니다.</p>
+        <h3 class="th-dialog-title">변경 이력</h3>
+        <p class="th-hint">대장을 고치기 시작할 때(10분 넘게 쉬었다가 다시 고칠 때), 여러 행이나 열을 한꺼번에 지울 때, 되돌릴 때 그 전 모습이 자동으로 보관됩니다. 최근 30개까지 남습니다.</p>
         <ul id="historyList" class="list"></ul>
         <div class="btns">
-          <button type="button" id="historyKeep">지금 모습 보관</button>
-          <span class="spacer"></span>
-          <button value="cancel" class="primary">닫기</button>
+          <button type="button" id="historyKeep" class="th-btn th-btn-outline"><i data-icon="bookmark"></i> 지금 모습 보관</button>
+          <span class="th-grow"></span>
+          <button value="cancel" class="th-btn th-btn-outline">닫기</button>
         </div>
       </form>
     </dialog>
 
-    <dialog id="trashDialog" class="wide">
+    <dialog id="trashDialog" class="th-dialog wide">
       <form method="dialog">
-        <h3>휴지통</h3>
-        <p class="muted small">삭제한 대장은 30일 동안 여기에 있습니다. 팀용·지정자용 대장은 만든 사람과 관리자가 되살릴 수 있습니다.</p>
+        <h3 class="th-dialog-title">휴지통</h3>
+        <p class="th-hint">삭제한 대장은 30일 동안 여기에 있습니다. 팀용·지정자용 대장은 만든 사람과 관리자가 되살릴 수 있습니다.</p>
         <ul id="trashList" class="list"></ul>
-        <div class="btns"><button value="cancel" class="primary">닫기</button></div>
+        <div class="btns"><span class="th-grow"></span><button value="cancel" class="th-btn th-btn-outline">닫기</button></div>
       </form>
     </dialog>
 
-    <dialog id="sharedDialog">
+    <dialog id="sharedDialog" class="th-dialog">
       <form method="dialog">
-        <h3>공유받은 대장</h3>
+        <h3 class="th-dialog-title">공유받은 대장</h3>
         <ul id="sharedList" class="list"></ul>
-        <div class="btns"><button value="cancel" class="ghost">닫기</button></div>
+        <div class="btns"><span class="th-grow"></span><button value="cancel" class="th-btn th-btn-outline">닫기</button></div>
       </form>
     </dialog>
 
-    <dialog id="helpDialog" class="wide">
+    <dialog id="helpDialog" class="th-dialog wide">
       <form method="dialog">
-        <h3>사용법 · 함수</h3>
+        <h3 class="th-dialog-title">사용법 · 함수</h3>
         <div class="help">
           <h4>입력</h4>
           <ul>
@@ -261,7 +268,7 @@
             <li><kbd>Shift</kbd>+방향키나 끌어서 여러 칸을 고르고 <kbd>Delete</kbd>로 지웁니다. 상태 줄에 고른 칸의 합계·평균·개수가 나옵니다.</li>
             <li>엑셀에서 복사한 표를 <kbd>Ctrl</kbd>+<kbd>V</kbd>로 붙여 넣으면 행이 모자랄 때 자동으로 늘어납니다. <kbd>Ctrl</kbd>+<kbd>C</kbd>로 복사해 엑셀에 붙여 넣을 수 있습니다.</li>
             <li><kbd>Ctrl</kbd>+<kbd>;</kbd> 오늘 날짜, <kbd>Space</kbd> 체크 칸 켜고 끄기, <kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> 실행 취소/다시 실행, <kbd>Ctrl</kbd>+<kbd>F</kbd> 찾기.</li>
-            <li>행 번호나 칸을 오른쪽 클릭하면 행 추가·복제·삭제, 열 머리글의 ▾로 정렬·필터·열 설정을 합니다. 머리글 오른쪽 끝을 끌어 너비를 바꿉니다.</li>
+            <li>행 번호나 칸을 오른쪽 클릭하면 행 추가·복제·삭제, 열 머리글 오른쪽의 화살표 단추로 정렬·필터·열 설정을 합니다. 머리글 오른쪽 끝을 끌어 너비를 바꿉니다.</li>
             <li>날짜는 2026-03-05, 2026.3.5, 2026년 3월 5일 모두 됩니다. 숫자의 쉼표(1,200)는 저절로 빠집니다.</li>
           </ul>
           <h4>계산</h4>
@@ -289,7 +296,7 @@
             <li>대장 하나에 100,000행까지 담습니다. 행이 수만 개가 되면 SUM([열])·CUMSUM처럼 열 전체를 읽는 계산 열은 입력할 때마다 다시 계산되어 느려질 수 있습니다(같은 행만 쓰는 =[수량]*[단가] 같은 식은 빠릅니다).</li>
           </ul>
         </div>
-        <div class="btns"><button value="cancel" class="primary">닫기</button></div>
+        <div class="btns"><span class="th-grow"></span><button value="cancel" class="th-btn th-btn-outline">닫기</button></div>
       </form>
     </dialog>
 

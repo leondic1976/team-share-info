@@ -1,4 +1,5 @@
-/* Cost-splitting UI. Everything stays on this PC (TeamHub storage); nothing is sent to the server. */
+/* Cost-splitting UI. Everything stays on this PC (TeamHub storage); nothing is sent to the server.
+ * The look comes from TeamHub (__ui.css, the th-* classes); style.css holds the layout only. */
 ;(function () {
   'use strict'
   // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
@@ -53,24 +54,26 @@
     const r = D.quick(quickInput())
     const box = $('qResult')
     if (!r.total) {
-      box.innerHTML = '<p class="muted">총 금액과 인원을 넣으면 1인당 금액이 나옵니다.</p><p class="muted small">금액은 187,500 · 18.7만 · 3천처럼 적어도 됩니다.</p>'
+      box.innerHTML = '<p class="line th-muted">총 금액과 인원을 넣으면 1인당 금액이 나옵니다.</p>'
       return
     }
     const rest = r.people - r.extraPayers
     box.innerHTML = `
-      <div class="muted">${r.extraPayers && rest ? `나머지 ${rest}명은 1인당` : '1인당'}</div>
-      <div class="big">${D.won(r.extraPayers && !rest ? r.eachExtra : r.each)}</div>
-      ${r.extraPayers && rest ? `<p>더 내는 ${r.extraPayers}명은 <b>${D.won(r.eachExtra)}</b></p>` : ''}
-      <table>
+      <div class="lead">
+        <span class="th-xs th-muted">${r.extraPayers && rest ? `나머지 ${rest}명은 1인당` : '1인당'}</span>
+        <span class="big">${D.won(r.extraPayers && !rest ? r.eachExtra : r.each)}</span>
+        ${r.extraPayers && rest ? `<span>더 내는 ${r.extraPayers}명은 <b class="th-nums">${D.won(r.eachExtra)}</b></span>` : ''}
+      </div>
+      <table class="th-table kv"><tbody>
         <tr><td>총 금액</td><td>${D.won(r.total)}</td></tr>
         ${r.deducted ? `<tr><td>먼저 뺀 금액</td><td>-${D.won(r.deducted)}</td></tr><tr><td>나눌 금액</td><td>${D.won(r.toSplit)}</td></tr>` : ''}
         <tr><td>인원</td><td>${r.people}명</td></tr>
         <tr><td>단위를 맞추기 전</td><td>${D.won(Math.round(r.exact * 100) / 100)}</td></tr>
         <tr><td>모이는 돈</td><td>${D.won(r.collected)}</td></tr>
         <tr><td>${r.diff >= 0 ? '남는 돈' : '모자란 돈'}</td><td class="${r.diff > 0 ? 'plus' : r.diff < 0 ? 'minus' : ''}">${D.won(Math.abs(r.diff))}</td></tr>
-      </table>
-      ${r.diff < 0 ? '<p class="warn">모자란 돈은 계산한 사람이 부담하게 됩니다. 단위 맞춤을 올림으로 바꾸면 모자라지 않습니다.</p>' : ''}
-      <div class="btns"><button type="button" class="primary" id="qCopy">결과 복사</button><button type="button" id="qToItems">항목별 정산으로</button></div>`
+      </tbody></table>
+      ${r.diff < 0 ? '<p class="th-notice warn">모자란 돈은 계산한 사람이 부담하게 됩니다. 단위 맞춤을 올림으로 바꾸면 모자라지 않습니다.</p>' : ''}
+      <div class="card-foot btns"><button type="button" class="th-btn" id="qCopy">${icon('copy')} 결과 복사</button><button type="button" class="th-btn th-btn-outline" id="qToItems">항목별 정산으로</button></div>`
     $('qCopy').addEventListener('click', () => void copy(D.quickText(r, { title: $('qTitle').value.trim(), account: $('account').value.trim() }), $('qTitle').value.trim() || '간단 N빵'))
     $('qToItems').addEventListener('click', () => {
       // carry the bill over as one item so it can be refined (who paid, who joined)
@@ -96,8 +99,8 @@
   }
   function renderPeople() {
     $('people').innerHTML = people.length
-      ? people.map((p) => `<span class="person" data-id="${p.id}">${esc(p.name)}<input type="number" min="0" max="10" step="0.5" value="${p.weight}" aria-label="${esc(p.name)} 비율" title="분담 비율" /><button type="button" aria-label="${esc(p.name)} 빼기">${icon('x') || '×'}</button></span>`).join('')
-      : '<span class="muted">[팀원 불러오기]를 누르거나 아래에 이름을 적어 추가하세요.</span>'
+      ? people.map((p) => `<span class="person" data-id="${p.id}"><span class="name">${esc(p.name)}</span><input class="th-input th-nums" type="number" min="0" max="10" step="0.5" value="${p.weight}" aria-label="${esc(p.name)} 비율" title="분담 비율" /><button type="button" class="x" aria-label="${esc(p.name)} 빼기" title="빼기">${icon('x') || '빼기'}</button></span>`).join('')
+      : '<span class="th-muted">[팀원 불러오기]를 누르거나 아래에 이름을 적어 추가하세요.</span>'
   }
   function renderExpenses() {
     $('expenses').innerHTML = expenses.length
@@ -105,19 +108,20 @@
           .map(
             (e) => `<div class="expense" data-id="${e.id}">
           <div class="expense-top">
-            <input data-f="title" maxlength="40" placeholder="항목 (예: 1차 고깃집)" aria-label="항목" value="${esc(e.title)}" />
-            <input data-f="amount" inputmode="numeric" placeholder="금액" aria-label="금액" value="${esc(e.amount)}" />
-            <select data-f="payer" aria-label="낸 사람"><option value="">낸 사람</option>${people.map((p) => `<option value="${p.id}"${e.payer === p.id ? ' selected' : ''}>${esc(p.name)} 결제</option>`).join('')}</select>
-            <button type="button" class="del" aria-label="항목 지우기">${icon('x') || '×'}</button>
+            <input class="th-input" data-f="title" maxlength="40" placeholder="항목 (예: 1차 고깃집)" aria-label="항목" value="${esc(e.title)}" />
+            <input class="th-input th-nums" data-f="amount" inputmode="numeric" placeholder="금액" aria-label="금액" value="${esc(e.amount)}" />
+            <select class="th-input" data-f="payer" aria-label="낸 사람"><option value="">낸 사람</option>${people.map((p) => `<option value="${p.id}"${e.payer === p.id ? ' selected' : ''}>${esc(p.name)} 결제</option>`).join('')}</select>
+            <button type="button" class="th-btn th-btn-ghost th-btn-sm th-btn-icon del" aria-label="항목 지우기" title="항목 지우기">${icon('trash-2') || '지우기'}</button>
           </div>
-          <div class="sharers">
-            ${people.map((p) => `<label><input type="checkbox" data-s="${p.id}"${e.sharers.includes(p.id) ? ' checked' : ''} />${esc(p.name)}</label>`).join('')}
-            ${people.length ? '<button type="button" data-all="1">모두</button><button type="button" data-all="0">모두 해제</button>' : ''}
+          <div class="th-chips sharers">
+            ${people.length ? '<span class="th-xs th-muted">함께한 사람</span>' : ''}
+            ${people.map((p) => `<label class="th-chip"><input type="checkbox" data-s="${p.id}"${e.sharers.includes(p.id) ? ' checked' : ''} />${esc(p.name)}</label>`).join('')}
+            ${people.length ? '<button type="button" class="th-btn th-btn-ghost th-btn-sm" data-all="1">모두</button><button type="button" class="th-btn th-btn-ghost th-btn-sm" data-all="0">모두 해제</button>' : ''}
           </div>
         </div>`
           )
           .join('')
-      : '<p class="muted">[항목 추가]를 눌러 쓴 돈을 적으세요. 1차·2차·택시비처럼 여러 개를 넣을 수 있습니다.</p>'
+      : '<p class="line th-muted">[항목 추가]를 눌러 쓴 돈을 적으세요. 1차·2차·택시비처럼 여러 개를 넣을 수 있습니다.</p>'
   }
   function computeItems() {
     return D.settle(
@@ -129,22 +133,24 @@
   function renderItemsResult() {
     const box = $('iResult')
     if (!people.length || !expenses.some((e) => D.parseMoney(e.amount))) {
-      box.innerHTML = '<p class="muted">사람과 쓴 돈을 넣으면 각자 부담할 금액과 보낼 돈이 나옵니다.</p>'
+      box.innerHTML = '<p class="line th-muted">사람과 쓴 돈을 넣으면 각자 부담할 금액과 보낼 돈이 나옵니다.</p>'
       return
     }
     const r = computeItems()
-    const sign = (n) => (n > 0 ? `<span class="plus">받을 돈 ${D.won(n)}</span>` : n < 0 ? `<span class="minus">보낼 돈 ${D.won(-n)}</span>` : '정산 끝')
+    const sign = (n) => (n > 0 ? `<span class="plus">받을 돈 ${D.won(n)}</span>` : n < 0 ? `<span class="minus">보낼 돈 ${D.won(-n)}</span>` : '<span class="th-muted">정산 끝</span>')
+    // an arrow from the sender to the receiver (the icon set has it pointing up; style.css turns it)
+    const to = icon('arrow-up', { cls: 'to', label: '에게' }) || '에게'
     box.innerHTML = `
-      ${r.problems.map((p) => `<p class="warn">${esc(p)}</p>`).join('')}
-      <table>
-        <tr><th>이름</th><th>부담할 금액</th><th>이미 낸 돈</th><th>정산</th></tr>
-        ${r.rows.map((x) => `<tr><td>${esc(x.name)}</td><td>${D.won(x.share)}</td><td>${x.paid ? D.won(x.paid) : '-'}</td><td>${sign(x.balance)}</td></tr>`).join('')}
-        <tr><th>합계</th><th>${D.won(r.total)}</th><th>${D.won(r.total)}</th><th></th></tr>
-      </table>
-      <h2 style="margin-top:14px">보낼 돈 ${r.transfers.length ? `<span class="muted small">송금 ${r.transfers.length}번이면 끝납니다</span>` : ''}</h2>
-      ${r.transfers.length ? r.transfers.map((t) => `<div class="transfer"><b>${esc(t.fromName)}</b> → <b>${esc(t.toName)}</b><b>${D.won(t.amount)}</b></div>`).join('') : '<p class="muted">주고받을 돈이 없습니다.</p>'}
-      ${r.roundingDiff ? `<p class="muted small">송금 단위를 맞추느라 받는 쪽이 모두 합쳐 ${D.won(Math.abs(r.roundingDiff))} ${r.roundingDiff > 0 ? '더 받습니다' : '덜 받습니다'}.</p>` : ''}
-      <div class="btns"><button type="button" class="primary" id="iCopy">결과 복사</button><button type="button" id="iReset">새로 시작</button></div>`
+      ${r.problems.map((p) => `<p class="th-notice warn">${esc(p)}</p>`).join('')}
+      <div class="th-table-wrap"><table class="th-table money">
+        <thead><tr><th>이름</th><th>부담할 금액</th><th>이미 낸 돈</th><th>정산</th></tr></thead>
+        <tbody>${r.rows.map((x) => `<tr><td>${esc(x.name)}</td><td>${D.won(x.share)}</td><td>${x.paid ? D.won(x.paid) : '-'}</td><td>${sign(x.balance)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>합계</td><td>${D.won(r.total)}</td><td>${D.won(r.total)}</td><td></td></tr></tfoot>
+      </table></div>
+      <div class="sub-head"><h3>보낼 돈</h3>${r.transfers.length ? `<span class="th-xs th-muted">송금 ${r.transfers.length}번이면 끝납니다</span>` : ''}</div>
+      <div class="transfers">${r.transfers.length ? r.transfers.map((t) => `<div class="transfer"><b>${esc(t.fromName)}</b>${to}<b>${esc(t.toName)}</b><b class="amount th-nums">${D.won(t.amount)}</b></div>`).join('') : '<p class="th-muted">주고받을 돈이 없습니다.</p>'}
+      ${r.roundingDiff ? `<p class="th-xs th-muted">송금 단위를 맞추느라 받는 쪽이 모두 합쳐 ${D.won(Math.abs(r.roundingDiff))} ${r.roundingDiff > 0 ? '더 받습니다' : '덜 받습니다'}.</p>` : ''}</div>
+      <div class="card-foot btns"><button type="button" class="th-btn" id="iCopy">${icon('copy')} 결과 복사</button><button type="button" class="th-btn th-btn-outline" id="iReset">새로 시작</button></div>`
     $('iCopy').addEventListener('click', () => void copy(D.settleText(r, { title: $('iTitle').value.trim(), account: $('account').value.trim() }), $('iTitle').value.trim() || '항목별 정산'))
     $('iReset').addEventListener('click', () => {
       if (!window.confirm('사람과 항목을 모두 지우고 새로 시작할까요?')) return
@@ -167,10 +173,10 @@
       ? history
           .map((h, i) => {
             const d = new Date(h.at)
-            return `<div class="hist"><pre>${esc(h.text)}</pre><div><div class="muted small">${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}</div><button type="button" data-copy="${i}">다시 복사</button></div></div>`
+            return `<div class="hist"><pre>${esc(h.text)}</pre><div class="hist-side"><span class="th-xs th-muted th-nums">${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}</span><button type="button" class="th-btn th-btn-outline th-btn-sm" data-copy="${i}">${icon('copy')} 다시 복사</button></div></div>`
           })
           .join('')
-      : '<p class="muted">[결과 복사]를 누르면 그 내용이 여기에 남습니다.</p>'
+      : `<div class="th-empty">${icon('history')}<p class="th-empty-title">남은 기록이 없습니다</p><p>[결과 복사]를 누르면 그 내용이 여기에 남습니다.</p></div>`
   }
 
   function setTab(t) {
@@ -182,6 +188,9 @@
     else renderHistory()
     saveDraft()
   }
+
+  // an older TeamHub does not give extension frames its look (__ui.css): say so
+  window.addEventListener('load', () => ($('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim()))
 
   async function init() {
     document.querySelectorAll('select.unit').forEach((s) => (s.innerHTML = D.UNITS.map((u) => `<option value="${u}"${u === 100 ? ' selected' : ''}>${u === 1 ? '1원 (그대로)' : D.won(u).replace('원', '') + '원 단위'}</option>`).join('')))
@@ -264,7 +273,7 @@
       saveDraft()
     })
     $('people').addEventListener('click', (e) => {
-      if (e.target.tagName !== 'BUTTON') return
+      if (!e.target.closest('button')) return
       const id = e.target.closest('.person').dataset.id
       people = people.filter((p) => p.id !== id)
       expenses.forEach((x) => {
@@ -291,10 +300,11 @@
       saveDraft()
     })
     $('expenses').addEventListener('click', (e) => {
-      if (e.target.tagName !== 'BUTTON') return
-      const x = expenseOf(e.target)
-      if (e.target.classList.contains('del')) expenses = expenses.filter((y) => y !== x)
-      else if (e.target.dataset.all !== undefined) x.sharers = e.target.dataset.all === '1' ? people.map((p) => p.id) : []
+      const b = e.target.closest('button')
+      if (!b) return
+      const x = expenseOf(b)
+      if (b.classList.contains('del')) expenses = expenses.filter((y) => y !== x)
+      else if (b.dataset.all !== undefined) x.sharers = b.dataset.all === '1' ? people.map((p) => p.id) : []
       renderItems()
       saveDraft()
     })

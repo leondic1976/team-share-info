@@ -14,6 +14,9 @@
   const icon = (n, o) => window.TeamHub.icon(n, o)
   // names sent to the server stay within 8 characters: an older server accepts no more
   const bookIcon = (v) => icon(v, { fallback: 'file' })
+  /** A ticked check cell is drawn as an icon; its value (and what is copied or saved) stays the text mark. */
+  const TICK = '\u2713'
+  const shownText = (text) => (text === TICK ? icon('check', { label: '체크됨' }) : esc(text))
   const TYPE_ICON = { text: 'Aa', number: '123', date: '날짜', select: '목록', check: '체크', member: '팀원', calc: 'fx' }
   const MAX_ROWS = 100000
   /** Height of one row in pixels; measured after the first rows are drawn (zoom and fonts change it). */
@@ -63,7 +66,7 @@
   function toast(text, bad) {
     const t = $('toast')
     t.textContent = text
-    t.className = 'toast' + (bad ? ' bad' : '')
+    t.className = 'th-toast show' + (bad ? ' bad' : '')
     t.hidden = false
     clearTimeout(toast.timer)
     toast.timer = setTimeout(() => (t.hidden = true), bad ? 6000 : 2500)
@@ -90,7 +93,7 @@
   const setState = (text, cls) => {
     const el = $('saveState')
     el.textContent = text
-    el.className = `state ${cls || ''}`
+    el.className = `th-badge state ${cls === 'ok' ? 'th-badge-success' : cls === 'bad' ? 'th-badge-urgent' : cls === 'busy' ? '' : 'th-badge-muted'}`
   }
 
   // ---------- storage: every ledger is saved by what changed ----------
@@ -242,23 +245,23 @@
     const mine = index.filter(hit).sort((a, b) => b.updatedAt - a.updatedAt)
     $('books').innerHTML =
       mine.map((b) => `<li data-id="${esc(b.id)}" class="${src && src.kind === 'local' && src.id === b.id ? 'on' : ''}" title="${esc(b.name)}"><span class="n">${bookIcon(b.icon)} ${esc(b.name)}</span><span class="m">${num(b.rows)}행 · ${fmtDate(b.updatedAt)}</span></li>`).join('') ||
-      '<li class="muted small none">대장이 없습니다</li>'
+      '<li class="th-muted th-xs none">대장이 없습니다</li>'
     const shared = (picked) =>
       teamList
         .filter((t) => hit(t) && isPicked(t) === picked)
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map(
           (t) =>
-            `<li data-team="${esc(t.id)}" class="${team && team.id === t.id ? 'on' : ''}" title="${esc(t.name)}"><span class="n">${t.unseen && !(team && team.id === t.id) ? '<i class="dot" title="다른 사람이 고친 새 내용이 있습니다"></i>' : ''}${bookIcon(t.icon)} ${esc(t.name)}${t.canEdit ? '' : ' <i class="tag">보기</i>'}</span><span class="m">${num(t.rows)}행 · ${esc(t.updatedByName || t.ownerName)} · ${fmtDate(t.updatedAt)}</span></li>`
+            `<li data-team="${esc(t.id)}" class="${team && team.id === t.id ? 'on' : ''}" title="${esc(t.name)}"><span class="n">${t.unseen && !(team && team.id === t.id) ? '<i class="dot" title="다른 사람이 고친 새 내용이 있습니다"></i>' : ''}${bookIcon(t.icon)} ${esc(t.name)}${t.canEdit ? '' : ' <span class="th-badge th-badge-muted tag">보기</span>'}</span><span class="m">${num(t.rows)}행 · ${esc(t.updatedByName || t.ownerName)} · ${fmtDate(t.updatedAt)}</span></li>`
         )
     const teams = shared(false)
     const picks = shared(true)
-    $('teamBooks').innerHTML = teams.join('') || `<li class="muted small none">${esc(teamError || '팀용 대장이 없습니다')}</li>`
-    $('pickBooks').innerHTML = picks.join('') || `<li class="muted small none">${esc(teamError || '지정자용 대장이 없습니다')}</li>`
+    $('teamBooks').innerHTML = teams.join('') || `<li class="th-muted th-xs none">${esc(teamError || '팀용 대장이 없습니다')}</li>`
+    $('pickBooks').innerHTML = picks.join('') || `<li class="th-muted th-xs none">${esc(teamError || '지정자용 대장이 없습니다')}</li>`
     $('cntLocal').textContent = mine.length || ''
     $('cntTeam').textContent = teams.length || ''
     $('cntPick').textContent = picks.length || ''
-    for (const h of document.querySelectorAll('#side h2.grp')) {
+    for (const h of document.querySelectorAll('#side .grp')) {
       const off = collapsed.has(h.dataset.list)
       h.classList.toggle('off', off)
       $(h.dataset.list).hidden = off
@@ -274,7 +277,7 @@
       if (li) openTeam(li.dataset.team)
     })
   $('bookSearch').addEventListener('input', renderBooks)
-  for (const h of document.querySelectorAll('#side h2.grp'))
+  for (const h of document.querySelectorAll('#side .grp'))
     h.addEventListener('click', () => {
       if (collapsed.has(h.dataset.list)) collapsed.delete(h.dataset.list)
       else collapsed.add(h.dataset.list)
@@ -526,10 +529,10 @@
     const mOn = new Set(sc ? sc.members.map((m) => m.id) : [])
     // groups I am not in (an admin may have picked them) stay listed so saving does not drop them
     const allGroups = [...groups, ...(sc ? sc.groups.filter((g) => !groups.some((x) => x.id === g.id)) : [])]
-    $('teamGroups').innerHTML = allGroups.map((g) => `<label><input type="checkbox" value="${esc(g.id)}"${gOn.has(g.id) ? ' checked' : ''} /> ${esc(g.name)}</label>`).join('') || '<span class="muted small">내가 속한 그룹이 없습니다.</span>'
+    $('teamGroups').innerHTML = allGroups.map((g) => `<label class="th-check"><input type="checkbox" value="${esc(g.id)}"${gOn.has(g.id) ? ' checked' : ''} /> ${esc(g.name)}</label>`).join('') || '<span class="th-muted th-xs">내가 속한 그룹이 없습니다.</span>'
     $('teamMembers').innerHTML = members
       .filter((m) => !me || m.id !== me.id)
-      .map((m) => `<label><input type="checkbox" value="${esc(m.id)}"${mOn.has(m.id) ? ' checked' : ''} /> ${esc(m.name)}</label>`)
+      .map((m) => `<label class="th-check"><input type="checkbox" value="${esc(m.id)}"${mOn.has(m.id) ? ' checked' : ''} /> ${esc(m.name)}</label>`)
       .join('')
     document.querySelector(`input[name="teamTo"][value="${type}"]`).checked = true
     syncTeamDialog()
@@ -606,7 +609,7 @@
     if (col.type === 'check') cls.push('chk')
     if (S.invalid(col, raw)) cls.push('bad')
     const text = S.display(v, col)
-    return `<td data-v="${vi}" data-c="${c}"${cls.length ? ` class="${cls.join(' ')}"` : ''}${text.length > 12 ? ` title="${esc(text)}"` : ''}>${esc(text)}</td>`
+    return `<td data-v="${vi}" data-c="${c}"${cls.length ? ` class="${cls.join(' ')}"` : ''}${text.length > 12 ? ` title="${esc(text)}"` : ''}>${shownText(text)}</td>`
   }
 
   /** Head, totals and the visible rows. Only the rows near what is visible are in the table (large ledgers). */
@@ -614,7 +617,7 @@
     const cols = book.cols
     let h = '<colgroup><col style="width:52px">' + cols.map((c) => `<col style="width:${c.width || 120}px">`).join('') + '</colgroup><thead><tr><th class="rn">No.</th>'
     cols.forEach((c, i) => {
-      h += `<th data-c="${i}"><div class="hc${filters[i] ? ' filtered' : ''}" data-h="${i}"><span class="l">${F.colLetters(i)}<span class="ty">${TYPE_ICON[c.type] || ''}</span></span><span class="t" title="${esc(c.name)}${c.type === 'calc' ? ' · ' + esc(c.calc || '') : ''}">${esc(c.name)}</span><button class="menuBtn" data-menu="${i}" tabindex="-1" aria-label="${esc(c.name)} 열 메뉴">▾</button><span class="rz" data-rz="${i}"></span></div></th>`
+      h += `<th data-c="${i}"><div class="hc${filters[i] ? ' filtered' : ''}" data-h="${i}"><span class="l">${F.colLetters(i)}<span class="ty">${TYPE_ICON[c.type] || ''}</span></span><span class="t" title="${esc(c.name)}${c.type === 'calc' ? ' · ' + esc(c.calc || '') : ''}">${esc(c.name)}</span><button class="menuBtn" data-menu="${i}" tabindex="-1" aria-label="${esc(c.name)} 열 메뉴">${icon('chevron-down')}</button><span class="rz" data-rz="${i}"></span></div></th>`
     })
     h += '</tr></thead><tbody></tbody>'
     if (cols.some((c) => c.total && c.total !== 'none')) {
@@ -1166,7 +1169,7 @@
 
   // ---------- menus ----------
   function openMenu(el, items, x, y) {
-    el.innerHTML = items.map((it, i) => (it === '-' ? '<hr />' : `<button data-i="${i}"${it.danger ? ' class="danger"' : ''}>${esc(it.label)}</button>`)).join('')
+    el.innerHTML = items.map((it, i) => (it === '-' ? '<hr />' : `<button data-i="${i}"${it.danger ? ' class="th-menu-danger"' : ''}>${esc(it.label)}</button>`)).join('')
     el.hidden = false
     const w = el.offsetWidth
     const h = el.offsetHeight
@@ -1314,9 +1317,9 @@
     const vals = all.slice(0, 2000)
     const cur = filters[c] ? filters[c].values : null
     const el = $('filterPop')
-    el.innerHTML = `<b>${esc(col.name)} 거르기</b><input type="search" placeholder="값 찾기" class="fq" /><div class="btnrow"><button class="ghost all">모두</button><button class="ghost none">모두 해제</button></div><div class="vals">${vals
-      .map((v, i) => `<label><input type="checkbox" data-i="${i}"${!cur || cur.has(v) ? ' checked' : ''} /> ${v === '' ? '<i class="muted">(빈 칸)</i>' : esc(v)} <span class="muted small">${counts.get(v)}</span></label>`)
-      .join('')}</div>${all.length > vals.length ? `<p class="muted small">값이 ${num(all.length)}가지라 앞의 ${num(vals.length)}가지만 보입니다. 위쪽 "찾기"로 좁히세요.</p>` : ''}<div class="btnrow"><button class="ghost clear">이 열 필터 해제</button><span class="spacer"></span><button class="primary ok">적용</button></div>`
+    el.innerHTML = `<b>${esc(col.name)} 거르기</b><input type="search" placeholder="값 찾기" aria-label="값 찾기" class="th-input fq" /><div class="btnrow"><button class="th-btn th-btn-ghost th-btn-sm all">모두</button><button class="th-btn th-btn-ghost th-btn-sm none">모두 해제</button></div><div class="vals">${vals
+      .map((v, i) => `<label class="th-check"><input type="checkbox" data-i="${i}"${!cur || cur.has(v) ? ' checked' : ''} /> ${v === '' ? '<span class="th-muted">(빈 칸)</span>' : shownText(v)} <span class="th-muted th-xs th-nums">${counts.get(v)}</span></label>`)
+      .join('')}</div>${all.length > vals.length ? `<p class="th-hint">값이 ${num(all.length)}가지라 앞의 ${num(vals.length)}가지만 보입니다. 위쪽 "찾기"로 좁히세요.</p>` : ''}<div class="btnrow"><button class="th-btn th-btn-ghost th-btn-sm clear">이 열 필터 해제</button><span class="th-grow"></span><button class="th-btn th-btn-sm ok">적용</button></div>`
     el.hidden = false
     el.style.left = `${Math.min(x, innerWidth - 260)}px`
     el.style.top = `${Math.min(y, innerHeight - 360)}px`
@@ -1472,7 +1475,7 @@
     const res = S.compute(trial)
     const v = res.values.length ? res.values[0][colEditing] : ''
     $('colCalcPreview').textContent = res.values.length ? `첫 행 결과: ${S.display(v, c) || '(빈 값)'}` : ''
-    $('colCalcPreview').className = 'small ' + (F.isErr(v) ? 'warn' : 'muted')
+    $('colCalcPreview').className = 'th-xs ' + (F.isErr(v) ? 'warn' : 'th-muted')
   }
   $('colType').onchange = syncColDialog
   $('colCalc').oninput = previewCalc
@@ -1591,7 +1594,7 @@
   async function openHistory() {
     if (!src) return
     await settle()
-    $('historyList').innerHTML = '<li class="muted">불러오는 중…</li>'
+    $('historyList').innerHTML = '<li class="th-muted">불러오는 중…</li>'
     $('historyKeep').hidden = !canEditNow()
     $('historyDialog').showModal()
     try {
@@ -1607,9 +1610,9 @@
       versions
         .map(
           (v) =>
-            `<li><span class="grow"><b>${fmtDate(v.createdAt)}</b> · ${esc(WHY[v.reason] || v.reason)}<br /><span class="muted small">${num(v.rows)}행${v.byName ? ` · ${esc(v.byName)}` : ''}${v.name !== book.name ? ` · 이름 “${esc(v.name)}”` : ''}</span></span><button type="button" data-copy="${esc(v.id)}">사본으로 열기</button>${edit ? `<button type="button" data-back="${esc(v.id)}">이 시점으로</button>` : ''}</li>`
+            `<li><span class="th-grow"><b>${fmtDate(v.createdAt)}</b> · ${esc(WHY[v.reason] || v.reason)}<br /><span class="th-muted th-xs">${num(v.rows)}행${v.byName ? ` · ${esc(v.byName)}` : ''}${v.name !== book.name ? ` · 이름 “${esc(v.name)}”` : ''}</span></span><button type="button" class="th-btn th-btn-outline th-btn-sm" data-copy="${esc(v.id)}">사본으로 열기</button>${edit ? `<button type="button" class="th-btn th-btn-outline th-btn-sm" data-back="${esc(v.id)}">이 시점으로</button>` : ''}</li>`
         )
-        .join('') || '<li class="muted">아직 보관된 시점이 없습니다. 대장을 고치기 시작하면 그 전 모습이 자동으로 보관됩니다.</li>'
+        .join('') || '<li class="th-muted">아직 보관된 시점이 없습니다. 대장을 고치기 시작하면 그 전 모습이 자동으로 보관됩니다.</li>'
   }
   $('history').onclick = openHistory
   $('historyKeep').onclick = async () => {
@@ -1649,7 +1652,7 @@
 
   // ---------- trash (휴지통) ----------
   async function openTrash() {
-    $('trashList').innerHTML = '<li class="muted">불러오는 중…</li>'
+    $('trashList').innerHTML = '<li class="th-muted">불러오는 중…</li>'
     $('trashDialog').showModal()
     const mine = ((await call('local.trash').catch(() => [])) || []).map((x) => Object.assign({ kind: 'local' }, x))
     const shared = ((await call('team.trash').catch(() => [])) || []).map((x) => Object.assign({ kind: 'team' }, x))
@@ -1658,9 +1661,9 @@
         .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0))
         .map(
           (x) =>
-            `<li><span class="grow"><b>${bookIcon(x.icon)} ${esc(x.name)}</b><br /><span class="muted small">${x.kind === 'local' ? `${icon('lock')} 개인용` : kindName(x)} · ${num(x.rows)}행 · ${fmtDate(x.deletedAt)}에 삭제${x.kind === 'team' ? ` · 만든 사람 ${esc(x.ownerName)}` : ''}</span></span><button type="button" data-kind="${x.kind}" data-restore="${esc(x.id)}">되살리기</button><button type="button" class="danger ghost" data-kind="${x.kind}" data-purge="${esc(x.id)}" data-name="${esc(x.name)}">완전히 삭제</button></li>`
+            `<li><span class="th-grow"><b>${bookIcon(x.icon)} ${esc(x.name)}</b><br /><span class="th-muted th-xs">${x.kind === 'local' ? `${icon('lock')} 개인용` : kindName(x)} · ${num(x.rows)}행 · ${fmtDate(x.deletedAt)}에 삭제${x.kind === 'team' ? ` · 만든 사람 ${esc(x.ownerName)}` : ''}</span></span><button type="button" class="th-btn th-btn-outline th-btn-sm" data-kind="${x.kind}" data-restore="${esc(x.id)}">되살리기</button><button type="button" class="th-btn th-btn-ghost th-btn-sm danger" data-kind="${x.kind}" data-purge="${esc(x.id)}" data-name="${esc(x.name)}">완전히 삭제</button></li>`
         )
-        .join('') || '<li class="muted">휴지통이 비어 있습니다.</li>'
+        .join('') || '<li class="th-muted">휴지통이 비어 있습니다.</li>'
   }
   $('trashBtn').onclick = openTrash
   $('trashList').addEventListener('click', async (e) => {
@@ -1754,7 +1757,7 @@
   })
 
   // ---------- new / import ----------
-  $('templates').innerHTML = S.TEMPLATES.map((t) => `<button type="button" data-t="${t.key}"><span class="ic">${icon(t.icon)}</span><span><b>${esc(t.name)}</b><small>${esc(t.desc)}</small></span></button>`).join('')
+  $('templates').innerHTML = S.TEMPLATES.map((t) => `<button type="button" class="th-card tpl" data-t="${t.key}"><span class="ic">${icon(t.icon)}</span><span><b>${esc(t.name)}</b><small>${esc(t.desc)}</small></span></button>`).join('')
   function openNew(where) {
     $('newName').value = ''
     for (const v of ['team', 'members']) document.querySelector(`input[name="newWhere"][value="${v}"]`).disabled = !online
@@ -1796,7 +1799,7 @@
       if (b.rows.length > MAX_ROWS) throw new Error(`행이 너무 많습니다(${num(MAX_ROWS)}행까지).`)
       if (index.some((x) => x.name === b.name)) b.name = `${b.name} (가져옴)`.slice(0, 60)
       await addBook(b)
-      toast(r.kind === 'book' ? '대장을 열었습니다. 개인용 대장으로 저장됩니다.' : `${num(b.rows.length)}행 ${b.cols.length}열을 가져왔습니다. 열 머리글의 ▾ → 열 설정에서 종류를 확인하세요.`)
+      toast(r.kind === 'book' ? '대장을 열었습니다. 개인용 대장으로 저장됩니다.' : `${num(b.rows.length)}행 ${b.cols.length}열을 가져왔습니다. 열 머리글의 화살표 단추 → 열 설정에서 종류를 확인하세요.`)
     } catch (err) {
       toast(`가져오지 못했습니다: ${err.message}`, true)
     }
@@ -1821,7 +1824,7 @@
     }
     $('shareMembers').innerHTML = members
       .filter((m) => !me || m.id !== me.id)
-      .map((m) => `<label><input type="checkbox" value="${esc(m.id)}"${book.share && book.share.memberIds && book.share.memberIds.includes(m.id) ? ' checked' : ''} /> ${esc(m.name)}</label>`)
+      .map((m) => `<label class="th-check"><input type="checkbox" value="${esc(m.id)}"${book.share && book.share.memberIds && book.share.memberIds.includes(m.id) ? ' checked' : ''} /> ${esc(m.name)}</label>`)
       .join('')
     const to = book.share && book.share.type === 'members' ? 'members' : 'team'
     document.querySelector(`input[name="shareTo"][value="${to}"]`).checked = true
@@ -1864,14 +1867,14 @@
   }
 
   $('sharedBtn').onclick = async () => {
-    $('sharedList').innerHTML = '<li class="muted">불러오는 중…</li>'
+    $('sharedList').innerHTML = '<li class="th-muted">불러오는 중…</li>'
     $('sharedDialog').showModal()
     try {
       const rooms = ((await call('rooms.list')) || []).filter((r) => r.shared && r.shared.kind === 'ledger')
       $('sharedList').innerHTML =
         rooms
-          .map((r) => `<li><span class="grow"><b>${esc(r.title)}</b><br /><span class="muted small">${esc(r.createdByName)} · ${fmtDate(r.updatedAt)} · ${r.shared.rows.length}행${me && r.createdBy === me.id ? ' · 내가 공유' : ''}</span></span><button type="button" data-room="${esc(r.id)}">보기</button></li>`)
-          .join('') || '<li class="muted">공유받은 대장이 없습니다.</li>'
+          .map((r) => `<li><span class="th-grow"><b>${esc(r.title)}</b><br /><span class="th-muted th-xs">${esc(r.createdByName)} · ${fmtDate(r.updatedAt)} · ${r.shared.rows.length}행${me && r.createdBy === me.id ? ' · 내가 공유' : ''}</span></span><button type="button" class="th-btn th-btn-outline th-btn-sm" data-room="${esc(r.id)}">보기</button></li>`)
+          .join('') || '<li class="th-muted">공유받은 대장이 없습니다.</li>'
     } catch (err) {
       $('sharedList').innerHTML = `<li class="warn">${esc(err.message)}</li>`
     }
@@ -1901,7 +1904,7 @@
       $('viewMeta').textContent = `${room.createdByName}님이 공유 · ${fmtDate(s.at)} 기준 · 보기 전용`
       let h = '<colgroup><col style="width:52px">' + s.cols.map((c) => `<col style="width:${c.width}px">`).join('') + '</colgroup><thead><tr><th class="rn">No.</th>'
       h += s.cols.map((c) => `<th><div class="hc"><span class="t">${esc(c.name)}</span></div></th>`).join('') + '</tr></thead><tbody>'
-      h += s.rows.map((r, i) => `<tr><td class="rn">${i + 1}</td>${r.map((v, j) => `<td${s.cols[j].num ? ' class="num"' : ''}>${esc(v)}</td>`).join('')}</tr>`).join('')
+      h += s.rows.map((r, i) => `<tr><td class="rn">${i + 1}</td>${r.map((v, j) => `<td${s.cols[j].num ? ' class="num"' : ''}>${shownText(v)}</td>`).join('')}</tr>`).join('')
       h += '</tbody>'
       if (s.totals.some(Boolean)) h += `<tfoot><tr><td class="rn">합계</td>${s.totals.map((t) => `<td class="num">${esc(t)}</td>`).join('')}</tr></tfoot>`
       $('viewGrid').innerHTML = h
@@ -1960,7 +1963,7 @@
     MATCH: 'MATCH(찾을 값, 범위) 몇 번째인가', INDEX: 'INDEX(범위, 행, 열) 그 위치의 값',
     ROW: 'ROW() 지금 행 번호', CUMSUM: 'CUMSUM([열]) 첫 행부터 지금 행까지 누적 합계'
   }
-  $('fnTable').innerHTML = F.FUNCTIONS.map((n) => `<tr><td>${n}</td><td>${esc((FN_HELP[n] || '').replace(/^\S+\(.*?\)\s*/, '') || '')}<br /><span class="muted">${esc((FN_HELP[n] || n).match(/^\S+\(.*?\)/) ? FN_HELP[n].match(/^\S+\(.*?\)/)[0] : n)}</span></td></tr>`).join('')
+  $('fnTable').innerHTML = F.FUNCTIONS.map((n) => `<tr><td>${n}</td><td>${esc((FN_HELP[n] || '').replace(/^\S+\(.*?\)\s*/, '') || '')}<br /><span class="th-muted">${esc((FN_HELP[n] || n).match(/^\S+\(.*?\)/) ? FN_HELP[n].match(/^\S+\(.*?\)/)[0] : n)}</span></td></tr>`).join('')
   $('helpBtn').onclick = () => $('helpDialog').showModal()
 
   // ---------- start ----------

@@ -9,6 +9,7 @@ import { Card } from '@renderer/components/ui/card'
 import { EmptyState, ErrorState, Loading } from '@renderer/components/EmptyState'
 import { useState } from 'react'
 import { BanDialog, type BanTarget } from './PcBlock'
+import { affiliationText } from '@shared/org'
 
 export function ApprovalsTab(): React.JSX.Element {
   const qc = useQueryClient()
@@ -40,7 +41,7 @@ export function ApprovalsTab(): React.JSX.Element {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="font-semibold">{r.name}</span>
-                <span className="text-sm text-muted-foreground">{[r.deptName, r.title, r.ext].filter(Boolean).join(' · ')}</span>
+                <span className="text-sm text-muted-foreground">{[affiliationText(r), r.title, r.ext].filter(Boolean).join(' · ')}</span>
               </div>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
                 <span>

@@ -1,3 +1,4 @@
+import { EmptyNote } from '@renderer/components/EmptyState'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Upload, Loader2 } from 'lucide-react'
@@ -173,7 +174,7 @@ export function ReleasesTab(): React.JSX.Element {
           <CardTitle>배포 기록</CardTitle>
         </CardHeader>
         <div className="divide-y divide-border">
-          {releases.data?.length === 0 && <p className="px-4 py-3 text-sm text-muted-foreground">배포한 버전이 없습니다.</p>}
+          {releases.data?.length === 0 && <EmptyNote>배포한 버전이 없습니다.</EmptyNote>}
           {releases.data?.map((r) => (
             <div key={r.id} className="flex items-start gap-3 px-4 py-3 text-sm">
               <div className="min-w-0 flex-1">

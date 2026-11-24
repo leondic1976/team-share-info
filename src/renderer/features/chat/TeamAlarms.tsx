@@ -6,7 +6,7 @@ import type { SentAlarmDto } from '@shared/schemas/tools'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Label, Textarea } from '@renderer/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
-import { OfflineState } from '@renderer/components/EmptyState'
+import { OfflineState, EmptyNote } from '@renderer/components/EmptyState'
 import { MemberPicker } from '@renderer/components/ScopePicker'
 import { api, errorMessage } from '@renderer/lib/api'
 import { fromInputValue, toInputValue } from '@renderer/lib/dates'
@@ -80,7 +80,7 @@ export function TeamAlarmsView(): React.JSX.Element {
             <CardTitle>보낸 알람</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 p-2" data-testid="sent-alarms">
-            {!sent.data?.length && <p className="px-2 py-3 text-sm text-muted-foreground">보낸 알람이 없습니다.</p>}
+            {!sent.data?.length && <EmptyNote>보낸 알람이 없습니다.</EmptyNote>}
             {sent.data?.map((a) => (
               <div key={a.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted">
                 <span className="w-20 shrink-0 text-xs text-muted-foreground">{format(a.fireAt, 'M/d HH:mm')}</span>
@@ -103,7 +103,7 @@ export function TeamAlarmsView(): React.JSX.Element {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 p-2">
-            {!received.data?.length && <p className="px-2 py-3 text-sm text-muted-foreground">받은 알람이 없습니다.</p>}
+            {!received.data?.length && <EmptyNote>받은 알람이 없습니다.</EmptyNote>}
             {received.data?.map((a) => (
               <div key={a.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm">
                 <span className="w-20 shrink-0 text-xs text-muted-foreground">{format(a.fireAt, 'M/d HH:mm')}</span>

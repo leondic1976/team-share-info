@@ -1,3 +1,4 @@
+import { EmptyNote } from '@renderer/components/EmptyState'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -173,7 +174,7 @@ export function FileDetail({ fileId, onClose }: { fileId: string; onClose: () =>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">아직 내려받은 사람이 없습니다.</p>
+              <EmptyNote>아직 내려받은 사람이 없습니다.</EmptyNote>
             )}
           </div>
         )}

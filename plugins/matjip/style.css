@@ -1,374 +1,264 @@
-:root {
-  --bg: #ffffff;
-  --card: #f8fafc;
-  --fg: #0f172a;
-  --muted: #64748b;
-  --line: #e2e8f0;
-  --primary: #2563eb;
-  --accent: #f59e0b;
-  --like: #e11d48;
+/* 맛집 추천: layout only. Colours, buttons, cards, fields, badges, chips and the page frame
+ * come from TeamHub (__ui.css = resources/ui/base.css, the th-* classes). */
+.hidden,
+[hidden] {
+  display: none !important;
 }
-[data-theme='dark'] {
-  --bg: #0f172a;
-  --card: #111a2e;
-  --fg: #e2e8f0;
-  --muted: #94a3b8;
-  --line: #1e293b;
-  --primary: #3b82f6;
-  --accent: #fbbf24;
-  --like: #fb7185;
-}
-* {
-  box-sizing: border-box;
-}
-html,
-body {
-  height: 100%;
-}
-body {
+/* an older TeamHub has no __ui.css (and so no colour tokens): a plain notice */
+#oldApp {
   margin: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-  color: var(--fg);
-  font: 14px/1.5 'Pretendard', 'Malgun Gothic', system-ui, sans-serif;
+  padding: 8px 20px;
+  background: #fef3c7;
+  color: #92400e;
 }
-header,
-#filters {
+small {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+/* ---------- toolbar: tabs, then search and order on the right; the kinds on a row of their own ---------- */
+.bar-tools {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--line);
+  gap: 0.5rem;
+  margin-left: auto;
 }
-h1 {
-  font-size: 18px;
-  margin: 0 8px 0 0;
+.bar-tools .th-input {
+  height: 2rem;
 }
-h2 {
-  font-size: 16px;
-  margin: 0 0 8px;
+.bar-tools input.th-input {
+  width: 15rem;
 }
-.grow {
-  flex: 1;
+.bar-tools select.th-input {
+  width: 6.5rem;
 }
-.muted {
-  color: var(--muted);
-}
-.small {
-  font-size: 12px;
-}
-nav {
-  display: flex;
-  gap: 4px;
-}
-button,
-input,
-select,
-textarea {
-  font: inherit;
-  color: var(--fg);
-}
-button {
-  cursor: pointer;
-  border-radius: 6px;
-  padding: 6px 12px;
-  border: 1px solid var(--line);
-  background: var(--bg);
-}
-button:hover {
-  border-color: var(--primary);
-}
-button.primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-  font-weight: 600;
-}
-nav button {
-  border: 0;
-  background: transparent;
-}
-nav button[aria-selected='true'] {
-  background: var(--primary);
-  color: #fff;
-}
-input,
-select,
-textarea {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 6px 8px;
-}
-#filters input {
-  width: 220px;
-}
-#filters select {
-  width: auto;
-}
-#cats,
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.chip {
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 13px;
-}
-.chip[aria-checked='true'],
-.chip[aria-pressed='true'] {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-}
-main {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 16px 20px 32px;
-}
+
+/* ---------- 추천 글: cards, two or three across when there is room ---------- */
 .feed {
-  max-width: 720px;
-  margin: 0 auto;
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr));
+  gap: 1rem;
+  align-items: start;
 }
-.post {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 14px 16px;
+.post-main {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
 }
 .post-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.5rem;
 }
 .avatar {
-  width: 36px;
-  height: 36px;
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
   flex: none;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-weight: 700;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-weight: 600;
 }
 .who {
+  display: grid;
   min-width: 0;
   flex: 1;
-  line-height: 1.3;
-}
-.who b {
-  display: block;
 }
 .place {
-  margin: 10px 0 4px;
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 0.375rem 0.5rem;
 }
 .place strong {
-  font-size: 17px;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+  overflow-wrap: anywhere;
 }
 .stars {
-  color: var(--accent);
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.0625rem;
+  color: var(--important);
 }
 .stars .off {
-  color: var(--line);
+  color: color-mix(in srgb, var(--muted-foreground) 45%, transparent);
 }
-.badge {
-  border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 12px;
-  background: color-mix(in srgb, var(--primary) 14%, transparent);
-  color: var(--primary);
-}
-.badge.tag {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--fg);
+.stars b {
+  margin-left: 0.25rem;
+  color: var(--foreground);
 }
 .facts {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  color: var(--muted);
-  font-size: 13px;
+  gap: 0.25rem 0.75rem;
 }
 .text {
-  margin: 8px 0 0;
+  margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
+  align-items: center;
+  gap: 0.125rem;
+  border-top: 1px solid var(--border);
+  padding: 0.375rem 0.5rem;
 }
-.actions button {
-  border-color: transparent;
-  background: transparent;
-  padding: 4px 10px;
-  color: var(--muted);
+.actions .th-btn {
+  color: var(--muted-foreground);
 }
-.actions button:hover {
-  background: color-mix(in srgb, var(--fg) 7%, transparent);
+.actions .th-btn b:empty {
+  display: none;
 }
-.actions button.on {
-  color: var(--like);
-  font-weight: 600;
+.actions .like.on {
+  color: var(--urgent);
+}
+.actions .visit.on {
+  color: var(--success);
 }
 .comments {
-  margin-top: 8px;
   display: grid;
-  gap: 6px;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 0.5rem 0.5rem;
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  padding: 0.75rem 1rem;
 }
 .comment {
   display: flex;
-  gap: 8px;
   align-items: baseline;
-  font-size: 13px;
+  gap: 0.5rem;
+}
+.comment b {
+  flex: none;
 }
 .comment p {
-  margin: 0;
+  min-width: 0;
   flex: 1;
+  margin: 0;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
 }
-.comment button {
+.comment .x {
+  display: inline-flex;
+  align-self: center;
+  padding: 0.125rem;
   border: 0;
   background: transparent;
-  padding: 0 4px;
-  color: var(--muted);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.comment .x:hover {
+  color: var(--urgent);
 }
 .comment-form {
   display: flex;
-  gap: 6px;
-  margin-top: 4px;
+  gap: 0.5rem;
 }
+.comment-form .th-input {
+  min-width: 0;
+  height: 2rem;
+  flex: 1;
+}
+
+/* ---------- 맛집 랭킹: one card, one row per place ---------- */
 .rank {
-  max-width: 720px;
-  margin: 0 auto;
-  display: grid;
-  gap: 8px;
+  max-width: 60rem;
+}
+.rows > * + * {
+  border-top: 1px solid var(--border);
 }
 .rank-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  text-align: left;
-  background: var(--card);
-  border-radius: 10px;
-  padding: 10px 14px;
-}
-.rank-no {
-  width: 32px;
-  flex: none;
-  text-align: center;
-  font-size: 18px;
-  font-weight: 700;
-}
-/* 1st to 3rd: a gold, silver, bronze disc */
-.rank-no.top {
-  width: 28px;
-  height: 28px;
-  margin: 0 2px;
-  border-radius: 50%;
-  line-height: 28px;
-  font-size: 15px;
-  color: #fff;
-}
-.rank-no.r1 {
-  background: #d4a017;
-}
-.rank-no.r2 {
-  background: #8e99a8;
-}
-.rank-no.r3 {
-  background: #b0703c;
-}
-.rank-main {
-  flex: 1;
-  min-width: 0;
-}
-.empty {
-  max-width: 420px;
-  margin: 60px auto;
-  text-align: center;
-  color: var(--muted);
-}
-.empty .big {
-  font-size: 44px;
-}
-dialog {
-  width: min(560px, calc(100vw - 32px));
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg);
-  color: var(--fg);
-  padding: 18px 20px;
-}
-dialog::backdrop {
-  background: rgba(15, 23, 42, 0.5);
-}
-label {
-  display: block;
-  font-weight: 600;
-  margin: 10px 0 4px;
-}
-label small {
-  font-weight: 400;
-  color: var(--muted);
-}
-.row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.rating button {
+  width: 100%;
+  grid-template-columns: 2rem minmax(0, 1fr) 4.5rem 7.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
   border: 0;
   background: transparent;
-  padding: 0 2px;
-  font-size: 24px;
-  line-height: 1.3;
-  color: var(--line);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.rating button.on {
-  color: var(--accent);
+.rank-row + .rank-row {
+  border-top: 1px solid var(--border);
 }
-.btns {
+.rank-row:hover {
+  background: color-mix(in srgb, var(--muted) 60%, transparent);
+}
+.rank-no {
+  text-align: center;
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+.rank-no.top {
+  color: var(--primary);
+}
+.rank-main {
+  display: grid;
+  min-width: 0;
+}
+.rank-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.rank-counts {
+  text-align: right;
+}
+
+/* ---------- dialogs ---------- */
+.form {
+  display: grid;
+  gap: 0.75rem;
+}
+.pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 0.75rem;
+}
+.rating {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 0.125rem;
+  height: 2.25rem;
 }
-#pickResult {
-  margin: 8px 0;
+.rating button {
+  display: inline-flex;
+  padding: 0.125rem;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: color-mix(in srgb, var(--muted-foreground) 45%, transparent);
+  font-size: 1.25rem;
+  cursor: pointer;
 }
-#toast {
-  position: fixed;
-  left: 50%;
-  bottom: 24px;
-  transform: translateX(-50%);
-  background: var(--fg);
-  color: var(--bg);
-  padding: 8px 16px;
-  border-radius: 8px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s;
+.rating button.on {
+  color: var(--important);
 }
-#toast.show {
-  opacity: 1;
+.dlg-btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.pick {
+  display: grid;
+  gap: 0.5rem;
+}
+@media (max-width: 480px) {
+  .pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

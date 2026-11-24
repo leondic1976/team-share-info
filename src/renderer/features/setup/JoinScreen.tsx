@@ -12,6 +12,8 @@ import { toServerUrl } from '@shared/net'
 import type { DiscoveredServer } from '@shared/ipc'
 import type { Hello, JoinPoll } from '@shared/schemas/auth'
 import { useConn } from '@renderer/app/conn-store'
+import { Badge } from '@renderer/components/ui/badge'
+import { DEPT_MAX_DEPTH, deptNameError, parseDeptPath } from '@shared/org'
 
 /** Client first run: find the server, enter my info, send a join request (M1-3). */
 export function JoinScreen({ onBack, onSubmitted }: { onBack: () => void; onSubmitted: () => void }): React.JSX.Element {
@@ -78,6 +80,13 @@ export function JoinScreen({ onBack, onSubmitted }: { onBack: () => void; onSubm
       setError('이름을 입력하세요.')
       return
     }
+    // 소속: "본부 > 과 > 팀" as typed, top level first
+    const deptPath = parseDeptPath(dept)
+    const deptError = deptPath.length > DEPT_MAX_DEPTH ? `소속은 ${DEPT_MAX_DEPTH}단계까지 입력할 수 있습니다.` : deptPath.map(deptNameError).find(Boolean)
+    if (deptError) {
+      setError(deptError)
+      return
+    }
     if (!agree) {
       setError('안내 사항에 동의해야 사용할 수 있습니다.')
       return
@@ -97,7 +106,8 @@ export function JoinScreen({ onBack, onSubmitted }: { onBack: () => void; onSubm
         method: 'POST',
         baseUrl: url,
         noAuth: true,
-        body: { name: name.trim(), deptName: dept, title, ext, pcName: conn.pcName, winUser: conn.winUser, appVersion: conn.appVersion, pcUid, ...(seat !== null ? { sharedPc: true } : {}) }
+        // deptName: the last level, which is all an older server knows of an affiliation
+        body: { name: name.trim(), deptName: deptPath[deptPath.length - 1] ?? '', deptPath, title, ext, pcName: conn.pcName, winUser: conn.winUser, appVersion: conn.appVersion, pcUid, ...(seat !== null ? { sharedPc: true } : {}) }
       })
       await invoke('conn:setPending', { serverUrl: url, requestId: r.requestId, pollToken: r.pollToken, name: name.trim() })
       await invoke('local:kv.set', { key: 'consentAt', value: Date.now() })
@@ -173,12 +183,26 @@ export function JoinScreen({ onBack, onSubmitted }: { onBack: () => void; onSubm
                 <Field label="이름">
                   <Input aria-label="이름" value={name} onChange={(e) => setName(e.target.value)} />
                 </Field>
-                <Field label="부서">
-                  <Input aria-label="부서" value={dept} onChange={(e) => setDept(e.target.value)} />
-                </Field>
                 <Field label="직위">
                   <Input aria-label="직위" value={title} onChange={(e) => setTitle(e.target.value)} />
                 </Field>
+                <div className="col-span-2">
+                  <Field label="소속" hint={`여러 단계면 위 단계부터 차례로 적고 > 로 구분합니다(최대 ${DEPT_MAX_DEPTH}단계). 한 단계만 적어도 됩니다. 승인 뒤 설정의 내 정보에서 바꿀 수 있습니다.`}>
+                    <Input aria-label="소속" value={dept} maxLength={300} onChange={(e) => setDept(e.target.value)} placeholder="예: 행정지원본부 > 총무과 > 서무팀" />
+                    {parseDeptPath(dept).length > 1 && (
+                      <div className="flex flex-wrap items-center gap-1 text-xs" data-testid="join-dept-levels">
+                        {parseDeptPath(dept).map((n, i) => (
+                          <span key={`${i}:${n}`} className="inline-flex items-center gap-1">
+                            {i > 0 && <span className="text-muted-foreground">&gt;</span>}
+                            <Badge variant="muted">
+                              {i + 1}단계 · {n}
+                            </Badge>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </Field>
+                </div>
                 <Field label="내선번호">
                   <Input aria-label="내선번호" value={ext} onChange={(e) => setExt(e.target.value)} />
                 </Field>

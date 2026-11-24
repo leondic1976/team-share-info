@@ -351,7 +351,7 @@ export function BoardsPage(): React.JSX.Element {
         }
       />
       <div className="flex min-h-0 flex-1">
-        <aside className="w-52 shrink-0 space-y-0.5 overflow-y-auto border-r border-border p-2" aria-label="게시판 목록">
+        <aside className={cn('w-52 shrink-0 space-y-0.5 overflow-y-auto border-r border-border p-2', !visibleBoards.length && 'hidden')} aria-label="게시판 목록">
           {visibleBoards.map((b) => (
             <button
               key={b.id}
@@ -362,7 +362,6 @@ export function BoardsPage(): React.JSX.Element {
               {b.unreadCount > 0 && <span className="ml-auto rounded-full bg-primary px-1.5 text-[0.7rem] font-bold text-white">{b.unreadCount}</span>}
             </button>
           ))}
-          {!visibleBoards.length && <p className="px-2 py-3 text-xs text-muted-foreground">게시판이 없습니다. {me?.role === 'admin' ? '[게시판 만들기]로 만드세요.' : '관리자에게 요청하세요.'}</p>}
         </aside>
         {current ? (
           <div className="flex min-w-0 flex-1">
@@ -422,7 +421,7 @@ export function BoardsPage(): React.JSX.Element {
             <div className="min-w-0 flex-1 overflow-y-auto">{postId ? <PostView key={postId} id={postId} onDeleted={() => navigate(`/boards/${current.id}`)} /> : <EmptyState icon={ClipboardList} title="글을 선택하세요" />}</div>
           </div>
         ) : (
-          <EmptyState icon={ClipboardList} title="게시판이 없습니다" />
+          <EmptyState icon={ClipboardList} title="게시판이 없습니다" description={me?.role === 'admin' ? '위의 [게시판 만들기]로 첫 게시판을 만드세요.' : '게시판은 최종관리자·서무나 그룹장이 만듭니다. 필요하면 요청하세요.'} />
         )}
       </div>
       {dialog === 'board' && <BoardDialog onClose={() => setDialog(null)} />}
