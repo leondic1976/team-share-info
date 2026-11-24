@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { SavedServers } from '@renderer/app/ConnChip'
 import { ArrowLeft, Loader2, Radar, Send, Server } from 'lucide-react'
 import { SetupFrame, Field } from './SetupFrame'
 import { Button } from '@renderer/components/ui/button'
@@ -26,6 +27,8 @@ export function JoinScreen({ onBack, onSubmitted }: { onBack: () => void; onSubm
   const [agree, setAgree] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  /** Name of the signed-in person on a shared PC; null on an ordinary PC. */
+  const [seat, setSeat] = useState<string | null>(null)
 
   const scan = async (): Promise<void> => {
     setScanning(true)
@@ -39,6 +42,12 @@ export function JoinScreen({ onBack, onSubmitted }: { onBack: () => void; onSubm
 
   useEffect(() => {
     void scan()
+    // shared PC: the request is this person's own, under the name they sign in with
+    void invoke('seat:state').then((s) => {
+      if (!s.enabled || !s.active) return
+      setSeat(s.active.name)
+      setName((n) => n || s.active!.name)
+    })
   }, [])
 
   const check = async (addr = address): Promise<void> => {
@@ -73,6 +82,12 @@ export function JoinScreen({ onBack, onSubmitted }: { onBack: () => void; onSubm
       setError('안내 사항에 동의해야 사용할 수 있습니다.')
       return
     }
+    // An older server would take a second person of this PC (same PC name and Windows account)
+    // for the first one: same account, and the first person cut off. It must know shared PCs.
+    if (seat !== null && !hello.caps?.includes('seats')) {
+      setError('이 서버는 공용 PC(한 PC를 여러 명이 사용)를 구분하지 못하는 이전 버전입니다. 서버 PC의 TeamHub를 최신 버전으로 업데이트한 뒤 다시 신청하세요.')
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -82,7 +97,7 @@ export function JoinScreen({ onBack, onSubmitted }: { onBack: () => void; onSubm
         method: 'POST',
         baseUrl: url,
         noAuth: true,
-        body: { name: name.trim(), deptName: dept, title, ext, pcName: conn.pcName, winUser: conn.winUser, appVersion: conn.appVersion, pcUid }
+        body: { name: name.trim(), deptName: dept, title, ext, pcName: conn.pcName, winUser: conn.winUser, appVersion: conn.appVersion, pcUid, ...(seat !== null ? { sharedPc: true } : {}) }
       })
       await invoke('conn:setPending', { serverUrl: url, requestId: r.requestId, pollToken: r.pollToken, name: name.trim() })
       await invoke('local:kv.set', { key: 'consentAt', value: Date.now() })
@@ -170,6 +185,7 @@ export function JoinScreen({ onBack, onSubmitted }: { onBack: () => void; onSubm
               </div>
               <p className="text-xs text-muted-foreground">
                 이 PC: {conn.pcName} · Windows 계정: {conn.winUser}
+                {seat !== null && ` · 공용 PC 사용자: ${seat}`}
               </p>
               <label className="flex cursor-pointer items-start gap-2 rounded-md bg-[var(--notice-bg)] px-3 py-2 text-sm text-[var(--notice-fg)]">
                 <input type="checkbox" className="mt-0.5" checked={agree} onChange={(e) => setAgree(e.target.checked)} aria-label="안내 동의" />
@@ -252,6 +268,7 @@ export function PendingScreen({ onApproved, onReset }: { onApproved: () => void;
           >
             신청 취소하고 처음으로
           </Button>
+          <SavedServers />
         </CardContent>
       </Card>
     </SetupFrame>

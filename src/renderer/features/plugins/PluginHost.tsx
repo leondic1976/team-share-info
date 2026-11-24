@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { InstalledPlugin, PluginPermission, PluginRoomDto } from '@shared/schemas/plugins'
 import type { MemberDto } from '@shared/schemas/auth'
 import { EmptyState } from '@renderer/components/EmptyState'
@@ -10,6 +10,7 @@ import { api, errorMessage } from '@renderer/lib/api'
 import { realtime } from '@renderer/lib/realtime'
 import { useMe } from '@renderer/lib/queries'
 import { usePrefs } from '@renderer/app/prefs-store'
+import { MENU_PLUGINS } from '@renderer/app/menu'
 import { Puzzle } from 'lucide-react'
 import { detectPii, PII_LABEL } from '@shared/pii'
 
@@ -44,8 +45,40 @@ const NEEDS: Record<string, PluginPermission | null> = {
  * Runs an installed plugin in a sandboxed iframe (own origin, no network: CSP set by
  * main) and answers its postMessage calls within the declared permissions.
  */
-export function PluginHost(): React.JSX.Element {
-  const { id = '' } = useParams()
+/**
+ * A built-in extension shown as a left-menu item of its own (식사 신청): installed from the
+ * program's own bundle the first time it is opened - no internet, no question - then run like
+ * any other extension.
+ */
+export function MenuPlugin({ id }: { id: string }): React.JSX.Element {
+  const qc = useQueryClient()
+  const list = useQuery({ queryKey: ['local', 'plugins'], queryFn: () => invoke('plugins:list'), networkMode: 'always' })
+  const have = list.data?.find((p) => p.manifest.id === id)
+  const [err, setErr] = useState('')
+  const tried = useRef(false)
+  useEffect(() => {
+    if (!list.isFetched || tried.current || (have && have.enabled)) return
+    tried.current = true
+    void (async () => {
+      try {
+        if (!have) {
+          const r = await invoke('plugins:installCatalog', { id, builtin: true })
+          if (!r.ok) return setErr(r.error ?? '준비하지 못했습니다.')
+        } else await invoke('plugins:setEnabled', { id, enabled: true })
+        await qc.invalidateQueries({ queryKey: ['local', 'plugins'] })
+      } catch (e) {
+        setErr(errorMessage(e))
+      }
+    })()
+  }, [list.isFetched, have, id, qc])
+  if (err) return <EmptyState icon={Puzzle} title="화면을 준비하지 못했습니다" description={err} />
+  if (!have?.enabled) return <EmptyState icon={Puzzle} title="준비하는 중…" />
+  return <PluginHost fixedId={id} />
+}
+
+export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.Element {
+  const { id: routeId = '' } = useParams()
+  const id = fixedId ?? routeId
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const frame = useRef<HTMLIFrameElement>(null)
@@ -160,6 +193,8 @@ export function PluginHost(): React.JSX.Element {
 
   // 관리대장 used to be the plugin "ledger": old links and invitations land on the built-in screen
   if (id === 'ledger') return <Navigate to={`/ledger${room ? `?room=${room}` : ''}`} replace />
+  // extensions with a menu of their own are opened there
+  if (!fixedId && MENU_PLUGINS[id]) return <Navigate to={`${MENU_PLUGINS[id]}${room ? `?room=${room}` : ''}`} replace />
   if (list.isFetched && !plugin)
     return <EmptyState icon={Puzzle} title="설치되지 않은 확장 기능입니다" action={<Button onClick={() => navigate(`/plugins?install=${id}`)}>확장 기능 화면으로</Button>} />
   if (plugin && !plugin.enabled) return <EmptyState icon={Puzzle} title={`${plugin.manifest.name}이(가) 꺼져 있습니다`} description="확장 기능 화면에서 켤 수 있습니다." />

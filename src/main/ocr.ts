@@ -52,7 +52,7 @@ function run(env: Record<string, string>): Promise<OcrRaw | null> {
   return new Promise((resolve) => {
     execFile(
       'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', SCRIPT],
+      ['-NoProfile', '-NonInteractive', '-Command', SCRIPT],
       { windowsHide: true, timeout: 60000, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, env: { ...process.env, ...env } },
       (_err, stdout) => {
         try {

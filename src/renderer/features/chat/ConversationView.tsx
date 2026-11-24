@@ -1,65 +1,104 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type HTMLAttributes, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, isSameDay } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { Paperclip, Send, Bell, BellOff, UserPlus, LogOut, Pencil, Loader2, Download, Trash2, Video } from 'lucide-react'
+import { Paperclip, Send, Bell, BellOff, Users, LogOut, Pencil, Loader2, Download, Trash2, Video, MoreHorizontal } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Textarea } from '@renderer/components/ui/input'
 import { Dialog } from '@renderer/components/Dialog'
-import { MemberPicker } from '@renderer/components/ScopePicker'
+import { PresenceDot } from '@renderer/components/PresenceDot'
 import { AuthImage } from '@renderer/components/AuthImage'
 import { downloadAuthed, formatSize, uploadAttachment } from '@renderer/components/Attachments'
-import { api, errorMessage } from '@renderer/lib/api'
+import { api, ApiError, errorMessage } from '@renderer/lib/api'
 import { realtime } from '@renderer/lib/realtime'
-import { useMe } from '@renderer/lib/queries'
+import { useMe, useMembers } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
-import type { ConversationDto, MessageDto, MessageNewPayload } from '@shared/schemas/chat'
+import type { ConversationChangedPayload, MessageDto, MessageNewPayload } from '@shared/schemas/chat'
 import { useChatUi } from './chat-store'
+import { ParticipantsDialog, type ConversationDetail } from './Participants'
 import { cn } from '@renderer/lib/utils'
 import { startMeeting } from '@renderer/features/meetings/MeetingsPage'
 import { confirmPii } from '@renderer/lib/pii'
+import { sendOrQueue, useOutbox } from '@renderer/lib/outbox'
 
 const PAGE = 50
+/** messages of a conversation kept for reading while the server is off */
+const KEEP = 200
 
-export function ConversationView({ id, onLeft }: { id: string; onLeft: () => void }): React.JSX.Element {
+export interface ConversationViewProps {
+  id: string
+  /** I left, was taken out, or the conversation is no longer mine to see */
+  onLeft: () => void
+  /** go on with another conversation (people were added to a 1:1, which makes a new room) */
+  onSwitch?: (id: string) => void
+  /** small messenger window (ChatDock): tighter spacing, header actions under "…" */
+  compact?: boolean
+  /** false while a small window is minimised: it stays mounted (the draft is kept) but is not being looked at */
+  active?: boolean
+  /** compact: the window's own buttons, at the end of the header */
+  controls?: ReactNode
+  /** compact: put on the header row (the handle the window is dragged by) */
+  headerProps?: HTMLAttributes<HTMLDivElement>
+}
+
+export function ConversationView({ id, onLeft, onSwitch, compact = false, active = true, controls, headerProps }: ConversationViewProps): React.JSX.Element {
   const qc = useQueryClient()
   const { data: me } = useMe()
+  const { data: team } = useMembers()
   const online = useConn((s) => s.state === 'online')
-  const setOpen = useChatUi((s) => s.setOpen)
+  const view = useChatUi((s) => s.view)
+  const unview = useChatUi((s) => s.unview)
   const [messages, setMessages] = useState<MessageDto[]>([])
   const [hasMore, setHasMore] = useState(true)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [err, setErr] = useState('')
-  const [inviting, setInviting] = useState(false)
-  const [inviteIds, setInviteIds] = useState<string[]>([])
+  const [people, setPeople] = useState(false)
+  const [menu, setMenu] = useState(false)
   const [viewer, setViewer] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const msgRef = useRef<MessageDto[]>([])
   msgRef.current = messages
   const stickBottom = useRef(true)
   const keepOffset = useRef<number | null>(null)
+  const activeRef = useRef(active)
+  activeRef.current = active
+  const onLeftRef = useRef(onLeft)
+  onLeftRef.current = onLeft
 
-  const conv = useQuery({ queryKey: ['chat', 'conv', id], queryFn: () => api.get<ConversationDto & { members: { id: string; name: string }[] }>(`/api/conversations/${id}`) })
+  const conv = useQuery({ queryKey: ['chat', 'conv', id], queryFn: () => api.get<ConversationDetail>(`/api/conversations/${id}`) })
+
+  /** Taken out of the room (or it is gone): nothing of it stays readable on this PC. */
+  const gone = useCallback(() => {
+    qc.setQueryData(['chat', 'msgs', id], [])
+    qc.removeQueries({ queryKey: ['chat', 'conv', id] })
+    onLeftRef.current()
+  }, [id, qc])
 
   const markRead = useCallback(
     (list: MessageDto[]) => {
       const last = list[list.length - 1]
-      if (!last || !document.hasFocus() || document.visibilityState !== 'visible') return
+      if (!last || !activeRef.current || !document.hasFocus() || document.visibilityState !== 'visible') return
       void api.post(`/api/conversations/${id}/read`, { seq: last.seq }).then(() => void qc.invalidateQueries({ queryKey: ['chat', 'list'] }))
       void qc.invalidateQueries({ queryKey: ['chat', 'unread'] })
     },
     [id, qc]
   )
 
+  // The last messages seen are kept (sealed, with the other cached data) so the conversation can be read while the server PC is off.
+  const keep = useCallback((list: MessageDto[]) => qc.setQueryData(['chat', 'msgs', id], list.slice(-KEEP)), [id, qc])
+  const waiting = useOutbox((s) => s.items).filter((i) => i.kind === 'chat.message' && i.path === `/api/conversations/${id}/messages`)
+
   const loadLatest = useCallback(async () => {
     const list = await api.get<MessageDto[]>(`/api/conversations/${id}/messages`, { limit: PAGE })
     setMessages(list)
+    keep(list)
     setHasMore(list.length === PAGE)
     stickBottom.current = true
     markRead(list)
-  }, [id, markRead])
+  }, [id, markRead, keep])
 
   /** Fetch messages newer than what we have (and refresh read counts of recent ones). */
   const refresh = useCallback(async () => {
@@ -70,33 +109,69 @@ export function ConversationView({ id, onLeft }: { id: string; onLeft: () => voi
     for (const m of fresh) map.set(m.seq, m)
     const merged = [...map.values()].sort((a, b) => a.seq - b.seq)
     setMessages(merged)
+    keep(merged)
     markRead(merged)
-  }, [id, markRead])
+  }, [id, markRead, keep])
 
   useEffect(() => {
-    setOpen(id)
-    void loadLatest()
+    setMessages(qc.getQueryData<MessageDto[]>(['chat', 'msgs', id]) ?? [])
+    // while the server is off these fail and the kept messages stay on screen;
+    // "not found" is the server's answer once I am no longer in the conversation
+    const latest = (): void =>
+      void loadLatest().catch((e: unknown) => {
+        if (e instanceof ApiError && e.status === 404) gone()
+      })
+    const newer = (): void => void refresh().catch(() => undefined)
+    latest()
     const off1 = realtime.on('message.new', (p) => {
-      if ((p as MessageNewPayload).conversationId === id) void refresh()
+      if ((p as MessageNewPayload).conversationId === id) newer()
     })
     const off2 = realtime.on('conversation.read', (p) => {
-      if ((p as { id: string }).id === id) void refresh()
+      if ((p as { id: string }).id === id) newer()
     })
-    const off3 = realtime.on('conversation.changed', (p) => {
-      if ((p as { id: string }).id === id) void loadLatest()
+    const off3 = realtime.on('conversation.changed', (raw) => {
+      const p = raw as ConversationChangedPayload
+      if (p.id !== id) return
+      const meId = useConn.getState().memberId
+      if (meId && p.removed?.includes(meId)) gone()
+      else latest()
     })
-    const offRe = realtime.onReconnect(() => void loadLatest())
+    const offRe = realtime.onReconnect(latest)
     const onFocus = (): void => markRead(msgRef.current)
     window.addEventListener('focus', onFocus)
     return () => {
-      setOpen(null)
       off1()
       off2()
       off3()
       offRe()
       window.removeEventListener('focus', onFocus)
     }
-  }, [id, loadLatest, refresh, setOpen, markRead])
+  }, [id, loadLatest, refresh, markRead, qc, gone])
+
+  // "Being looked at" (no alert, messages count as read) only while shown: a minimised small window is not.
+  useEffect(() => {
+    if (!active) return
+    view(id)
+    const el = listRef.current
+    if (el && stickBottom.current) el.scrollTop = el.scrollHeight
+    markRead(msgRef.current)
+    return () => unview(id)
+  }, [id, active, view, unview, markRead])
+
+  // compact: the "…" menu closes on a click anywhere else and on Esc
+  useEffect(() => {
+    if (!menu) return
+    const close = (): void => setMenu(false)
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setMenu(false)
+    }
+    window.addEventListener('click', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [menu])
 
   useLayoutEffect(() => {
     const el = listRef.current
@@ -125,9 +200,13 @@ export function ConversationView({ id, onLeft }: { id: string; onLeft: () => voi
     setSending(true)
     setErr('')
     try {
-      await api.post(`/api/conversations/${id}/messages`, { body, attachmentIds })
+      // text can wait for the server on this PC; files cannot (they are stored on the server)
+      const r = attachmentIds.length
+        ? await api.post(`/api/conversations/${id}/messages`, { body, attachmentIds }).then(() => ({ queued: false }))
+        : await sendOrQueue({ kind: 'chat.message', label: `메시지 → ${conv.data?.title || '대화'}: ${body.trim().slice(0, 60)}`, path: `/api/conversations/${id}/messages`, body: { body, attachmentIds: [] } })
       if (!attachmentIds.length || body.trim()) setText('')
       stickBottom.current = true
+      if (r.queued) return
       await refresh()
       void qc.invalidateQueries({ queryKey: ['chat', 'list'] })
     } catch (e) {
@@ -156,6 +235,37 @@ export function ConversationView({ id, onLeft }: { id: string; onLeft: () => voi
 
   const fileInput = useRef<HTMLInputElement>(null)
   const c = conv.data
+  // 1:1: the other person, for the presence dot of a small window
+  const other = compact && c?.kind === 'dm' ? team?.find((m) => m.id !== me?.id && c.memberIds.includes(m.id)) : undefined
+  const meet = (): void => {
+    if (!c) return
+    void startMeeting({
+      title: `${c.title} 회의`,
+      mode: 'video',
+      scope: c.groupId ? { type: 'group', groupIds: [c.groupId], memberIds: [] } : { type: 'members', groupIds: [], memberIds: c.members.map((m) => m.id) },
+      conversationId: c.id
+    }).catch((e: unknown) => window.alert(errorMessage(e)))
+  }
+  const toggleMute = async (): Promise<void> => {
+    await api.patch(`/api/conversations/${id}`, { muted: !c?.muted })
+    void qc.invalidateQueries({ queryKey: ['chat'] })
+  }
+  const rename = async (): Promise<void> => {
+    const t = window.prompt('대화방 이름', c?.title ?? '')
+    if (t === null) return
+    await api.patch(`/api/conversations/${id}`, { title: t })
+    void qc.invalidateQueries({ queryKey: ['chat'] })
+  }
+  const leave = async (): Promise<void> => {
+    if (!window.confirm('대화방에서 나갈까요?')) return
+    await api.del(`/api/conversations/${id}/members/me`)
+    void qc.invalidateQueries({ queryKey: ['chat'] })
+    onLeft()
+  }
+  const report = (e: unknown): void => setErr(errorMessage(e))
+  const menuItem = 'flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted [&_svg]:size-4 [&_svg]:shrink-0'
+  // Dialogs opened from a small window go to the document body: inside the window they would be stacked with it, below other layers.
+  const layer = (node: ReactNode): ReactNode => (compact ? createPortal(node, document.body) : node)
   return (
     <div
       className="flex h-full min-w-0 flex-col"
@@ -165,70 +275,95 @@ export function ConversationView({ id, onLeft }: { id: string; onLeft: () => voi
         void sendFiles([...e.dataTransfer.files])
       }}
     >
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-        {c?.groupColor && <span className="size-3 rounded-full" style={{ background: c.groupColor }} />}
-        <h2 className="truncate font-bold" data-testid="conv-title">
+      <div {...(compact ? headerProps : undefined)} className={cn('flex shrink-0 items-center border-b border-border', compact ? 'relative gap-1.5 bg-muted/60 py-1 pl-2.5 pr-1' : 'gap-2 px-4 py-2.5', compact && headerProps?.className)}>
+        {c?.groupColor && <span className="size-3 shrink-0 rounded-full" style={{ background: c.groupColor }} />}
+        {other && <PresenceDot presence={other.presence} />}
+        <h2 className={cn('truncate font-bold', compact && 'text-sm')} data-testid="conv-title">
           {c?.title ?? '…'}
         </h2>
-        <span className="text-xs text-muted-foreground" title={c?.members.map((m) => m.name).join(', ')}>
+        <button
+          type="button"
+          className="shrink-0 cursor-pointer rounded px-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default"
+          title={c ? `${c.members.map((m) => m.name).join(', ')} · 눌러서 참가자 보기` : undefined}
+          disabled={!c}
+          onClick={() => setPeople(true)}
+          data-testid="conv-count"
+        >
           {c?.memberCount}명
-        </span>
-        <div className="ml-auto flex gap-1">
-          {c && (
+        </button>
+        {compact ? (
+          <div className="ml-auto flex shrink-0 items-center">
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="이 대화방에서 회의 시작"
-              title="이 대화방에서 회의 시작"
-              onClick={() =>
-                void startMeeting({
-                  title: `${c.title} 회의`,
-                  mode: 'video',
-                  scope: c.groupId ? { type: 'group', groupIds: [c.groupId], memberIds: [] } : { type: 'members', groupIds: [], memberIds: c.members.map((m) => m.id) },
-                  conversationId: c.id
-                }).catch((e: unknown) => window.alert(errorMessage(e)))
-              }
+              aria-label="대화방 메뉴"
+              title="대화방 메뉴"
+              aria-haspopup="menu"
+              aria-expanded={menu}
+              onClick={(e) => {
+                // keep this click from reaching the "click anywhere else" listener that closes the menu
+                e.stopPropagation()
+                setMenu((v) => !v)
+              }}
             >
-              <Video />
+              <MoreHorizontal />
             </Button>
-          )}
-          <Button size="icon-sm" variant="ghost" aria-label={c?.muted ? '알림 켜기' : '알림 끄기'} title={c?.muted ? '알림 켜기' : '알림 끄기'} onClick={async () => {
-            await api.patch(`/api/conversations/${id}`, { muted: !c?.muted })
-            void qc.invalidateQueries({ queryKey: ['chat'] })
-          }}>
-            {c?.muted ? <BellOff /> : <Bell />}
-          </Button>
-          {c?.kind === 'room' && (
-            <>
-              <Button size="icon-sm" variant="ghost" aria-label="대화방 이름 바꾸기" onClick={async () => {
-                const t = window.prompt('대화방 이름', c.title)
-                if (t !== null) {
-                  await api.patch(`/api/conversations/${id}`, { title: t })
-                  void qc.invalidateQueries({ queryKey: ['chat'] })
-                }
-              }}>
+            {controls}
+            {menu && (
+              <div role="menu" className="absolute right-1 top-full z-10 mt-0.5 w-48 rounded-md border border-border bg-card py-1 shadow-lg" data-testid="conv-menu">
+                <button type="button" role="menuitem" className={menuItem} disabled={!c} onClick={() => setPeople(true)}>
+                  <Users /> 참가자
+                </button>
+                <button type="button" role="menuitem" className={menuItem} onClick={() => void toggleMute().catch(report)}>
+                  {c?.muted ? <Bell /> : <BellOff />} {c?.muted ? '알림 켜기' : '알림 끄기'}
+                </button>
+                {c?.kind === 'room' && (
+                  <button type="button" role="menuitem" className={menuItem} onClick={() => void rename().catch(report)}>
+                    <Pencil /> 대화방 이름 바꾸기
+                  </button>
+                )}
+                {c && (
+                  <button type="button" role="menuitem" className={menuItem} onClick={meet}>
+                    <Video /> 이 대화방에서 회의 시작
+                  </button>
+                )}
+                {c?.kind !== 'group' && (
+                  <button type="button" role="menuitem" className={cn(menuItem, 'text-urgent')} onClick={() => void leave().catch(report)}>
+                    <LogOut /> 대화방 나가기
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="ml-auto flex gap-1">
+            {c && (
+              <Button size="icon-sm" variant="ghost" aria-label="이 대화방에서 회의 시작" title="이 대화방에서 회의 시작" onClick={meet}>
+                <Video />
+              </Button>
+            )}
+            <Button size="icon-sm" variant="ghost" aria-label={c?.muted ? '알림 켜기' : '알림 끄기'} title={c?.muted ? '알림 켜기' : '알림 끄기'} onClick={() => void toggleMute()}>
+              {c?.muted ? <BellOff /> : <Bell />}
+            </Button>
+            {c?.kind === 'room' && (
+              <Button size="icon-sm" variant="ghost" aria-label="대화방 이름 바꾸기" title="대화방 이름 바꾸기" onClick={() => void rename()}>
                 <Pencil />
               </Button>
-              <Button size="icon-sm" variant="ghost" aria-label="초대하기" onClick={() => setInviting(true)}>
-                <UserPlus />
-              </Button>
-            </>
-          )}
-          {c?.kind !== 'group' && (
-            <Button size="icon-sm" variant="ghost" aria-label="대화방 나가기" onClick={async () => {
-              if (!window.confirm('대화방에서 나갈까요?')) return
-              await api.del(`/api/conversations/${id}/members/me`)
-              void qc.invalidateQueries({ queryKey: ['chat'] })
-              onLeft()
-            }}>
-              <LogOut />
+            )}
+            <Button size="icon-sm" variant="ghost" aria-label="참가자" title="참가자 (추가·내보내기)" disabled={!c} onClick={() => setPeople(true)}>
+              <Users />
             </Button>
-          )}
-        </div>
+            {c?.kind !== 'group' && (
+              <Button size="icon-sm" variant="ghost" aria-label="대화방 나가기" title="대화방 나가기" onClick={() => void leave()}>
+                <LogOut />
+              </Button>
+            )}
+          </div>
+        )}
       </div>
       <div
         ref={listRef}
-        className="selectable min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-3"
+        className={cn('selectable min-h-0 flex-1 space-y-1 overflow-y-auto', compact ? 'px-3 py-2' : 'px-4 py-3')}
         data-testid="message-list"
         onScroll={(e) => {
           const el = e.currentTarget
@@ -250,7 +385,7 @@ export function ConversationView({ id, onLeft }: { id: string; onLeft: () => voi
                 <p className="my-1 text-center text-xs text-muted-foreground">{m.body}</p>
               ) : (
                 <div className={cn('group flex items-end gap-1.5', mine ? 'flex-row-reverse' : '', !grouped && 'mt-2')} data-testid="message">
-                  <div className={cn('max-w-[70%]', mine ? 'items-end' : 'items-start', 'flex flex-col')}>
+                  <div className={cn(compact ? 'max-w-[78%]' : 'max-w-[70%]', mine ? 'items-end' : 'items-start', 'flex flex-col')}>
                     {!mine && !grouped && <span className="mb-0.5 text-xs font-semibold">{m.senderName}</span>}
                     {m.kind === 'image' && m.attachments[0] ? (
                       <AuthImage path={`/api/attachments/${m.attachments[0].id}`} alt={m.body} className="max-h-60 cursor-zoom-in rounded-lg border border-border" onClick={() => setViewer(m.attachments[0].id)} />
@@ -292,9 +427,15 @@ export function ConversationView({ id, onLeft }: { id: string; onLeft: () => voi
             </div>
           )
         })}
+        {waiting.map((w) => (
+          <div key={w.id} className="mt-2 flex flex-row-reverse items-end gap-1.5" data-testid="message-waiting">
+            <div className="max-w-[70%] rounded-2xl rounded-br-sm border border-dashed border-primary/60 bg-primary/10 px-3 py-1.5 text-sm whitespace-pre-wrap break-words">{(w.body as { body: string }).body}</div>
+            <span className={cn('shrink-0 text-[0.68rem]', w.state === 'failed' ? 'text-urgent' : 'text-muted-foreground')}>{w.state === 'failed' ? '보내지 못함' : '서버 연결 시 전송'}</span>
+          </div>
+        ))}
       </div>
       {err && <p className="px-4 text-xs text-urgent">{err}</p>}
-      <div className="flex shrink-0 items-end gap-2 border-t border-border p-3">
+      <div className={cn('flex shrink-0 items-end border-t border-border', compact ? 'gap-1 p-2' : 'gap-2 p-3')}>
         <Button size="icon" variant="ghost" aria-label="파일 보내기" onClick={() => fileInput.current?.click()} disabled={!online || sending}>
           <Paperclip />
         </Button>
@@ -303,9 +444,16 @@ export function ConversationView({ id, onLeft }: { id: string; onLeft: () => voi
           aria-label="메시지 입력"
           className="max-h-40 min-h-10 flex-1 resize-none"
           rows={1}
-          placeholder={online ? '메시지 입력 (Enter 보내기, Shift+Enter 줄바꿈) · 캡처 이미지를 붙여넣을 수 있습니다' : '서버에 연결되어 있지 않습니다'}
+          placeholder={
+            compact
+              ? online
+                ? '메시지 입력 (Enter 보내기)'
+                : '서버 꺼짐 · 켜지면 보냅니다'
+              : online
+                ? '메시지 입력 (Enter 보내기, Shift+Enter 줄바꿈) · 캡처 이미지를 붙여넣을 수 있습니다'
+                : '서버가 꺼져 있습니다. 쓴 메시지는 보관했다가 서버가 켜지면 보냅니다'
+          }
           value={text}
-          disabled={!online}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -321,36 +469,18 @@ export function ConversationView({ id, onLeft }: { id: string; onLeft: () => voi
             }
           }}
         />
-        <Button size="icon" aria-label="보내기" onClick={() => void send()} disabled={!online || sending || !text.trim()}>
+        <Button size="icon" aria-label="보내기" onClick={() => void send()} disabled={sending || !text.trim()}>
           {sending ? <Loader2 className="animate-spin" /> : <Send />}
         </Button>
       </div>
-      <p className="shrink-0 px-4 pb-1.5 text-[0.7rem] text-[var(--notice-fg)]">⚠ 중요 보안 내용, 개인정보, 비공개 정보는 보낼 수 없습니다.</p>
-      <Dialog
-        open={inviting}
-        onClose={() => setInviting(false)}
-        title="대화방에 초대"
-        footer={
-          <Button
-            disabled={!inviteIds.length}
-            onClick={async () => {
-              await api.post(`/api/conversations/${id}/members`, { memberIds: inviteIds })
-              setInviting(false)
-              setInviteIds([])
-              void qc.invalidateQueries({ queryKey: ['chat'] })
-            }}
-          >
-            초대
-          </Button>
-        }
-      >
-        <MemberPicker value={inviteIds} onChange={setInviteIds} excludeSelf />
-      </Dialog>
-      {viewer && (
-        <Dialog open onClose={() => setViewer(null)} title="사진" width="max-w-5xl">
-          <AuthImage path={`/api/attachments/${viewer}`} alt="사진" className="mx-auto max-h-[75vh]" />
-        </Dialog>
-      )}
+      <p className={cn('shrink-0 text-[var(--notice-fg)]', compact ? 'px-2.5 pb-1 text-[0.65rem]' : 'px-4 pb-1.5 text-[0.7rem]')}>⚠ 중요 보안 내용, 개인정보, 비공개 정보는 보낼 수 없습니다.</p>
+      {people && c && layer(<ParticipantsDialog conv={c} onClose={() => setPeople(false)} onSwitch={(next) => onSwitch?.(next)} onLeft={onLeft} />)}
+      {viewer &&
+        layer(
+          <Dialog open onClose={() => setViewer(null)} title="사진" width="max-w-5xl">
+            <AuthImage path={`/api/attachments/${viewer}`} alt="사진" className="mx-auto max-h-[75vh]" />
+          </Dialog>
+        )}
     </div>
   )
 }

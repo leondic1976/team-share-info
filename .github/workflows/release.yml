@@ -58,7 +58,21 @@ jobs:
           FEEDBACK_APP_ID: ${{ secrets.FEEDBACK_APP_ID }}
           FEEDBACK_APP_KEY: ${{ secrets.FEEDBACK_APP_KEY }}
           FEEDBACK_INSTALLATION_ID: ${{ secrets.FEEDBACK_INSTALLATION_ID }}
+      # Code signing (optional): with the repository secrets CSC_LINK (base64 of the .pfx, or an
+      # https link to it) and CSC_KEY_PASSWORD the installer and TeamHub.exe are signed, which is
+      # what stops SmartScreen and security programs from flagging them. Without the secrets the
+      # build is unsigned as before (docs/manual/98-exception-request.md).
       - run: pnpm exec electron-builder --win --publish never
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      - name: Signature and hash of the installer (shown in the run log)
+        shell: pwsh
+        run: |
+          $f = Get-ChildItem release/TeamHub-Setup-*.exe | Select-Object -First 1
+          $s = Get-AuthenticodeSignature $f.FullName
+          "signature: $($s.Status) $($s.SignerCertificate.Subject)"
+          "sha256: $((Get-FileHash $f.FullName -Algorithm SHA256).Hash)"
       - name: Release notes from the tag message
         shell: bash
         run: |

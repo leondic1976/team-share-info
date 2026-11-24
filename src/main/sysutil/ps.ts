@@ -3,11 +3,13 @@ import { execFile } from 'node:child_process'
 /**
  * Run a fixed PowerShell script (13.1: no wmic, no values from the server).
  * Output is forced to UTF-8 so Korean paths survive. Resolves '' on failure.
+ * No "-ExecutionPolicy Bypass": the policy only applies to script files, not to -Command,
+ * and security programs count that switch as a sign of malware.
  */
 export function runPs(script: string, timeoutMs = 30000): Promise<string> {
   const full = `$ErrorActionPreference='SilentlyContinue'; [Console]::OutputEncoding=[Text.Encoding]::UTF8; ${script}`
   return new Promise((resolve) => {
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', full], { windowsHide: true, timeout: timeoutMs, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }, (_err, stdout) => resolve((stdout ?? '').trim()))
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', full], { windowsHide: true, timeout: timeoutMs, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }, (_err, stdout) => resolve((stdout ?? '').trim()))
   })
 }
 

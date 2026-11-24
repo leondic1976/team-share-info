@@ -50,6 +50,11 @@ export function ApprovalsTab(): React.JSX.Element {
                 <span>계정 {r.winUser}</span>
                 <span>{format(r.createdAt, 'M/d HH:mm')}</span>
                 {r.pcUid && <span>고유값 {r.pcUid}</span>}
+                {r.sharedPc && (
+                  <Badge title="PC 한 대를 여러 명이 함께 쓰는 PC입니다. 같은 PC 이름·계정으로 사람마다 따로 신청하며, 승인하면 사람마다 계정이 따로 생깁니다." data-testid="join-shared">
+                    공용 PC
+                  </Badge>
+                )}
                 {!r.inAllowedRange && <Badge variant="urgent">허용 대역 밖</Badge>}
               </div>
               {r.knownMember && (

@@ -22,6 +22,8 @@ import {
   Puzzle,
   Table2,
   UserCheck,
+  Network,
+  Utensils,
   type LucideIcon
 } from 'lucide-react'
 import type { FeatureKey } from '@shared/constants'
@@ -49,7 +51,10 @@ export const MENU: MenuItem[] = [
   { key: 'tasks', label: '할 일', path: '/tasks', icon: ListTodo },
   { key: 'boards', label: '게시판', path: '/boards', icon: ClipboardList },
   { key: 'duty', label: '근무현황', path: '/duty', icon: UserCheck },
+  { key: 'org', label: '조직도', path: '/org', icon: Network },
   { key: 'directory', label: '주소록', path: '/directory', icon: Contact },
+  // a built-in extension (plugins/meal) shown as a menu of its own; installed by itself when first opened
+  { key: 'meal', label: '식사 신청', path: '/meal', icon: Utensils },
   { key: 'docs', label: '기록', path: '/docs', icon: BookOpen },
   { key: 'diary', label: '다이어리', path: '/diary', icon: NotebookPen, personal: true },
   { key: 'memos', label: '메모', path: '/memos', icon: StickyNote, personal: true },
@@ -64,6 +69,9 @@ export const MENU: MenuItem[] = [
 ]
 
 /** Menus with a line of their own in the sidebar, in the saved order. */
+/** Extensions that have a menu of their own (id -> path): not listed again under 확장 기능. */
+export const MENU_PLUGINS: Record<string, string> = { meal: '/meal' }
+
 export const topMenu = (order: string[]): MenuItem[] => orderMenu(order).filter((m) => !m.under)
 /** Built-in screens listed under another menu (e.g. 관리대장 under 확장 기능). */
 export const subMenu = (parent: FeatureKey): MenuItem[] => MENU.filter((m) => m.under === parent)

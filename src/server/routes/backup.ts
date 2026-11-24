@@ -6,10 +6,11 @@ import { badRequest, notFound } from '../errors'
 import { parse, ok } from '../validate'
 import { logActivity } from '../activity'
 import { backupRoot, listBackups, readState, runBackup, stageRestore } from '../backup'
+import { makeRequireOwner } from '../auth'
 
-/** Admin: backups, "back up now" and restore (6.16 백업·복구). */
+/** 최종관리자 (the server PC) only, a 서무 gets 403 OWNER_ONLY: backups, "back up now" and restore (6.16 백업·복구). */
 export function registerBackupRoutes(app: FastifyInstance, ctx: ServerContext, guards: { requireAuth: preHandlerAsyncHookHandler; requireAdmin: preHandlerAsyncHookHandler }): void {
-  const admin = { preHandler: [guards.requireAuth, guards.requireAdmin] }
+  const admin = { preHandler: [guards.requireAuth, guards.requireAdmin, makeRequireOwner(ctx)] }
 
   app.get('/api/admin/backups', admin, async () => {
     const root = backupRoot(ctx.db, ctx.dataDir)

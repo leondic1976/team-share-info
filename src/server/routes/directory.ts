@@ -8,7 +8,10 @@ import { badRequest, forbidden, notFound } from '../errors'
 import { parse, ok } from '../validate'
 import { logActivity } from '../activity'
 import { audienceOf, canSee, inGroupWhere, scopeDto, setScope, visibleWhere } from '../scope'
-import { listDepartments } from '../repos/members'
+import { adminFieldsOf, getMember, listDepartments, setAdminFields, updateMember } from '../repos/members'
+import { subtreeIds } from '../../shared/org'
+import { departmentCreateSchema, departmentOrderSchema, departmentPatchSchema, orgMemberOrderSchema, orgMemberPatchSchema } from '../../shared/schemas/org'
+import { ADMIN_SET_FIELDS } from '../../shared/schemas/auth'
 
 interface ContactRow {
   id: string
@@ -27,11 +30,12 @@ interface ContactRow {
 const TEAM: ScopeInput = { type: 'team', groupIds: [], memberIds: [] }
 
 /** Shared external contacts (6.10) and the department tree used by the org chart. */
-export function registerDirectoryRoutes(app: FastifyInstance, ctx: ServerContext, guards: { requireAuth: preHandlerAsyncHookHandler; requireAdmin: preHandlerAsyncHookHandler }): void {
+export function registerDirectoryRoutes(app: FastifyInstance, ctx: ServerContext, guards: { requireAuth: preHandlerAsyncHookHandler; requireAdmin: preHandlerAsyncHookHandler; requireOwner: preHandlerAsyncHookHandler }): void {
   const auth = { preHandler: guards.requireAuth }
-  const admin = { preHandler: [guards.requireAuth, guards.requireAdmin] }
+  // the organisation (departments) is the 최종관리자's (server PC); a 서무 gets 403 OWNER_ONLY
+  const owner = { preHandler: [guards.requireAuth, guards.requireAdmin, guards.requireOwner] }
   const db = ctx.db
-  const SELECT = `SELECT c.*, m.name AS created_by_name FROM contacts c JOIN members m ON m.id = c.created_by`
+  const SELECT = `SELECT c.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS created_by_name FROM contacts c JOIN members m ON m.id = c.created_by`
 
   const toDto = (r: ContactRow, req: FastifyRequest): ContactDto => ({
     id: r.id,
@@ -139,42 +143,141 @@ export function registerDirectoryRoutes(app: FastifyInstance, ctx: ServerContext
     return ok({ id: r.id })
   })
 
-  // ---- departments (org chart), admin only ----
+  // ---- organisation (departments, who belongs where): read by everyone, changed only by the 최종관리자 (server PC) ----
   app.get('/api/departments', auth, async () => ok(listDepartments(db)))
 
-  app.post('/api/admin/departments', admin, async (req) => {
-    const d = parse(z.object({ name: z.string().trim().min(1).max(40), parentId: z.string().nullable().default(null), sort: z.number().int().default(0) }), req.body)
-    if (db.get('SELECT 1 FROM departments WHERE name = ?', [d.name])) throw badRequest('같은 이름의 부서가 있습니다.')
+  interface DeptRow {
+    id: string
+    name: string
+    parent_id: string | null
+  }
+  const deptRow = (id: string): DeptRow => {
+    const r = db.get<DeptRow>('SELECT id, name, parent_id FROM departments WHERE id = ?', [id])
+    if (!r) throw notFound('부서')
+    return r
+  }
+  const checkName = (name: string, selfId = ''): void => {
+    if (db.get('SELECT 1 FROM departments WHERE name = ? AND id <> ?', [name, selfId])) throw badRequest('같은 이름의 부서가 있습니다.')
+  }
+  const checkParent = (parentId: string | null | undefined, selfId?: string): void => {
+    if (!parentId) return
+    if (!db.get('SELECT 1 FROM departments WHERE id = ?', [parentId])) throw badRequest('상위 부서를 찾을 수 없습니다.')
+    if (selfId && subtreeIds(listDepartments(db), selfId).has(parentId)) throw badRequest('자기 자신이나 하위 부서를 상위 부서로 정할 수 없습니다.')
+  }
+  const checkHead = (headId: string | null | undefined): void => {
+    if (headId && !getMember(db, headId)) throw badRequest('부서장으로 정한 구성원을 찾을 수 없습니다.')
+  }
+  const orgChanged = (): void => ctx.hub.broadcast('member.changed', {})
+
+  app.post('/api/admin/departments', owner, async (req) => {
+    const d = parse(departmentCreateSchema, req.body)
+    checkName(d.name)
+    checkParent(d.parentId)
+    checkHead(d.headId)
     const id = newId()
     const t = Date.now()
-    db.run('INSERT INTO departments (id, name, parent_id, sort, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', [id, d.name, d.parentId, d.sort, t, t])
-    logActivity(ctx, req, 'department.create', { type: 'department', id }, { name: d.name })
-    ctx.hub.broadcast('member.changed', {})
-    return ok({ id })
-  })
-
-  app.patch('/api/admin/departments/:id', admin, async (req) => {
-    const { id } = req.params as { id: string }
-    const d = parse(z.object({ name: z.string().trim().min(1).max(40).optional(), parentId: z.string().nullable().optional(), sort: z.number().int().optional() }), req.body)
-    if (d.parentId === id) throw badRequest('자기 자신을 상위 부서로 정할 수 없습니다.')
-    db.run(`UPDATE departments SET name = COALESCE(?, name), parent_id = CASE WHEN ? THEN ? ELSE parent_id END, sort = COALESCE(?, sort), updated_at = ? WHERE id = ?`, [
-      d.name ?? null,
-      d.parentId !== undefined ? 1 : 0,
-      d.parentId ?? null,
-      d.sort ?? null,
-      Date.now(),
-      id
+    const last = db.get<{ n: number | null }>('SELECT MAX(sort) AS n FROM departments WHERE parent_id IS ?', [d.parentId])?.n ?? 0
+    db.run('INSERT INTO departments (id, name, parent_id, sort, head_id, phone, duties, location, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+      id,
+      d.name,
+      d.parentId,
+      d.sort ?? last + 1,
+      d.headId ?? null,
+      d.phone ?? null,
+      d.duties ?? null,
+      d.location ?? null,
+      t,
+      t
     ])
-    ctx.hub.broadcast('member.changed', {})
+    logActivity(ctx, req, 'department.create', { type: 'department', id }, { name: d.name })
+    orgChanged()
     return ok({ id })
   })
 
-  app.delete('/api/admin/departments/:id', admin, async (req) => {
+  /** The departments of one parent in a new order (조직 관리: 위로/아래로). */
+  app.put('/api/admin/departments/order', owner, async (req) => {
+    const o = parse(departmentOrderSchema, req.body)
+    const siblings = new Set(db.all<{ id: string }>('SELECT id FROM departments WHERE parent_id IS ?', [o.parentId]).map((r) => r.id))
+    if (new Set(o.ids).size !== o.ids.length || o.ids.some((id) => !siblings.has(id))) throw badRequest('같은 상위 부서에 속한 부서만 순서를 바꿀 수 있습니다.')
+    const t = Date.now()
+    db.tx(() => o.ids.forEach((id, i) => db.run('UPDATE departments SET sort = ?, updated_at = ? WHERE id = ?', [i + 1, t, id])))
+    logActivity(ctx, req, 'department.order', null, { parentId: o.parentId, count: o.ids.length })
+    orgChanged()
+    return ok({ count: o.ids.length })
+  })
+
+  app.patch('/api/admin/departments/:id', owner, async (req) => {
     const { id } = req.params as { id: string }
+    const d = parse(departmentPatchSchema, req.body)
+    deptRow(id)
+    if (d.name !== undefined) checkName(d.name, id)
+    checkParent(d.parentId, id)
+    checkHead(d.headId)
+    const cols: Record<string, string | number | null | undefined> = {
+      name: d.name,
+      parent_id: d.parentId,
+      sort: d.sort,
+      head_id: d.headId,
+      phone: d.phone,
+      duties: d.duties,
+      location: d.location
+    }
+    const set = Object.entries(cols).filter(([, v]) => v !== undefined) as [string, string | number | null][]
+    if (set.length) db.run(`UPDATE departments SET ${set.map(([k]) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`, [...set.map(([, v]) => v), Date.now(), id])
+    logActivity(ctx, req, 'department.update', { type: 'department', id }, d)
+    orgChanged()
+    return ok({ id })
+  })
+
+  /**
+   * A department with people in it cannot be removed (move them first). Departments below it
+   * are kept: they move up to the parent of the removed one.
+   */
+  app.delete('/api/admin/departments/:id', owner, async (req) => {
+    const { id } = req.params as { id: string }
+    const r = deptRow(id)
     if (db.get('SELECT 1 FROM members WHERE dept_id = ?', [id])) throw badRequest('소속 구성원이 있는 부서는 지울 수 없습니다. 먼저 구성원의 부서를 바꾸세요.')
-    db.run('UPDATE departments SET parent_id = NULL WHERE parent_id = ?', [id])
-    db.run('DELETE FROM departments WHERE id = ?', [id])
-    ctx.hub.broadcast('member.changed', {})
+    db.tx(() => {
+      db.run('UPDATE departments SET parent_id = ?, updated_at = ? WHERE parent_id = ?', [r.parent_id, Date.now(), id])
+      db.run('DELETE FROM departments WHERE id = ?', [id])
+    })
+    logActivity(ctx, req, 'department.delete', { type: 'department', id }, { name: r.name })
+    orgChanged()
+    return ok({ id })
+  })
+
+  /** The members of one department in a new order (the chart lists the head first, then this order). */
+  app.put('/api/admin/org/members/order', owner, async (req) => {
+    const o = parse(orgMemberOrderSchema, req.body)
+    const inDept = new Set(db.all<{ id: string }>('SELECT id FROM members WHERE dept_id IS ?', [o.deptId]).map((r) => r.id))
+    if (new Set(o.ids).size !== o.ids.length || o.ids.some((id) => !inDept.has(id))) throw badRequest('그 부서에 속한 구성원만 순서를 바꿀 수 있습니다.')
+    const t = Date.now()
+    db.tx(() => o.ids.forEach((id, i) => db.run('UPDATE members SET org_sort = ?, updated_at = ? WHERE id = ?', [i + 1, t, id])))
+    logActivity(ctx, req, 'org.member-order', null, { deptId: o.deptId, count: o.ids.length })
+    orgChanged()
+    return ok({ count: o.ids.length })
+  })
+
+  /** Where a member belongs and how they are listed: department, 직위, 직급, order. */
+  app.patch('/api/admin/org/members/:id', owner, async (req) => {
+    const { id } = req.params as { id: string }
+    const p = parse(orgMemberPatchSchema, req.body)
+    const m = getMember(db, id)
+    if (!m) throw notFound('구성원')
+    if (p.deptId) deptRow(p.deptId)
+    // in a new department the member goes to the end until an order is given there
+    const moved = p.deptId !== undefined && p.deptId !== m.dept_id
+    updateMember(db, id, {
+      deptId: p.deptId,
+      title: p.title === undefined ? undefined : p.title || null,
+      rank: p.rank === undefined ? undefined : p.rank || null,
+      orgSort: p.orgSort ?? (moved ? 0 : undefined)
+    })
+    // like 관리 → 구성원 → 정보 수정: what the server PC set stays as set
+    const fixed = ADMIN_SET_FIELDS.filter((f) => (p as Record<string, unknown>)[f] !== undefined)
+    if (fixed.length) setAdminFields(db, id, [...adminFieldsOf(m), ...fixed])
+    logActivity(ctx, req, 'org.member-update', { type: 'member', id }, p)
+    ctx.hub.broadcast('member.changed', { id })
     return ok({ id })
   })
 }

@@ -31,6 +31,16 @@ export interface ConversationDto {
   lastSenderName: string | null
   unread: number
   muted: boolean
+  /** Who made the room (absent from servers older than removing participants). */
+  createdBy?: string | null
+  /** I may remove other participants: the room's maker and admins. Absent from older servers (then nobody can). */
+  canRemove?: boolean
+}
+
+/** payload of conversation.changed; `removed` names members taken out of the room by someone else */
+export interface ConversationChangedPayload {
+  id: string
+  removed?: string[]
 }
 
 export interface MessageDto {

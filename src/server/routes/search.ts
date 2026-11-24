@@ -117,7 +117,7 @@ export function registerSearchRoutes(app: FastifyInstance, ctx: ServerContext, g
     add(
       db
         .all<{ id: string; conversation_id: string; body: string; created_at: number; title: string | null; sender: string }>(
-          `SELECT m.id, m.conversation_id, m.body, m.created_at, c.title, s.name AS sender FROM messages m
+          `SELECT m.id, m.conversation_id, m.body, m.created_at, c.title, CASE WHEN IFNULL(LENGTH(s.nickname), 0) = 0 THEN s.name ELSE s.name || char(40) || s.nickname || char(41) END AS sender FROM messages m
            JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.member_id = ?
            JOIN conversations c ON c.id = m.conversation_id JOIN members s ON s.id = m.sender_id
            WHERE m.deleted_at IS NULL AND m.kind = 'text' AND m.body LIKE ? ${E} ORDER BY m.created_at DESC LIMIT ?`,

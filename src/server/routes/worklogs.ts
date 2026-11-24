@@ -22,7 +22,7 @@ interface WorklogRow {
   updated_at: number
 }
 
-const SELECT = `SELECT w.*, m.name AS member_name, d.name AS dept_name FROM worklogs w
+const SELECT = `SELECT w.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS member_name, d.name AS dept_name FROM worklogs w
   JOIN members m ON m.id = w.member_id LEFT JOIN departments d ON d.id = m.dept_id`
 
 const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)

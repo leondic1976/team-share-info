@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import { Download, ExternalLink, FileUp, Loader2, Play, Puzzle, ShieldCheck, Trash2 } from 'lucide-react'
 import { DOWNLOAD_SITE } from '@shared/constants'
 import { compareVersions } from '@shared/semver'
+import { PLUGIN_SORTS, sortCatalog, type PluginSort } from '@shared/plugin-stats'
 import { PLUGIN_PERMISSIONS, type CatalogPlugin, type PluginManifest, type PluginPermission } from '@shared/schemas/plugins'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
@@ -13,6 +14,8 @@ import { Card, CardContent } from '@renderer/components/ui/card'
 import { Dialog, confirmDialog } from '@renderer/components/Dialog'
 import { EmptyState } from '@renderer/components/EmptyState'
 import { invoke, onMain } from '@renderer/lib/bridge'
+
+const SORT_KEY = 'teamhub.plugins.sort'
 
 interface Pending {
   manifest: Pick<PluginManifest, 'id' | 'name' | 'version' | 'description' | 'author' | 'icon' | 'permissions'>
@@ -42,6 +45,34 @@ export function PluginsPage(): React.JSX.Element {
   const [msg, setMsg] = useState('')
   const installed = useQuery({ queryKey: ['local', 'plugins'], queryFn: () => invoke('plugins:list'), networkMode: 'always' })
   const catalog = useQuery({ queryKey: ['local', 'plugin-catalog'], queryFn: () => invoke('plugins:catalog'), networkMode: 'always', staleTime: 300_000 })
+  // Download counts come from an external counter and are optional: without the internet the
+  // result is empty, nothing is shown and installing works the same.
+  const catalogIds = (catalog.data?.data ?? []).map((c) => c.id)
+  const counts = useQuery({
+    queryKey: ['local', 'plugin-counts', catalogIds.join(',')],
+    queryFn: () => invoke('plugins:downloadCounts', { ids: catalogIds }).catch(() => ({}) as Record<string, number>),
+    networkMode: 'always',
+    enabled: catalogIds.length > 0,
+    staleTime: 300_000,
+    retry: false
+  })
+  const [sort, setSort] = useState<PluginSort>(() => {
+    try {
+      const s = localStorage.getItem(SORT_KEY)
+      return s && s in PLUGIN_SORTS ? (s as PluginSort) : 'popular'
+    } catch {
+      return 'popular'
+    }
+  })
+  const chooseSort = (s: PluginSort): void => {
+    setSort(s)
+    try {
+      localStorage.setItem(SORT_KEY, s)
+    } catch {
+      // the choice just lasts until the window closes
+    }
+  }
+  const gallery = sortCatalog(catalog.data?.data ?? [], sort, counts.data ?? {})
   useEffect(() => onMain('plugins:changed', () => void qc.invalidateQueries({ queryKey: ['local', 'plugins'] })), [qc])
   const have = new Map((installed.data ?? []).map((p) => [p.manifest.id, p]))
   const askCatalog = (c: CatalogPlugin): void => setPending({ manifest: c, from: { kind: 'catalog', id: c.id } })
@@ -183,10 +214,21 @@ export function PluginsPage(): React.JSX.Element {
           <div className="mb-2 flex items-center gap-2">
             <h2 className="text-sm font-semibold text-muted-foreground">확장 기능 모음</h2>
             <span className="text-xs text-muted-foreground">기본 제공은 인터넷 없이 바로 설치됩니다.</span>
+            <span className="ml-auto" />
+            <label className="flex items-center gap-1 text-xs text-muted-foreground">
+              정렬
+              <select className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground" value={sort} data-testid="catalog-sort" onChange={(e) => chooseSort(e.target.value as PluginSort)}>
+                {(Object.keys(PLUGIN_SORTS) as PluginSort[]).map((s) => (
+                  <option key={s} value={s}>
+                    {PLUGIN_SORTS[s]}
+                  </option>
+                ))}
+              </select>
+            </label>
             {(() => {
               const rest = (catalog.data?.data ?? []).filter((c) => c.builtin && !have.has(c.id))
               return rest.length > 1 ? (
-                <Button size="sm" variant="outline" className="ml-auto" disabled={busy} onClick={() => void installNow(rest)}>
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => void installNow(rest)}>
                   <Download /> 기본 제공 모두 설치
                 </Button>
               ) : null
@@ -195,8 +237,9 @@ export function PluginsPage(): React.JSX.Element {
           {catalog.isLoading && <Loader2 className="animate-spin" />}
           {catalog.data && !catalog.data.ok && <p className="text-sm text-muted-foreground">목록을 불러오지 못했습니다(인터넷 연결 필요). 폐쇄망에서는 받은 .thplugin 파일로 설치하세요. {catalog.data.error}</p>}
           <div className="grid gap-3 lg:grid-cols-2" data-testid="plugin-catalog">
-            {catalog.data?.data?.map((c) => {
+            {gallery.map((c) => {
               const ins = have.get(c.id)
+              const downloads = counts.data?.[c.id]
               return (
                 <Card key={c.id} data-testid="catalog-plugin">
                   <CardContent className="flex gap-3 p-4">
@@ -205,6 +248,16 @@ export function PluginsPage(): React.JSX.Element {
                       <p className="font-semibold">
                         {c.name} <span className="text-xs font-normal text-muted-foreground">v{c.version} · {c.author} · {c.builtin ? '기본 제공' : '다운로드 사이트'}</span>
                       </p>
+                      {(downloads !== undefined || c.updated) && (
+                        <p className="flex flex-wrap gap-x-3 text-xs text-muted-foreground" data-testid="catalog-stats">
+                          {downloads !== undefined && (
+                            <span className="inline-flex items-center gap-1">
+                              <Download className="size-3" /> 다운로드 {downloads.toLocaleString('ko-KR')}회
+                            </span>
+                          )}
+                          {c.updated && <span>{c.updated} 갱신</span>}
+                        </p>
+                      )}
                       <p className="text-sm text-muted-foreground">{c.description}</p>
                       {c.features && (
                         <ul className="list-inside list-disc text-xs text-muted-foreground">

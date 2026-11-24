@@ -58,8 +58,8 @@ interface FileRow {
   deleted_at: number | null
 }
 
-const FOLDER_SELECT = `SELECT f.*, m.name AS created_by_name FROM folders f JOIN members m ON m.id = f.created_by`
-const FILE_SELECT = `SELECT x.*, c.name AS created_by_name, u.name AS updated_by_name, l.name AS locked_by_name
+const FOLDER_SELECT = `SELECT f.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS created_by_name FROM folders f JOIN members m ON m.id = f.created_by`
+const FILE_SELECT = `SELECT x.*, CASE WHEN IFNULL(LENGTH(c.nickname), 0) = 0 THEN c.name ELSE c.name || char(40) || c.nickname || char(41) END AS created_by_name, CASE WHEN IFNULL(LENGTH(u.nickname), 0) = 0 THEN u.name ELSE u.name || char(40) || u.nickname || char(41) END AS updated_by_name, CASE WHEN IFNULL(LENGTH(l.nickname), 0) = 0 THEN l.name ELSE l.name || char(40) || l.nickname || char(41) END AS locked_by_name
   FROM files x JOIN members c ON c.id = x.created_by LEFT JOIN members u ON u.id = x.updated_by LEFT JOIN members l ON l.id = x.locked_by`
 
 const TRASH_DAYS = 30
@@ -586,11 +586,11 @@ export function registerFileRoutes(app: FastifyInstance, ctx: ServerContext, gua
     const cutoff = Date.now() - TRASH_DAYS * 86400000
     const admin = req.member.role === 'admin'
     const files = db.all<FileRow & { deleted_by_name: string | null }>(
-      `${FILE_SELECT.replace('FROM files x', ', d.name AS deleted_by_name FROM files x')} LEFT JOIN members d ON d.id = x.deleted_by WHERE x.deleted_at IS NOT NULL AND x.deleted_at > ?`,
+      `${FILE_SELECT.replace('FROM files x', ', CASE WHEN IFNULL(LENGTH(d.nickname), 0) = 0 THEN d.name ELSE d.name || char(40) || d.nickname || char(41) END AS deleted_by_name FROM files x')} LEFT JOIN members d ON d.id = x.deleted_by WHERE x.deleted_at IS NOT NULL AND x.deleted_at > ?`,
       [cutoff]
     )
     const folders = db.all<FolderRow & { deleted_by: string | null; deleted_by_name: string | null }>(
-      `SELECT f.*, m.name AS created_by_name, d.name AS deleted_by_name FROM folders f JOIN members m ON m.id = f.created_by LEFT JOIN members d ON d.id = f.deleted_by WHERE f.deleted_at IS NOT NULL AND f.deleted_at > ?`,
+      `SELECT f.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS created_by_name, CASE WHEN IFNULL(LENGTH(d.nickname), 0) = 0 THEN d.name ELSE d.name || char(40) || d.nickname || char(41) END AS deleted_by_name FROM folders f JOIN members m ON m.id = f.created_by LEFT JOIN members d ON d.id = f.deleted_by WHERE f.deleted_at IS NOT NULL AND f.deleted_at > ?`,
       [cutoff]
     )
     const out: TrashItemDto[] = []

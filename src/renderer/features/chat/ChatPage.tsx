@@ -10,6 +10,7 @@ import { Dialog } from '@renderer/components/Dialog'
 import { MemberPicker } from '@renderer/components/ScopePicker'
 import { EmptyState, Loading, OfflineState } from '@renderer/components/EmptyState'
 import { Field } from '@renderer/features/setup/SetupFrame'
+import { sendOrQueue } from '@renderer/lib/outbox'
 import { api, errorMessage } from '@renderer/lib/api'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
@@ -80,7 +81,7 @@ function NotesView({ composeKey, to }: { composeKey: number; to: string | null }
   }, [composeKey])
   const q = useQuery({ queryKey: ['chat', 'notes', box], queryFn: () => api.get<NoteDto[]>('/api/notes', { box }) })
   const send = useMutation({
-    mutationFn: () => api.post('/api/notes', { toIds: composing!.to, body }),
+    mutationFn: () => sendOrQueue({ kind: 'note', label: `쪽지: ${body.trim().slice(0, 60)}`, path: '/api/notes', body: { toIds: composing!.to, body } }),
     onSuccess: () => {
       setComposing(null)
       setBody('')
@@ -254,7 +255,6 @@ export function ChatPage(): React.JSX.Element {
             </Button>
             <Button
               size="sm"
-              disabled={!online}
               onClick={() => {
                 setTab('notes')
                 setNoteTo(null)
@@ -327,7 +327,7 @@ export function ChatPage(): React.JSX.Element {
             </div>
           </div>
           <div className="min-w-0 flex-1">
-            {id && id !== 'notes' ? <ConversationView key={id} id={id} onLeft={() => navigate('/chat')} /> : <EmptyState icon={MessagesSquare} title="대화를 선택하세요" description="새로 시작하려면 위의 [새 대화]를 누르세요." />}
+            {id && id !== 'notes' ? <ConversationView key={id} id={id} onLeft={() => navigate('/chat')} onSwitch={(next) => navigate(`/chat/${next}`)} /> : <EmptyState icon={MessagesSquare} title="대화를 선택하세요" description="새로 시작하려면 위의 [새 대화]를 누르세요." />}
           </div>
         </div>
       )}

@@ -6,6 +6,7 @@ import { normalizeTarget, treeSize } from '../../node/datamove'
 import { getMode, getServerConfig, setServerConfig } from '../connection'
 import { serverStatus, startServer, stopServer } from '../server-host'
 import { setQuitting } from '../windows/main-window'
+import { otherSeatDataProblem } from '../seats'
 import {
   checkLocalTarget,
   checkServerTarget,
@@ -50,10 +51,16 @@ export function registerStorageIpc(): void {
     return picked ? normalizeTarget(picked, kind === 'local' ? 'TeamHub 내 자료' : 'TeamHub 서버 자료') : null
   })
 
-  handle('storage:checkLocal', z.object({ to: path }), ({ to }) => checkLocalTarget(to))
+  // shared PC: 내 자료 저장 위치 is per person, and another person's folder is not a place to choose
+  const checkLocal = (to: string): ReturnType<typeof checkLocalTarget> => {
+    const c = checkLocalTarget(to)
+    const other = otherSeatDataProblem(to)
+    return other ? { ...c, ok: false, error: other } : c
+  }
+  handle('storage:checkLocal', z.object({ to: path }), ({ to }) => checkLocal(to))
 
   handle('storage:changeLocal', z.object({ to: path, mode: z.enum(['move', 'use']) }), ({ to, mode }) => {
-    const c = checkLocalTarget(to)
+    const c = checkLocal(to)
     if (!c.ok) return { ok: false, error: c.error }
     if (mode === 'use' && !c.hasData) return { ok: false, error: '그 폴더에 TeamHub 자료가 없습니다.' }
     if (mode === 'move' && c.hasData) return { ok: false, error: '그 폴더에 이미 TeamHub 자료가 있습니다. "그 폴더의 자료 쓰기"를 고르거나 빈 폴더를 고르세요.' }

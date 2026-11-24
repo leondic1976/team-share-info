@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { Plus, Megaphone, Pin, Paperclip, BellRing, Trash2, CheckCircle2, Clock } from 'lucide-react'
+import { Plus, Megaphone, Pin, Paperclip, BellRing, Trash2, CheckCircle2, Clock, Siren } from 'lucide-react'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
@@ -15,16 +15,19 @@ import { api, errorMessage } from '@renderer/lib/api'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
 import { useMe } from '@renderer/lib/queries'
+import { EmergencyDialog, useCanSendEmergency } from './Emergency'
 import { NOTICE_LEVEL_LABEL, type NoticeDto, type NoticeSummaryDto, type ReceiptDto } from '@shared/schemas/notices'
 import { cn } from '@renderer/lib/utils'
 import { NoticeCompose } from './NoticeCompose'
 import { FavoriteStar } from '@renderer/features/memos/widgets'
 
 type Filter = 'all' | 'unread' | 'mine'
+/** 긴급공지 (red, on every screen) and ordinary notices are listed apart. */
+type Kind = 'all' | 'urgent' | 'normal'
 
 export function LevelBadge({ level }: { level: NoticeSummaryDto['level'] }): React.JSX.Element | null {
   if (level === 'normal') return null
-  return <Badge variant={level === 'urgent' ? 'urgent' : 'important'}>{NOTICE_LEVEL_LABEL[level]}</Badge>
+  return <Badge variant={level === 'urgent' ? 'urgent' : 'important'}>{level === 'urgent' ? '긴급공지' : NOTICE_LEVEL_LABEL[level]}</Badge>
 }
 
 const fmt = (t: number | null): string => (t ? format(t, 'M/d HH:mm') : '-')
@@ -215,6 +218,9 @@ export function NoticesPage(): React.JSX.Element {
   const space = useSpace((s) => s.space)
   const [filter, setFilter] = useState<Filter>('all')
   const [composing, setComposing] = useState(false)
+  const [emergency, setEmergency] = useState(false)
+  const [kind, setKind] = useState<Kind>('all')
+  const canEmergency = useCanSendEmergency()
   const q = useQuery({
     queryKey: ['notices', 'list', filter, space],
     queryFn: () => api.get<NoticeSummaryDto[]>('/api/notices', { filter, groupId: space === 'team' ? undefined : space }),
@@ -222,19 +228,51 @@ export function NoticesPage(): React.JSX.Element {
     placeholderData: (p) => p
   })
 
+  const rows = (q.data ?? []).filter((n) => kind === 'all' || (kind === 'urgent') === (n.level === 'urgent'))
+  /** emergency notices I have not confirmed (or read) yet */
+  const urgentOpen = (q.data ?? []).filter((n) => n.level === 'urgent' && !!n.my && (n.requireAck ? !n.my.ackedAt : !n.my.readAt)).length
+
   return (
     <div className="flex h-full flex-col">
       <PageHeader
         title="공지"
-        description="공지와 긴급알림. 받은 사람별로 읽음·확인 여부가 기록됩니다."
+        description="일반 공지와 긴급공지. 받은 사람별로 읽음·확인 여부가 기록됩니다."
         actions={
-          <Button onClick={() => setComposing(true)} disabled={!online}>
-            <Plus /> 공지 쓰기
-          </Button>
+          <>
+            {canEmergency && (
+              <Button variant="destructive" onClick={() => setEmergency(true)}>
+                <Siren /> 긴급공지
+              </Button>
+            )}
+            <Button onClick={() => setComposing(true)}>
+              <Plus /> 공지 쓰기
+            </Button>
+          </>
         }
       />
       <div className="flex min-h-0 flex-1">
         <div className="flex w-96 shrink-0 flex-col border-r border-border">
+          <div className="flex gap-1 border-b border-border px-2 pt-2" role="tablist" aria-label="공지 종류">
+            {(
+              [
+                ['all', '모두'],
+                ['urgent', '긴급공지'],
+                ['normal', '일반 공지']
+              ] as const
+            ).map(([v, l]) => (
+              <button
+                key={v}
+                role="tab"
+                aria-selected={kind === v}
+                onClick={() => setKind(v)}
+                className={cn('flex-1 cursor-pointer rounded-t-md border-b-2 px-2 py-1.5 text-sm font-semibold', kind === v ? (v === 'urgent' ? 'border-urgent text-urgent' : 'border-primary text-primary') : 'border-transparent text-muted-foreground hover:bg-muted')}
+              >
+                {v === 'urgent' && <Siren className="mr-1 inline size-3.5" aria-hidden />}
+                {l}
+                {v === 'urgent' && urgentOpen > 0 && <span className="ml-1 rounded-full bg-urgent px-1.5 text-[0.7rem] text-white">{urgentOpen}</span>}
+              </button>
+            ))}
+          </div>
           <div className="flex gap-1 border-b border-border p-2">
             {(
               [
@@ -253,17 +291,17 @@ export function NoticesPage(): React.JSX.Element {
               <OfflineState />
             ) : q.isLoading ? (
               <Loading />
-            ) : !q.data?.length ? (
-              <EmptyState icon={Megaphone} title="공지가 없습니다" />
+            ) : !rows.length ? (
+              <EmptyState icon={kind === 'urgent' ? Siren : Megaphone} title={kind === 'urgent' ? '긴급공지가 없습니다' : '공지가 없습니다'} />
             ) : (
-              q.data.map((n) => {
+              rows.map((n) => {
                 const unread = !!n.my && !n.my.readAt
                 const needAck = !!n.my && n.requireAck && !n.my.ackedAt
                 return (
                   <button
                     key={n.id}
                     onClick={() => navigate(`/notices/${n.id}`)}
-                    className={cn('block w-full cursor-pointer border-b border-border px-4 py-3 text-left hover:bg-muted', id === n.id && 'bg-primary/5')}
+                    className={cn('block w-full cursor-pointer border-b border-border px-4 py-3 text-left hover:bg-muted', n.level === 'urgent' && 'border-l-4 border-l-urgent bg-urgent/5', id === n.id && 'bg-primary/5')}
                     data-testid={`notice-item-${n.title}`}
                   >
                     <div className="flex items-center gap-1.5">
@@ -297,6 +335,7 @@ export function NoticesPage(): React.JSX.Element {
           {id ? <NoticeDetail key={id} id={id} /> : <EmptyState icon={Megaphone} title="공지를 선택하세요" />}
         </div>
       </div>
+      <EmergencyDialog open={emergency} onClose={() => setEmergency(false)} />
       <NoticeCompose open={composing} onClose={() => setComposing(false)} onCreated={(nid) => navigate(`/notices/${nid}`)} />
     </div>
   )

@@ -26,7 +26,7 @@ describe('근무현황: who is away today, by department', () => {
     expect(await a.page.getByTestId('duty-row').count()).toBe(0)
 
     await b.page.getByRole('navigation', { name: '주 메뉴' }).getByRole('link', { name: '근무현황', exact: true }).click()
-    await b.page.getByRole('button', { name: '내 근무상황 올리기' }).click()
+    await b.page.getByRole('button', { name: '사고 신청' }).click()
     const dlg = b.page.getByTestId('duty-dialog')
     await dlg.getByRole('radio', { name: '출장' }).click()
     await dlg.getByLabel('행선지').fill('도청E2E')
@@ -41,12 +41,12 @@ describe('근무현황: who is away today, by department', () => {
     expect(row).toContain('종일')
     expect(row).toContain('도청E2E')
     const sum = await a.page.getByTestId('duty-summary').textContent()
-    expect(sum).toContain('근무 1')
-    expect(sum).toContain('부재 1')
+    expect(sum).toContain('현재원 1')
+    expect(sum).toContain('사고 1')
   }, 60000)
 
   it('the admin records for the member; the member deletes it', async () => {
-    await a.page.getByRole('button', { name: '대신 올리기' }).click()
+    await a.page.getByRole('button', { name: '대신 신청' }).click()
     const dlg = a.page.getByTestId('duty-dialog')
     await dlg.getByRole('radio', { name: '교육' }).click()
     await dlg.getByRole('button', { name: /오후/ }).click()
@@ -54,9 +54,9 @@ describe('근무현황: who is away today, by department', () => {
     await expect.poll(() => b.page.getByTestId('duty-row').count(), { timeout: 15000 }).toBe(2)
     const edu = b.page.getByTestId('duty-row').filter({ hasText: '교육' })
     expect(await edu.textContent()).toContain('14:00~18:00')
-    expect(await edu.textContent()).toContain('서버관리자 대신 올림')
+    expect(await edu.textContent()).toContain('서버관리자 대신 신청')
     // a plain member has no "대신 올리기"
-    expect(await b.page.getByRole('button', { name: '대신 올리기' }).count()).toBe(0)
+    expect(await b.page.getByRole('button', { name: '대신 신청' }).count()).toBe(0)
     await edu.getByRole('button', { name: /지우기/ }).click()
     await expect.poll(() => a.page.getByTestId('duty-row').count(), { timeout: 15000 }).toBe(1)
   }, 60000)
@@ -70,11 +70,11 @@ describe('근무현황: who is away today, by department', () => {
     await expect.poll(() => a.page.getByText('[출장] 팀원B').count(), { timeout: 15000 }).toBeGreaterThanOrEqual(1)
   }, 60000)
 
-  it('the admin names a 서무, who may then record for others', async () => {
+  it('the admin names a 대리 등록자, who may then record for others', async () => {
     await go(a.page, '/duty')
-    await a.page.getByRole('button', { name: '서무 지정' }).click()
+    await a.page.getByRole('button', { name: '대리 등록자 지정' }).click()
     await a.page.getByRole('checkbox', { name: '팀원B' }).check()
     await a.page.getByRole('button', { name: '저장' }).click()
-    await expect.poll(() => b.page.getByRole('button', { name: '대신 올리기' }).count(), { timeout: 15000 }).toBe(1)
+    await expect.poll(() => b.page.getByRole('button', { name: '대신 신청' }).count(), { timeout: 15000 }).toBe(1)
   }, 60000)
 })

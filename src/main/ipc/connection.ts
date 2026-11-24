@@ -85,61 +85,60 @@ export function registerConnectionIpc(): void {
 
   handle('conn:updateServerUrl', z.object({ serverUrl: z.string().url() }), ({ serverUrl }) => updateServerUrl(serverUrl))
 
+  /** Team data kept on this PC for one member (offline cache, things waiting to be sent). */
+  const dropKept = (memberId: string | undefined): void => {
+    if (!memberId) return
+    localDb().db.run('DELETE FROM query_cache WHERE key LIKE ?', [`${memberId.replace(/[%_]/g, '')}:%`])
+    localDb().db.run('DELETE FROM outbox WHERE owner = ?', [memberId])
+  }
+
   handle('conn:reset', null, async () => {
     if (getMode() === 'server') await stopServer()
+    // what was kept of the server's data belongs to the connection that is thrown away
+    dropKept(readCredential()?.memberId)
     clearCredential()
     setPendingJoin(null)
     setMode(null)
-    // cached server data belongs to the old connection
-    localDb().db.run('DELETE FROM query_cache')
   })
 
-  // ---------- switch between server / member PC, remembering the connections (settings) ----------
-  handle('conn:saved', null, () => listSaved())
+  // ---------- several servers on one member PC (top bar: 서버 바꾸기) ----------
+  // A member PC may belong to several TeamHub servers (teams) and use one at a time. Each
+  // server approved this PC separately, so each connection has its own device key; they are
+  // remembered in connections.dpapi. The role of the PC stays fixed: a server PC is not
+  // switched, and a remembered server-PC connection is never activated here.
+  handle('conn:saved', null, () => (lockedRole() === 'server' || getMode() === 'server' ? [] : listSaved().filter((s) => s.mode === 'client')))
 
-  /** Put the current connection away and return to the first screen; it can be used again later. */
-  const putAway = async (): Promise<void> => {
-    if (getMode() === 'server') await stopServer()
-    archiveCurrent()
-    // cached server data belongs to the old connection
-    localDb().db.run('DELETE FROM query_cache')
-  }
-  // Switching between server PC and member PC was removed: the role is fixed at the first setup.
-  const SWITCH_REMOVED = '서버용 PC와 일반용 PC는 처음 설정한 대로만 쓸 수 있어 전환할 수 없습니다.'
+  const SERVER_PC = '서버용 PC는 다른 서버에 접속할 수 없습니다. 다른 서버는 일반용(팀원) PC에서 추가하세요.'
+  const isServerPc = (): boolean => lockedRole() === 'server' || getMode() === 'server'
+  /** Put the connection in use away (remembered, with its offline cache) so another server can be added or used. */
   handle('conn:switchOut', null, async () => {
-    if (lockedRole()) return { ok: false, error: SWITCH_REMOVED }
+    if (isServerPc()) return { ok: false, error: SERVER_PC }
     try {
-      await putAway()
+      archiveCurrent()
       return { ok: true }
     } catch (e) {
       log.error('switch out failed', e)
-      // nothing was cleared: bring the server back if it was stopped
-      await autoStartServer()
       return { ok: false, error: '지금 연결을 기억해 두지 못했습니다. 연결은 그대로입니다.' }
     }
   })
   handle('conn:activateSaved', z.object({ id: z.string().min(1).max(200) }), async ({ id }) => {
-    if (lockedRole()) return { ok: false, error: SWITCH_REMOVED }
+    if (isServerPc()) return { ok: false, error: SERVER_PC }
+    if (!id.startsWith('client:')) return { ok: false, error: '일반용(팀원) PC에서는 서버 접속 정보만 쓸 수 있습니다.' }
     try {
-      if (readCredential()) await putAway()
-      else {
-        setPendingJoin(null)
-        localDb().db.run('DELETE FROM query_cache')
-      }
+      // written before anything is cleared: a failure leaves the connection in use as it is
+      if (readCredential()) archiveCurrent()
+      else setPendingJoin(null)
       const entry = restoreSaved(id)
-      if (!entry) return { ok: false, error: '기억해 둔 연결을 찾을 수 없습니다.' }
-      if (entry.mode === 'server' && entry.serverConfig) {
-        const st = await startServer(entry.serverConfig.dataDir, { preventSleep: entry.serverConfig.preventSleep, failFast: true })
-        if (st.state !== 'running') return { ok: false, error: `서버를 시작하지 못했습니다: ${st.message ?? ''}` }
-      }
+      if (!entry) return { ok: false, error: '기억해 둔 서버를 찾을 수 없습니다.' }
       return { ok: true }
     } catch (e) {
       log.error('activate saved connection failed', e)
-      await autoStartServer()
       return { ok: false, error: e instanceof Error ? e.message : String(e) }
     }
   })
-  handle('conn:forgetSaved', z.object({ id: z.string().min(1).max(200) }), ({ id }) => forgetSaved(id))
+  handle('conn:forgetSaved', z.object({ id: z.string().min(1).max(200) }), ({ id }) => {
+    dropKept(forgetSaved(id) ?? undefined)
+  })
 
   handle('server:networkInfo', null, () => ({
     interfaces: listIpv4(),

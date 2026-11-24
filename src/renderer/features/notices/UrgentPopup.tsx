@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { format } from 'date-fns'
-import { AlertTriangle, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react'
+import { CheckCircle2, ExternalLink, Loader2, Siren } from 'lucide-react'
 import type { UrgentPayload } from '@shared/schemas/notices'
 import { Button } from '@renderer/components/ui/button'
 import { RichView } from '@renderer/components/Editor'
@@ -42,6 +42,17 @@ export function UrgentPopup({ id }: { id: string }): React.JSX.Element {
     setP(await invoke('popup:get', { id }))
   }, [id, loadConn])
 
+  // Until it is confirmed the alarm sounds again every 20 seconds (at most 15 times: an empty
+  // office should not beep all night).
+  useEffect(() => {
+    let n = 0
+    const t = window.setInterval(() => {
+      if (++n > 15) window.clearInterval(t)
+      else beep()
+    }, 20_000)
+    return () => window.clearInterval(t)
+  }, [])
+
   useEffect(() => {
     void load()
     beep()
@@ -52,6 +63,8 @@ export function UrgentPopup({ id }: { id: string }): React.JSX.Element {
       void load()
     })
   }, [load])
+
+  const hasBody = !!p && p.bodyHtml.replace(/<[^>]*>/g, '').trim().length > 0
 
   const done = async (reply?: string): Promise<void> => {
     if (!p) return
@@ -67,35 +80,39 @@ export function UrgentPopup({ id }: { id: string }): React.JSX.Element {
     }
   }
 
-  if (!p) return <div className="p-6 text-sm text-muted-foreground">불러오는 중…</div>
+  if (!p) return <div className="flex h-full items-center justify-center bg-urgent p-6 text-sm text-white">불러오는 중…</div>
   return (
-    <div className={`flex h-full flex-col border-4 border-urgent bg-background ${shake ? 'animate-pulse' : ''}`} data-testid="urgent-popup">
-      <div className="flex items-center gap-2 bg-urgent px-4 py-2.5 text-white">
-        <AlertTriangle className="size-5" />
-        <span className="font-bold">긴급 알림</span>
-        <span className="ml-auto text-xs opacity-90">
+    <div className={`th-emergency flex h-full flex-col bg-urgent text-white ${shake ? 'th-emergency-shake' : ''}`} data-testid="urgent-popup" role="alertdialog" aria-label={`긴급공지: ${p.title}`}>
+      <div className="flex shrink-0 items-center gap-2 bg-black/25 px-5 py-2.5">
+        <Siren className="th-emergency-blink size-6" aria-hidden />
+        <span className="text-lg font-extrabold tracking-wide">긴급공지</span>
+        <span className="ml-auto text-sm opacity-90">
           {p.authorName} · {format(p.publishedAt, 'M/d HH:mm')}
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <h1 className="text-lg font-bold">{p.title}</h1>
-        <RichView html={p.bodyHtml} className="mt-3" />
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-8 py-5 text-center">
+        <h1 className="selectable break-keep text-3xl font-extrabold leading-snug">{p.title}</h1>
+        {hasBody && (
+          <div className="selectable mt-5 max-h-full w-full max-w-2xl overflow-y-auto rounded-lg bg-white px-5 py-4 text-left text-base text-neutral-900">
+            <RichView html={p.bodyHtml} />
+          </div>
+        )}
       </div>
-      {err && <p className="px-5 text-sm text-urgent">{err}</p>}
-      <div className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-3">
-        <Button variant="ghost" size="sm" onClick={() => void invoke('window:showMain', { path: `/notices/${p.id}` })}>
-          <ExternalLink /> 공지에서 보기
-        </Button>
-        <div className="ml-auto flex gap-2">
+      {err && <p className="shrink-0 bg-black/30 px-5 py-1.5 text-sm font-semibold">{err} — 서버에 연결되면 다시 누르세요.</p>}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 bg-black/25 px-5 py-3">
+        <button className="flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-sm underline-offset-2 hover:underline" onClick={() => void invoke('window:showMain', { path: `/notices/${p.id}` })}>
+          <ExternalLink className="size-4" /> 공지에서 보기
+        </button>
+        <div className="ml-auto flex items-center gap-2">
           {busy && <Loader2 className="size-5 animate-spin" />}
           {p.requireAck && p.replyOptions.length ? (
             p.replyOptions.map((o) => (
-              <Button key={o} onClick={() => void done(o)} disabled={busy}>
+              <Button key={o} size="lg" className="bg-white font-bold text-urgent hover:bg-white/90" onClick={() => void done(o)} disabled={busy}>
                 {o}
               </Button>
             ))
           ) : (
-            <Button onClick={() => void done()} disabled={busy} variant="destructive">
+            <Button size="lg" className="bg-white px-8 text-base font-extrabold text-urgent hover:bg-white/90" onClick={() => void done()} disabled={busy} autoFocus>
               <CheckCircle2 /> {p.requireAck ? '확인' : '읽음 · 닫기'}
             </Button>
           )}

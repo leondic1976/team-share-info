@@ -1,3 +1,4 @@
+import { useMe } from '@renderer/lib/queries'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { MemberDto } from '@shared/schemas/auth'
@@ -19,6 +20,9 @@ export function MemberEditDialog({ member, onClose }: { member: MemberDto; onClo
   const [f, setF] = useState(first)
   const [err, setErr] = useState('')
   const set = (k: keyof typeof first, v: string): void => setF({ ...f, [k]: v })
+  // the real name is set (and thereby fixed) by the server PC only; an older server sends no isOwner
+  const { data: meNow } = useMe()
+  const nameLocked = meNow?.isOwner === false
   const save = useMutation({
     mutationFn: () => {
       // only what was changed is sent, so only those details become "set by the admin"
@@ -55,7 +59,7 @@ export function MemberEditDialog({ member, onClose }: { member: MemberDto; onClo
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <Field label="이름">
-            <Input aria-label="구성원 이름" value={f.name} maxLength={40} onChange={(e) => set('name', e.target.value)} />
+            <Input aria-label="구성원 이름" value={f.name} maxLength={40} disabled={nameLocked} title={nameLocked ? '본명은 최종관리자(서버 PC)만 고칠 수 있습니다.' : undefined} onChange={(e) => set('name', e.target.value)} />
           </Field>
           <Field label="부서">
             <Select aria-label="구성원 부서" value={f.deptId} onChange={(e) => set('deptId', e.target.value)}>
@@ -81,7 +85,7 @@ export function MemberEditDialog({ member, onClose }: { member: MemberDto; onClo
           <Textarea aria-label="구성원 담당 업무" value={f.duty} maxLength={200} onChange={(e) => set('duty', e.target.value)} />
         </Field>
         <p className="text-xs text-muted-foreground">
-          여기서 고친 항목은 서버 PC의 값이 우선합니다. 저장하면 모든 팀원 화면에 바로 반영되고, 그 구성원은 고친 항목을 스스로 바꿀 수 없게 됩니다. 별명{member.nickname ? `(${member.nickname})` : ''}은 본인만
+          여기서 고친 항목은 서버 PC의 값이 우선합니다. 저장하면 모든 팀원 화면에 바로 반영되고, 그 구성원은 고친 항목을 스스로 바꿀 수 없게 됩니다. 필명{member.nickname ? `(${member.nickname})` : ''}은 본인만
           정할 수 있습니다. 기관·팀 이름은 <b>설정 → 조직 정보</b>에서 바꿉니다.
         </p>
         {err && (

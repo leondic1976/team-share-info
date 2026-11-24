@@ -18,6 +18,7 @@ interface ConvRow {
   title: string | null
   last_seq: number
   last_message_at: number | null
+  created_by?: string | null
 }
 
 const IMG = /\.(png|jpe?g|gif|bmp|webp)$/i
@@ -91,6 +92,10 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
     return names.length > 3 ? `${names.slice(0, 3).join(', ')} 외 ${names.length - 3}명` : names.join(', ')
   }
 
+  /** Other participants of a room may be removed by whoever made it and by admins (최종관리자·서무) who are in it. */
+  const mayRemove = (c: ConvRow, memberId: string): boolean =>
+    c.kind === 'room' && (c.created_by === memberId || db.get<{ role: string }>('SELECT role FROM members WHERE id = ?', [memberId])?.role === 'admin')
+
   const toDto = (c: ConvRow, viewerId: string): ConversationDto => {
     const ids = conversationMemberIds(db, c)
     const rs = readState(db, c.id, viewerId)
@@ -113,7 +118,9 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
       lastPreview: last ? (last.kind === 'text' || last.kind === 'system' ? last.body.slice(0, 80) : last.kind === 'image' ? '(사진)' : '(파일)') : null,
       lastSenderName: last?.name ?? null,
       unread,
-      muted: !!rs.muted
+      muted: !!rs.muted,
+      createdBy: c.created_by ?? null,
+      canRemove: mayRemove(c, viewerId)
     }
   }
 
@@ -222,6 +229,10 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
     return ok(toDto(db.get<ConvRow>('SELECT * FROM conversations WHERE id = ?', [c.id])!, req.member.id))
   })
 
+  /** Both people of a 1:1 conversation, also one who left it. */
+  const conversationMemberIdsAll = (convId: string): string[] =>
+    db.all<{ member_id: string }>('SELECT member_id FROM conversation_members WHERE conversation_id = ?', [convId]).map((r) => r.member_id)
+
   const systemMessage = (c: ConvRow, body: string): void => {
     const seq = c.last_seq + 1
     const t = Date.now()
@@ -232,13 +243,31 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
 
   app.post('/api/conversations/:id/members', auth, async (req) => {
     const c = load(req, (req.params as { id: string }).id)
-    if (c.kind !== 'room') throw badRequest('여러 명 대화방에만 초대할 수 있습니다. 1:1 대화에서 초대하면 새 대화방을 만드세요.')
+    if (c.kind === 'group') throw badRequest('그룹 대화방의 참가자는 그룹에서 관리합니다.')
     const { memberIds } = parse(z.object({ memberIds: z.array(z.string()).min(1).max(200) }), req.body)
     const t = Date.now()
     const added: string[] = []
+    if (c.kind === 'dm') {
+      // A 1:1 conversation stays the private pair it is reused as: more people means a new room (history is not copied).
+      const pair = conversationMemberIdsAll(c.id)
+      const extra = [...new Set(memberIds)].filter((m) => !pair.includes(m) && !!db.get(`SELECT 1 FROM members WHERE id = ? AND status = 'active'`, [m]))
+      if (!extra.length) throw badRequest('추가할 사람을 고르세요.')
+      const id = newId()
+      const all = [...new Set([req.member.id, ...pair, ...extra])]
+      db.tx(() => {
+        db.run(`INSERT INTO conversations (id, kind, created_by, created_at, updated_at) VALUES (?, 'room', ?, ?, ?)`, [id, req.member.id, t, t])
+        for (const m of all) db.run('INSERT INTO conversation_members (conversation_id, member_id, joined_at) VALUES (?, ?, ?)', [id, m, t])
+        const room = db.get<ConvRow>('SELECT * FROM conversations WHERE id = ?', [id])!
+        const names = extra.map((m) => db.get<{ name: string }>('SELECT name FROM members WHERE id = ?', [m])!.name)
+        systemMessage(room, `${req.member.name}님이 ${names.join(', ')}님을 추가해 새 대화방을 만들었습니다.`)
+      })
+      ctx.hub.sendTo(all, 'conversation.changed', { id })
+      return ok({ added: extra.length, conversationId: id, created: true })
+    }
+    const active = new Set(conversationMemberIds(db, c))
     db.tx(() => {
       for (const m of new Set(memberIds)) {
-        if (!db.get(`SELECT 1 FROM members WHERE id = ? AND status = 'active'`, [m])) continue
+        if (active.has(m) || !db.get(`SELECT 1 FROM members WHERE id = ? AND status = 'active'`, [m])) continue
         db.run(
           `INSERT INTO conversation_members (conversation_id, member_id, last_read_seq, joined_at) VALUES (?, ?, ?, ?)
            ON CONFLICT(conversation_id, member_id) DO UPDATE SET left_at = NULL`,
@@ -249,7 +278,29 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
       if (added.length) systemMessage(c, `${req.member.name}님이 ${added.join(', ')}님을 초대했습니다.`)
     })
     ctx.hub.sendTo(conversationMemberIds(db, c), 'conversation.changed', { id: c.id })
-    return ok({ added: added.length })
+    return ok({ added: added.length, conversationId: c.id, created: false })
+  })
+
+  /** Remove another participant from a room (registered beside `/members/me`, which stays "leave"). */
+  app.delete('/api/conversations/:id/members/:memberId', auth, async (req) => {
+    const { id, memberId } = req.params as { id: string; memberId: string }
+    const c = load(req, id)
+    if (c.kind === 'group') throw badRequest('그룹 대화방의 참가자는 그룹에서 관리합니다.')
+    if (c.kind === 'dm') throw badRequest('1:1 대화에서는 내보낼 수 없습니다.')
+    if (memberId === req.member.id) throw badRequest('본인은 나가기를 사용하세요.')
+    if (!mayRemove(c, req.member.id)) throw forbidden('대화방을 만든 사람과 관리자만 내보낼 수 있습니다.')
+    const target = db.get<{ name: string }>(
+      `SELECT m.name FROM conversation_members cm JOIN members m ON m.id = cm.member_id WHERE cm.conversation_id = ? AND cm.member_id = ? AND cm.left_at IS NULL`,
+      [c.id, memberId]
+    )
+    if (!target) throw notFound('참가자')
+    db.tx(() => {
+      db.run('UPDATE conversation_members SET left_at = ? WHERE conversation_id = ? AND member_id = ?', [Date.now(), c.id, memberId])
+      systemMessage(c, `${req.member.name}님이 ${target.name}님을 내보냈습니다.`)
+    })
+    // the removed member hears it once (so the room disappears on their PC) and nothing after that
+    ctx.hub.sendTo([...conversationMemberIds(db, c), memberId], 'conversation.changed', { id: c.id, removed: [memberId] })
+    return ok({ id: c.id })
   })
 
   app.delete('/api/conversations/:id/members/me', auth, async (req) => {
@@ -277,7 +328,7 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
       params.push(q.after)
     }
     const rows = db.all<{ id: string; seq: number; sender_id: string | null; sender_name: string | null; kind: MessageDto['kind']; body: string; created_at: number }>(
-      `SELECT x.id, x.seq, x.sender_id, m.name AS sender_name, x.kind, x.body, x.created_at FROM messages x LEFT JOIN members m ON m.id = x.sender_id
+      `SELECT x.id, x.seq, x.sender_id, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS sender_name, x.kind, x.body, x.created_at FROM messages x LEFT JOIN members m ON m.id = x.sender_id
        WHERE ${where.join(' AND ')} ORDER BY x.seq ${q.after !== undefined ? 'ASC' : 'DESC'} LIMIT ?`,
       [...params, q.limit]
     )
@@ -355,7 +406,7 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
   app.get('/api/messages/search', auth, async (req) => {
     const { q } = parse(z.object({ q: z.string().trim().min(1).max(100) }), req.query)
     const rows = db.all<{ id: string; conversation_id: string; seq: number; body: string; created_at: number; sender_name: string | null }>(
-      `SELECT x.id, x.conversation_id, x.seq, x.body, x.created_at, m.name AS sender_name FROM messages x LEFT JOIN members m ON m.id = x.sender_id
+      `SELECT x.id, x.conversation_id, x.seq, x.body, x.created_at, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS sender_name FROM messages x LEFT JOIN members m ON m.id = x.sender_id
        WHERE x.deleted_at IS NULL AND x.kind != 'system' AND x.body LIKE ? ORDER BY x.created_at DESC LIMIT 300`,
       [`%${q}%`]
     )
@@ -384,7 +435,7 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
     createdAt: r.created_at,
     readAt: r.read_at
   })
-  const NOTE_SELECT = `SELECT n.*, f.name AS from_name, t.name AS to_name FROM notes n JOIN members f ON f.id = n.from_id JOIN members t ON t.id = n.to_id`
+  const NOTE_SELECT = `SELECT n.*, CASE WHEN IFNULL(LENGTH(f.nickname), 0) = 0 THEN f.name ELSE f.name || char(40) || f.nickname || char(41) END AS from_name, CASE WHEN IFNULL(LENGTH(t.nickname), 0) = 0 THEN t.name ELSE t.name || char(40) || t.nickname || char(41) END AS to_name FROM notes n JOIN members f ON f.id = n.from_id JOIN members t ON t.id = n.to_id`
 
   app.get('/api/notes', auth, async (req) => {
     const { box } = parse(z.object({ box: z.enum(['inbox', 'sent']).default('inbox') }), req.query)

@@ -18,6 +18,7 @@ import { HolidaysTab } from './HolidaysTab'
 import { TemplatesTab } from './TemplatesTab'
 import { LauncherAdminTab } from './LauncherAdminTab'
 import { BackupTab } from './BackupTab'
+import { OwnerOnlyNote, useIsOwner } from './owner'
 
 interface AdminStatus {
   pendingJoins: number
@@ -30,7 +31,7 @@ const TABS = [
   { path: 'holidays', label: '공휴일' },
   { path: 'templates', label: '기록 양식' },
   { path: 'launcher', label: '공용 런처·보안' },
-  { path: 'backup', label: '백업·복구' },
+  { path: 'backup', label: '백업·복구', ownerOnly: true },
   { path: 'releases', label: '업데이트 배포' },
   { path: 'status', label: '서버 상태' },
   { path: 'activity', label: '활동 기록' }
@@ -77,6 +78,7 @@ function PinGate({ onOk }: { onOk: () => void }): React.JSX.Element {
 
 export function AdminPage(): React.JSX.Element {
   const { data: me } = useMe()
+  const owner = useIsOwner()
   const [unlocked, setUnlocked] = useState(hasAdminPin())
   const needPin = !!me?.adminPinSet && !unlocked
   const { data: status } = useQuery({
@@ -90,9 +92,12 @@ export function AdminPage(): React.JSX.Element {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="관리" description="서버 관리자 전용 메뉴입니다." />
+      <PageHeader
+        title="관리"
+        description={owner ? '최종관리자(서버 PC)와 서무 전용 메뉴입니다.' : '서무 메뉴입니다. 자료 저장(백업·복구)과 중요 설정은 최종관리자(서버 PC)만 할 수 있습니다.'}
+      />
       <div className="flex shrink-0 gap-1 border-b border-border px-5">
-        {TABS.map((t) => (
+        {TABS.filter((t) => owner || !t.ownerOnly).map((t) => (
           <NavLink
             key={t.path}
             to={`/admin/${t.path}`}
@@ -116,7 +121,7 @@ export function AdminPage(): React.JSX.Element {
           <Route path="holidays" element={<HolidaysTab />} />
           <Route path="templates" element={<TemplatesTab />} />
           <Route path="launcher" element={<LauncherAdminTab />} />
-          <Route path="backup" element={<BackupTab />} />
+          <Route path="backup" element={owner ? <BackupTab /> : <OwnerOnlyNote>백업·복구와 서버 자료 저장 위치는 최종관리자(서버 PC)만 다룰 수 있습니다.</OwnerOnlyNote>} />
           <Route path="releases" element={<ReleasesTab />} />
           <Route path="status" element={<StatusTab />} />
           <Route path="activity" element={<ActivityTab />} />

@@ -6,7 +6,7 @@ import { invoke } from '@renderer/lib/bridge'
 import { realtime } from '@renderer/lib/realtime'
 import { useConn } from '@renderer/app/conn-store'
 import { inDoNotDisturb } from '@renderer/app/prefs-store'
-import { useChatUi } from './chat-store'
+import { isViewingConversation } from './chat-store'
 
 export function useChatUnread(): { messages: number; notes: number } {
   const online = useConn((s) => s.state === 'online')
@@ -21,7 +21,8 @@ export function useChatAlerts(): void {
     const offMsg = realtime.on('message.new', (raw) => {
       const p = raw as MessageNewPayload
       if (p.senderId === memberId) return
-      const viewing = useChatUi.getState().openId === p.conversationId && document.hasFocus()
+      // on the messenger page or in an expanded small window (a minimised one does not count)
+      const viewing = isViewingConversation(p.conversationId) && document.hasFocus()
       if (viewing || inDoNotDisturb()) return
       void api
         .get<{ muted: boolean }>(`/api/conversations/${p.conversationId}`)

@@ -1,3 +1,4 @@
+import { sendOrQueue, useOutbox } from '@renderer/lib/outbox'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { addDays, addMonths, endOfMonth, endOfWeek, format, startOfMonth, startOfWeek } from 'date-fns'
@@ -9,7 +10,7 @@ import { Input, Select } from '@renderer/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Editor, RichView } from '@renderer/components/Editor'
 import { ScopePicker, ScopeTags, defaultScope } from '@renderer/components/ScopePicker'
-import { EmptyState, OfflineState } from '@renderer/components/EmptyState'
+import { EmptyState } from '@renderer/components/EmptyState'
 import { invoke } from '@renderer/lib/bridge'
 import { api, errorMessage } from '@renderer/lib/api'
 import { parseYmd, ymd } from '@renderer/lib/dates'
@@ -201,11 +202,26 @@ function WorklogTab(): React.JSX.Element {
   const [to, setTo] = useState(ymd(endOfWeek(new Date(), { weekStartsOn: 1 })))
   const [who, setWho] = useState('')
 
+  // written while the server was off and not sent yet
+  const waitingHere = useOutbox((s) => s.items.filter((i) => i.kind === 'worklog' && i.path === `/api/worklogs/mine/${date}`).length)
   useEffect(() => {
-    if (!online) return
+    if (!online || waitingHere) {
+      // Server off (or my own log still on its way): show what waits to be sent, else the copy kept from the last time it was open.
+      const q = [...useOutbox.getState().items].reverse().find((i) => i.kind === 'worklog' && i.path === `/api/worklogs/mine/${date}`)?.body as { doneHtml: string; todoHtml: string; notesHtml: string; scope: ScopeInput } | undefined
+      const kept = qc.getQueryData<WorklogDto | null>(['worklogs', 'mine', date])
+      setDone(q?.doneHtml ?? kept?.doneHtml ?? '')
+      setTodo(q?.todoHtml ?? kept?.todoHtml ?? '')
+      setNotes(q?.notesHtml ?? kept?.notesHtml ?? '')
+      if (q) setScope(q.scope)
+      else if (kept) setScope({ type: kept.scope.type, groupIds: kept.scope.groups.map((g) => g.id), memberIds: kept.scope.members.map((m) => m.id) })
+      setVer((v) => v + 1)
+      setMsg(q ? '이 PC에 보관 중 · 서버에 연결되면 저장합니다' : kept ? `마지막으로 받은 일지 · ${format(kept.updatedAt, 'M/d HH:mm')}` : online ? '' : '서버가 꺼져 있습니다. 이 날짜에 서버에 저장해 둔 일지가 있다면, 지금 쓰는 내용이 그것을 바꿉니다.')
+      return
+    }
     let alive = true
     void api.get<WorklogDto | null>(`/api/worklogs/mine/${date}`).then((w) => {
       if (!alive) return
+      qc.setQueryData(['worklogs', 'mine', date], w)
       setDone(w?.doneHtml ?? '')
       setTodo(w?.todoHtml ?? '')
       setNotes(w?.notesHtml ?? '')
@@ -216,7 +232,7 @@ function WorklogTab(): React.JSX.Element {
     return () => {
       alive = false
     }
-  }, [date, online])
+  }, [date, online, waitingHere, qc])
 
   const list = useQuery({
     queryKey: ['worklogs', from, to, who, space],
@@ -226,8 +242,8 @@ function WorklogTab(): React.JSX.Element {
 
   const save = async (): Promise<void> => {
     try {
-      await api.put(`/api/worklogs/mine/${date}`, { doneHtml: done, todoHtml: todo, notesHtml: notes, scope })
-      setMsg(`저장했습니다 · ${format(new Date(), 'HH:mm')}`)
+      const r = await sendOrQueue({ kind: 'worklog', label: `업무일지 ${date}`, method: 'PUT', path: `/api/worklogs/mine/${date}`, body: { doneHtml: done, todoHtml: todo, notesHtml: notes, scope } })
+      setMsg(r.queued ? '서버가 꺼져 있어 이 PC에 보관했습니다. 서버에 연결되면 자동으로 저장합니다.' : `저장했습니다 · ${format(new Date(), 'HH:mm')}`)
       void qc.invalidateQueries({ queryKey: ['worklogs'] })
     } catch (e) {
       setMsg(errorMessage(e))
@@ -250,7 +266,6 @@ function WorklogTab(): React.JSX.Element {
     setTimeout(() => URL.revokeObjectURL(url), 3000)
   }
 
-  if (!online) return <OfflineState />
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-5">
       <div className="mb-4 flex gap-1">

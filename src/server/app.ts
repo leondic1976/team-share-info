@@ -5,7 +5,8 @@ import type { ServerContext } from './context'
 import { recordError } from './context'
 import { AppError } from './errors'
 import { Hub } from './ws/hub'
-import { makeRequireAdmin, makeRequireAuth } from './auth'
+import { makeRequireAdmin, makeRequireAuth, makeRequireOwner } from './auth'
+import { ensureServerOwner } from './repos/devices'
 import { registerCoreRoutes } from './routes/core'
 import { registerAdminRoutes } from './routes/admin'
 import { registerUpdateRoutes } from './routes/updates'
@@ -31,6 +32,7 @@ import { registerFeedbackRoutes } from './routes/feedback'
 import type { FeedbackRelayConfig } from '../shared/server-host'
 import { registerLedgerRoutes } from './routes/ledgers'
 import { registerSearchRoutes } from './routes/search'
+import { pruneIdempotency, registerIdempotency } from './idempotency'
 import { runBackupJob } from './backup'
 
 export interface BuildOptions {
@@ -65,7 +67,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   await app.register(cors, {
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Authorization', 'Content-Type', 'X-Protocol', 'X-Win-User', 'X-App-Version', 'X-Admin-Pin', 'X-File-Name', 'Range', 'If-Range', 'X-PC-Uid'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Protocol', 'X-Win-User', 'X-App-Version', 'X-Admin-Pin', 'X-File-Name', 'Range', 'If-Range', 'X-PC-Uid', 'X-Idempotency-Key'],
     exposedHeaders: ['Content-Disposition', 'Content-Range', 'Accept-Ranges', 'ETag']
   })
 
@@ -87,8 +89,13 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
     void reply.status(404).send({ error: { code: 'NOT_FOUND', message: '요청한 주소를 찾을 수 없습니다.' } })
   })
 
+  registerIdempotency(app, ctx)
   const requireAuth = makeRequireAuth(ctx)
   const requireAdmin = makeRequireAdmin(ctx)
+  // 최종관리자 (the server PC) only; use after requireAuth and requireAdmin
+  const requireOwner = makeRequireOwner(ctx)
+  // the server PC's own account is the 최종관리자: always an active admin
+  ensureServerOwner(opts.db)
   registerCoreRoutes(app, ctx, requireAuth)
   registerAdminRoutes(app, ctx, { requireAuth, requireAdmin })
   registerUpdateRoutes(app, ctx, { requireAuth, requireAdmin })
@@ -102,7 +109,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   registerCommentRoutes(app, ctx, { requireAuth })
   registerTaskRoutes(app, ctx, { requireAuth })
   registerBoardRoutes(app, ctx, { requireAuth, requireAdmin })
-  registerDirectoryRoutes(app, ctx, { requireAuth, requireAdmin })
+  registerDirectoryRoutes(app, ctx, { requireAuth, requireAdmin, requireOwner })
   registerDutyRoutes(app, ctx, { requireAuth })
   registerDocRoutes(app, ctx, { requireAuth, requireAdmin })
   registerToolRoutes(app, ctx, { requireAuth })
@@ -137,6 +144,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
         try {
           runFileJobs(ctx)
           runChatJobs(ctx)
+          pruneIdempotency(ctx)
         } catch (e) {
           recordError(ctx, `file jobs: ${(e as Error).message}`)
         }

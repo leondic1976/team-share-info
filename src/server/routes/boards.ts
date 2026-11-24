@@ -34,7 +34,7 @@ interface PostRow {
   updated_at: number
 }
 
-const POST_SELECT = `SELECT p.*, m.name AS author_name FROM posts p JOIN members m ON m.id = p.created_by`
+const POST_SELECT = `SELECT p.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS author_name FROM posts p JOIN members m ON m.id = p.created_by`
 
 function boardVisible(db: Db, boardId: string, memberId: string): boolean {
   return !!db.get('SELECT 1 FROM boards WHERE id = ? AND deleted_at IS NULL', [boardId]) && canSee(db, 'boards', 'board', boardId, memberId)

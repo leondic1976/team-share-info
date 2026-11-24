@@ -10,7 +10,8 @@ import { hashPin } from '../crypto'
 import { parse, ok } from '../validate'
 import { getAllSettings, getSection, patchSection, writeSetting } from '../settings'
 import { adminFieldsOf, countAdmins, createMember, getMember, setAdminFields, toMemberDto, updateMember, listMembers } from '../repos/members'
-import { blockedPc, createDevice, devicesOfPc, findPc, getDevice, listDevices, serverDeviceId, setDeviceRevoked } from '../repos/devices'
+import { blockedPc, createDevice, devicesOfPc, findPc, getDevice, listDevices, ownerMemberId, serverDeviceId, setDeviceRevoked } from '../repos/devices'
+import { isOwnerRequest, makeRequireOwner, ownerOnly } from '../auth'
 import { newId } from '../../node/sqlite'
 import { logActivity } from '../activity'
 import { usedBytes } from '../storage/blobs'
@@ -30,6 +31,7 @@ interface JoinRow {
   created_at: number
   decided_at: number | null
   pc_uid: string | null
+  shared_pc: number
 }
 
 /**
@@ -46,7 +48,8 @@ export function approveJoinRequest(ctx: ServerContext, id: string, req: FastifyR
   const replaced: string[] = []
   const suspended: string[] = []
   const deviceId = ctx.db.tx(() => {
-    const known = findPc(ctx.db, { pcUid: row.pc_uid, pcName: row.pc_name, winUser: row.win_user })
+    // (a person of a shared PC is recognised by the unique value only: see findPc)
+    const known = findPc(ctx.db, { pcUid: row.pc_uid, pcName: row.pc_name, winUser: row.win_user, sharedPc: !!row.shared_pc })
     reused = known?.member.id ?? null
     if (known) {
       // the PC's former entries stop working; it continues with the new key only
@@ -75,7 +78,8 @@ export function approveJoinRequest(ctx: ServerContext, id: string, req: FastifyR
       winUser: row.win_user,
       ip: row.ip,
       appVersion: row.app_version,
-      approvedBy: req?.member?.id ?? null
+      approvedBy: req?.member?.id ?? null,
+      sharedPc: !!row.shared_pc
     })
     ctx.db.run(
       `UPDATE join_requests SET state = 'approved', decided_at = ?, decided_by = ?, device_id = ?, pending_key = ?, updated_at = ? WHERE id = ?`,
@@ -96,12 +100,17 @@ export function approveJoinRequest(ctx: ServerContext, id: string, req: FastifyR
   return deviceId
 }
 
+/** The settings a 서무 may change; everything else in 조직·운영 설정 is the 최종관리자's. */
+const SECRETARY_OPS_FIELDS = ['urgentSenders', 'groupCreators']
+
 export function registerAdminRoutes(
   app: FastifyInstance,
   ctx: ServerContext,
   guards: { requireAuth: preHandlerAsyncHookHandler; requireAdmin: preHandlerAsyncHookHandler }
 ): void {
   const pre = { preHandler: [guards.requireAuth, guards.requireAdmin] }
+  // 최종관리자 (the server PC) only; a 서무 gets 403 OWNER_ONLY
+  const ownerPre = { preHandler: [guards.requireAuth, guards.requireAdmin, makeRequireOwner(ctx)] }
 
   app.get('/api/admin/join-requests', pre, async (req) => {
     const { state } = parse(z.object({ state: z.enum(['pending', 'all']).default('pending') }), req.query)
@@ -124,7 +133,8 @@ export function registerAdminRoutes(
       createdAt: r.created_at,
       decidedAt: r.decided_at,
       pcUid: r.pc_uid,
-      knownMember: r.state === 'pending' ? (findPc(ctx.db, { pcUid: r.pc_uid, pcName: r.pc_name, winUser: r.win_user })?.member ?? null) : null
+      knownMember: r.state === 'pending' ? (findPc(ctx.db, { pcUid: r.pc_uid, pcName: r.pc_name, winUser: r.win_user, sharedPc: !!r.shared_pc })?.member ?? null) : null,
+      sharedPc: !!r.shared_pc
     }))
     return ok(list)
   })
@@ -170,7 +180,7 @@ export function registerAdminRoutes(
       if (d.id === req.device.id) throw badRequest('지금 사용 중인 PC는 차단할 수 없습니다.')
       if (d.id === serverDeviceId(ctx.db)) throw badRequest('서버 PC는 차단할 수 없습니다.')
       const m = getMember(ctx.db, d.member_id)
-      if (m?.role === 'admin') throw badRequest('관리자의 PC는 영구 차단할 수 없습니다. 먼저 관리자 권한을 해제하세요.')
+      if (m?.role === 'admin') throw badRequest('서무의 PC는 영구 차단할 수 없습니다. 먼저 최종관리자가 서무 지정을 해제해야 합니다.')
       pc = { pcUid: d.pc_uid, pcName: d.pc_name, winUser: d.win_user }
       memberName = m?.name ?? null
     } else {
@@ -202,8 +212,8 @@ export function registerAdminRoutes(
     return ok({ id })
   })
 
-  /** Off the list: the PC may ask for access again, and the request can be approved. */
-  app.delete('/api/admin/blocked-pcs/:id', pre, async (req) => {
+  /** Off the list: the PC may ask for access again, and the request can be approved. Owner only. */
+  app.delete('/api/admin/blocked-pcs/:id', ownerPre, async (req) => {
     const { id } = req.params as { id: string }
     const row = ctx.db.get<{ pc_name: string; win_user: string; pc_uid: string | null }>('SELECT pc_name, win_user, pc_uid FROM blocked_pcs WHERE id = ?', [id])
     if (!row) throw notFound('차단한 PC')
@@ -214,7 +224,11 @@ export function registerAdminRoutes(
 
   app.get('/api/admin/devices', pre, async () => {
     const server = serverDeviceId(ctx.db)
-    const list: DeviceDto[] = listDevices(ctx.db).map((d) => ({
+    const rows = listDevices(ctx.db)
+    // 공용 PC: also the entry of the person who used the PC before the others were added
+    const pcKey = (d: { pc_name: string; win_user: string }): string => `${d.pc_name.toLowerCase()}\n${d.win_user.toLowerCase()}`
+    const shared = new Set(rows.filter((d) => d.shared_pc && !d.revoked_at).map(pcKey))
+    const list: DeviceDto[] = rows.map((d) => ({
       id: d.id,
       memberId: d.member_id,
       memberName: d.member_name,
@@ -229,7 +243,8 @@ export function registerAdminRoutes(
       lastSeenAt: d.last_seen_at,
       online: ctx.hub.isDeviceOnline(d.id),
       pcUid: d.pc_uid,
-      isServer: d.id === server
+      isServer: d.id === server,
+      sharedPc: d.id !== server && (!!d.shared_pc || shared.has(pcKey(d)))
     }))
     return ok(list)
   })
@@ -238,6 +253,12 @@ export function registerAdminRoutes(
     const { id } = req.params as { id: string }
     const { action } = parse(z.object({ action: z.enum(['revoke', 'restore', 'accept-ip']) }), req.body)
     if (id === req.device.id && action === 'revoke') throw badRequest('지금 사용 중인 PC는 차단할 수 없습니다.')
+    if (action === 'revoke') {
+      if (id === serverDeviceId(ctx.db)) throw badRequest('서버 PC는 차단할 수 없습니다.')
+      // a 서무 does not cut off another 서무
+      const target = getDevice(ctx.db, id)
+      if (target && !isOwnerRequest(ctx, req) && getMember(ctx.db, target.member_id)?.role === 'admin') throw ownerOnly('서무의 PC는 최종관리자(서버 PC)만 차단할 수 있습니다.')
+    }
     if (action === 'restore') {
       const d = getDevice(ctx.db, id)
       if (d && blockedPc(ctx.db, { pcUid: d.pc_uid, pcName: d.pc_name, winUser: d.win_user })) throw badRequest('영구 차단한 PC입니다. 차단 목록에서 먼저 해제하세요.')
@@ -254,7 +275,8 @@ export function registerAdminRoutes(
   })
 
   app.get('/api/admin/members', pre, async () => {
-    return ok(listMembers(ctx.db, { includeSuspended: true }).map((m) => toMemberDto(m, ctx.hub.presenceOf(m.id))))
+    const owner = ownerMemberId(ctx.db)
+    return ok(listMembers(ctx.db, { includeSuspended: true }).map((m) => toMemberDto(m, ctx.hub.presenceOf(m.id), owner)))
   })
 
   app.patch('/api/admin/members/:id', pre, async (req) => {
@@ -262,6 +284,18 @@ export function registerAdminRoutes(
     const patch = parse(adminMemberPatchSchema, req.body)
     const m = getMember(ctx.db, id)
     if (!m) throw notFound('구성원')
+    const byOwner = isOwnerRequest(ctx, req)
+    if (id === ownerMemberId(ctx.db)) {
+      // the server PC's account stays what it is, whoever asks
+      if (patch.role === 'member' || patch.status === 'suspended') throw badRequest('최종관리자(서버 PC)는 권한을 해제하거나 사용 중지할 수 없습니다.')
+      if (!byOwner) throw ownerOnly('최종관리자의 정보는 최종관리자(서버 PC)만 바꿀 수 있습니다.')
+    }
+    if (!byOwner) {
+      // the real name identifies the person: only the server PC sets (and thereby fixes) it
+      if (patch.name !== undefined && patch.name !== m.name) throw ownerOnly('본명은 최종관리자(서버 PC)만 고칠 수 있습니다.')
+      if (patch.role !== undefined && patch.role !== m.role) throw ownerOnly('서무 지정·해제는 최종관리자(서버 PC)만 할 수 있습니다.')
+      if (patch.status !== undefined && patch.status !== m.status && m.role === 'admin') throw ownerOnly('서무의 사용 중지는 최종관리자(서버 PC)만 할 수 있습니다.')
+    }
     const losingAdmin = m.role === 'admin' && (patch.role === 'member' || patch.status === 'suspended')
     if (losingAdmin && countAdmins(ctx.db) <= 1) throw badRequest('관리자가 최소 1명은 있어야 합니다.')
     updateMember(ctx.db, id, patch)
@@ -271,13 +305,30 @@ export function registerAdminRoutes(
     if (patch.status === 'suspended') ctx.hub.kick({ memberId: id }, 'MEMBER_SUSPENDED')
     logActivity(ctx, req, 'member.update', { type: 'member', id }, patch)
     ctx.hub.broadcast('member.changed', { id })
-    return ok(toMemberDto(getMember(ctx.db, id)!, ctx.hub.presenceOf(id)))
+    return ok(toMemberDto(getMember(ctx.db, id)!, ctx.hub.presenceOf(id), ownerMemberId(ctx.db)))
   })
 
   app.get('/api/admin/settings', pre, async () => ok(getAllSettings(ctx.db)))
 
   app.put('/api/admin/settings', pre, async (req) => {
     const patch = parse(settingsPatchSchema, req.body)
+    if (!isOwnerRequest(ctx, req)) {
+      // A 서무 may save the form, but only what a 서무 may decide can differ from what is stored
+      // (an older client sends every section at once).
+      const cur = getAllSettings(ctx.db)
+      const differs = (stored: object, sent: object | undefined, open: string[] = []): boolean =>
+        !!sent && Object.entries(sent).some(([k, v]) => v !== undefined && !open.includes(k) && JSON.stringify(v) !== JSON.stringify((stored as Record<string, unknown>)[k]))
+      if (
+        patch.adminPin !== undefined ||
+        differs(cur.org, patch.org) ||
+        differs(cur.network, patch.network) ||
+        differs(cur.storage, patch.storage) ||
+        differs(cur.backup, patch.backup) ||
+        differs(cur.ops, patch.ops, SECRETARY_OPS_FIELDS)
+      ) {
+        throw ownerOnly('조직 정보·네트워크·저장 공간·백업·사용할 기능·관리 PIN 등 중요 설정은 최종관리자(서버 PC)만 바꿀 수 있습니다.')
+      }
+    }
     try {
       if (patch.org) patchSection(ctx.db, 'org', patch.org)
       if (patch.network) patchSection(ctx.db, 'network', patch.network)

@@ -14,6 +14,8 @@ export function useHello() {
     queryFn: async () => {
       const h = await request<Hello>('/api/hello', { noAuth: true })
       void localKv.set('lastHello', h)
+      // one per server address: a PC that uses several servers shows the right team while offline
+      if (serverUrl) void localKv.set(`hello:${serverUrl}`, h)
       return h
     },
     enabled: !!serverUrl,
@@ -40,7 +42,7 @@ export function useMe() {
     queryFn: async () => {
       const me = await api.get<MeDto>('/api/me')
       setMe(me)
-      void localKv.set('lastMe', me)
+      void localKv.set(`me:${me.id}`, me)
       return me
     },
     enabled: online,

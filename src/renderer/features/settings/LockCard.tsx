@@ -25,7 +25,8 @@ export function LockCard(): React.JSX.Element | null {
   const [b, setB] = useState('')
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [recovery, setRecovery] = useState<string | null>(null)
-  if (!st) return null
+  // shared PC: the person's own PIN locks the program, so there is no second PIN to manage here
+  if (!st || st.seat) return null
   const reset = (): void => {
     setA('')
     setB('')

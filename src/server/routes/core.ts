@@ -10,7 +10,8 @@ import { randomKey, safeEqualHex, sha256Hex } from '../crypto'
 import { parse, ok } from '../validate'
 import { getSection, isInitialized, readSetting } from '../settings'
 import { adminFieldsOf, getMember, listDepartments, listMembers, toMemberDto, updateMember } from '../repos/members'
-import { blockedPc } from '../repos/devices'
+import { blockedPc, ownerMemberId } from '../repos/devices'
+import { isOwnerRequest } from '../auth'
 import { logActivity } from '../activity'
 import { approveJoinRequest } from './admin'
 import { myGroups } from '../repos/groups'
@@ -27,6 +28,8 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
       version: ctx.version,
       protocol: PROTOCOL_VERSION,
       minProtocol: MIN_CLIENT_PROTOCOL,
+      // 'seats': a join request marked sharedPc is kept apart from the other people of that PC
+      caps: ['idem', 'seats'],
       initialized: isInitialized(ctx.db)
     }
     return ok(hello)
@@ -45,9 +48,9 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
     // one PC, one open request: asking again replaces the request that is still waiting
     if (input.pcUid) ctx.db.run(`UPDATE join_requests SET state = 'rejected', decided_at = ?, decided_by = 'replaced', updated_at = ? WHERE pc_uid = ? AND state = 'pending'`, [t, t, input.pcUid])
     ctx.db.run(
-      `INSERT INTO join_requests (id, poll_token_hash, name, dept_name, title, ext, pc_name, win_user, ip, app_version, state, created_at, updated_at, pc_uid)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
-      [id, sha256Hex(token), input.name, input.deptName || null, input.title || null, input.ext || null, input.pcName, input.winUser, ip, input.appVersion || null, t, t, input.pcUid ?? null]
+      `INSERT INTO join_requests (id, poll_token_hash, name, dept_name, title, ext, pc_name, win_user, ip, app_version, state, created_at, updated_at, pc_uid, shared_pc)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+      [id, sha256Hex(token), input.name, input.deptName || null, input.title || null, input.ext || null, input.pcName, input.winUser, ip, input.appVersion || null, t, t, input.pcUid ?? null, input.sharedPc ? 1 : 0]
     )
     logActivity(ctx, null, 'join.request', { type: 'join_request', id }, { name: input.name, ip, pcName: input.pcName })
     // Auto approval only inside configured ranges (3.2).
@@ -95,12 +98,14 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
     const ops = getSection(ctx.db, 'ops')
     const me: MeDto = {
       ...toMemberDto(m, ctx.hub.presenceOf(m.id)),
+      isOwner: isOwnerRequest(ctx, req),
       deviceId: req.device.id,
       groups: myGroups(ctx.db, m.id),
       disabledFeatures: ops.disabledFeatures,
       adminPinSet: !!readSetting<string>(ctx.db, 'adminPinHash'),
       // Only the count, so the menu badge and alerts work before the admin PIN is entered.
       pendingJoins: m.role === 'admin' ? (ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM join_requests WHERE state = 'pending'`)?.n ?? 0) : 0,
+      canSendUrgent: m.role === 'admin' || ops.urgentSenders === 'everyone',
       ledgerUnseen: ledgerUnseen(m.id)
     }
     return ok(me)
@@ -114,11 +119,12 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
     updateMember(ctx.db, req.member.id, patch)
     logActivity(ctx, req, 'member.update.self', { type: 'member', id: req.member.id })
     ctx.hub.broadcast('member.changed', { id: req.member.id })
-    return ok(toMemberDto(getMember(ctx.db, req.member.id)!, ctx.hub.presenceOf(req.member.id)))
+    return ok(toMemberDto(getMember(ctx.db, req.member.id)!, ctx.hub.presenceOf(req.member.id), ownerMemberId(ctx.db)))
   })
 
   app.get('/api/members', { preHandler: requireAuth }, async () => {
-    return ok(listMembers(ctx.db).map((m) => toMemberDto(m, ctx.hub.presenceOf(m.id))))
+    const owner = ownerMemberId(ctx.db)
+    return ok(listMembers(ctx.db).map((m) => toMemberDto(m, ctx.hub.presenceOf(m.id), owner)))
   })
 
   /** The server clock, for deadlines that must be the same on every PC. */

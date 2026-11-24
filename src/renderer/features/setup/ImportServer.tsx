@@ -72,7 +72,7 @@ export function ImportServer({ onBack, onDone }: { onBack: () => void; onDone: (
           </div>
         )}
         {info?.ok && (
-          <Field label="이 PC를 쓸 관리자" hint="이 PC는 고른 관리자로 로그인됩니다.">
+          <Field label="이 PC를 쓸 관리자" hint="이 PC는 고른 관리자로 로그인되고, 그 사람이 최종관리자(서버 PC)가 됩니다.">
             <Select aria-label="관리자" value={adminId} onChange={(e) => setAdminId(e.target.value)}>
               {info.admins?.map((a) => (
                 <option key={a.id} value={a.id}>

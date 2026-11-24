@@ -1,12 +1,13 @@
-import type { FastifyRequest, preHandlerAsyncHookHandler } from 'fastify'
+import type { FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify'
 import { MIN_CLIENT_PROTOCOL, PC_UID_RE } from '../shared/constants'
 import { ipAllowed, normalizeIp } from '../shared/net'
 import type { ServerContext } from './context'
 import { AppError } from './errors'
 import { safeEqualHex, sha256Hex, verifyPin } from './crypto'
-import { getDevice, learnPcUid, touchDevice, type DeviceRow } from './repos/devices'
+import { getDevice, learnPcUid, serverDeviceId, touchDevice, type DeviceRow } from './repos/devices'
 import { getMember, type MemberRow } from './repos/members'
 import { getSection, readSetting } from './settings'
+import { replayIdempotent } from './idempotency'
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -61,7 +62,7 @@ export function parseAuthHeader(req: FastifyRequest): { deviceId: string; device
 }
 
 export function makeRequireAuth(ctx: ServerContext): preHandlerAsyncHookHandler {
-  return async function requireAuth(req: FastifyRequest): Promise<void> {
+  return async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<FastifyReply | void> {
     const cred = parseAuthHeader(req)
     if (!cred) throw new AppError('UNAUTHORIZED', '인증 정보가 없습니다.', 401)
     const protoHeader = req.headers['x-protocol']
@@ -74,6 +75,8 @@ export function makeRequireAuth(ctx: ServerContext): preHandlerAsyncHookHandler 
     const uid = req.headers['x-pc-uid']
     if (!r.device.pc_uid && typeof uid === 'string' && PC_UID_RE.test(uid)) learnPcUid(ctx.db, r.device.id, uid)
     req.clientIp = normalizeIp(req.ip)
+    // a change sent again with the same key (outbox of a PC that was offline) gets its first answer
+    if (replayIdempotent(ctx, req, reply)) return reply
   }
 }
 
@@ -85,5 +88,24 @@ export function makeRequireAdmin(ctx: ServerContext): preHandlerAsyncHookHandler
       const pin = String(req.headers['x-admin-pin'] ?? '')
       if (!pin || !verifyPin(pin, pinHash)) throw new AppError('ADMIN_PIN_REQUIRED', '관리 PIN이 필요합니다.', 403)
     }
+  }
+}
+
+/**
+ * Two admin tiers: the 최종관리자 is the server PC itself (its own device entry), every other
+ * admin is a 서무. A request counts as the owner's only when it comes from the server PC.
+ */
+export function isOwnerRequest(ctx: ServerContext, req: FastifyRequest): boolean {
+  return req.member?.role === 'admin' && !!req.device && req.device.id === serverDeviceId(ctx.db)
+}
+
+export function ownerOnly(message = '최종관리자(서버 PC)만 할 수 있습니다.'): AppError {
+  return new AppError('OWNER_ONLY', message, 403)
+}
+
+/** After requireAuth and requireAdmin: data storage and critical settings (not open to 서무). */
+export function makeRequireOwner(ctx: ServerContext): preHandlerAsyncHookHandler {
+  return async function requireOwner(req: FastifyRequest): Promise<void> {
+    if (!isOwnerRequest(ctx, req)) throw ownerOnly()
   }
 }

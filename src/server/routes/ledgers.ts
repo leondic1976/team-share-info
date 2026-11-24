@@ -43,7 +43,7 @@ interface Row {
 }
 type Me = { id: string; role: string; name: string }
 
-const SELECT = `SELECT l.*, o.name AS owner_name, u.name AS updater_name, s.version AS seen FROM ledgers l
+const SELECT = `SELECT l.*, CASE WHEN IFNULL(LENGTH(o.nickname), 0) = 0 THEN o.name ELSE o.name || char(40) || o.nickname || char(41) END AS owner_name, CASE WHEN IFNULL(LENGTH(u.nickname), 0) = 0 THEN u.name ELSE u.name || char(40) || u.nickname || char(41) END AS updater_name, s.version AS seen FROM ledgers l
   JOIN members o ON o.id = l.created_by LEFT JOIN members u ON u.id = l.updated_by
   LEFT JOIN ledger_seen s ON s.ledger_id = l.id AND s.member_id = ?`
 /** Whole-sheet requests of the v1.1.0 screen work up to this many rows. */

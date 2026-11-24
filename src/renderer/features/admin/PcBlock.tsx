@@ -76,7 +76,7 @@ export function BanDialog({ target, onClose }: { target: BanTarget; onClose: () 
 }
 
 /** The list of PCs shut out for good; taking one off lets it ask for access again. */
-export function BlockedPcsCard(): React.JSX.Element {
+export function BlockedPcsCard({ canUnblock = true }: { canUnblock?: boolean }): React.JSX.Element {
   const qc = useQueryClient()
   const [err, setErr] = useState('')
   const q = useQuery({ queryKey: ['admin', 'blocked-pcs'], queryFn: () => api.get<BlockedPcDto[]>('/api/admin/blocked-pcs') })
@@ -93,7 +93,9 @@ export function BlockedPcsCard(): React.JSX.Element {
     <Card data-testid="blocked-pcs">
       <CardHeader>
         <CardTitle>영구 차단한 PC ({list.length})</CardTitle>
-        <span className="text-xs text-muted-foreground">해제하면 그 PC에서 다시 사용 신청을 할 수 있고, 승인하면 이전 계정으로 연결됩니다.</span>
+        <span className="text-xs text-muted-foreground">
+          {canUnblock ? '해제하면 그 PC에서 다시 사용 신청을 할 수 있고, 승인하면 이전 계정으로 연결됩니다.' : '차단 해제는 최종관리자(서버 PC)만 할 수 있습니다.'}
+        </span>
       </CardHeader>
       {err && <p className="px-4 pb-2 text-sm text-urgent">{err}</p>}
       {list.length === 0 ? (
@@ -122,15 +124,17 @@ export function BlockedPcsCard(): React.JSX.Element {
                   {format(b.createdAt, 'yyyy-M-d')} · {b.blockedByName ?? '-'}
                 </td>
                 <td className="pr-4 text-right">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      if (window.confirm(`${b.pcName} PC의 영구 차단을 해제할까요?\n해제하면 그 PC에서 다시 사용 신청을 할 수 있습니다(승인은 따로 해야 합니다).`)) unblock.mutate(b.id)
-                    }}
-                  >
-                    차단 해제
-                  </Button>
+                  {canUnblock && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        if (window.confirm(`${b.pcName} PC의 영구 차단을 해제할까요?\n해제하면 그 PC에서 다시 사용 신청을 할 수 있습니다(승인은 따로 해야 합니다).`)) unblock.mutate(b.id)
+                      }}
+                    >
+                      차단 해제
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}

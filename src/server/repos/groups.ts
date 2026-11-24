@@ -19,7 +19,7 @@ interface GroupRow {
 }
 
 const SELECT = `
-  SELECT g.*, o.name AS owner_name,
+  SELECT g.*, CASE WHEN IFNULL(LENGTH(o.nickname), 0) = 0 THEN o.name ELSE o.name || char(40) || o.nickname || char(41) END AS owner_name,
     (SELECT COUNT(*) FROM group_members x WHERE x.group_id = g.id) AS member_count,
     gm.role AS my_role, gm.notify AS my_notify,
     gi.kind AS pending_kind, gi.id AS invite_id

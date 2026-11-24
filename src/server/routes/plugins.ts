@@ -22,7 +22,7 @@ interface Row {
   updated_at: number
 }
 
-const SELECT = 'SELECT r.*, m.name AS creator_name FROM plugin_rooms r JOIN members m ON m.id = r.created_by'
+const SELECT = 'SELECT r.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS creator_name FROM plugin_rooms r JOIN members m ON m.id = r.created_by'
 const json = (v: unknown, what: string): string => {
   const s = JSON.stringify(v ?? null)
   if (s.length > PLUGIN_STATE_MAX) throw badRequest(`${what}이(가) 너무 큽니다.`)

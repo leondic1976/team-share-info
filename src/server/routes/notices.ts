@@ -35,7 +35,7 @@ interface NoticeRow {
   att_count: number
 }
 
-const SELECT = `SELECT n.*, m.name AS author_name, r.read_at AS r_read_at, r.acked_at AS r_acked_at, r.reply AS r_reply,
+const SELECT = `SELECT n.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS author_name, r.read_at AS r_read_at, r.acked_at AS r_acked_at, r.reply AS r_reply,
   CASE WHEN r.member_id IS NULL THEN NULL ELSE 1 END AS r_exists,
   (SELECT COUNT(*) FROM attachments a WHERE a.owner_type = 'notice' AND a.owner_id = n.id) AS att_count
   FROM notices n JOIN members m ON m.id = n.created_by
@@ -89,7 +89,7 @@ export function urgentPayload(r: Pick<NoticeRow, 'id' | 'title' | 'body_html' | 
 /** Publish: create receipts for the audience, mark online members delivered, push events. */
 export function publishNotice(ctx: ServerContext, id: string): void {
   const db = ctx.db
-  const n = db.get<NoticeRow>(`SELECT n.*, m.name AS author_name FROM notices n JOIN members m ON m.id = n.created_by WHERE n.id = ?`, [id])
+  const n = db.get<NoticeRow>(`SELECT n.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS author_name FROM notices n JOIN members m ON m.id = n.created_by WHERE n.id = ?`, [id])
   if (!n || n.deleted_at) return
   const t = Date.now()
   const audience = audienceOf(db, 'notices', 'notice', id)
@@ -119,7 +119,7 @@ export function runNoticeJobs(ctx: ServerContext, now = Date.now()): void {
   const online = ctx.hub.onlineMemberIds()
   if (!online.size) return
   const due = db.all<NoticeRow & { member_id: string }>(
-    `SELECT n.*, m.name AS author_name, r.member_id FROM notices n
+    `SELECT n.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS author_name, r.member_id FROM notices n
      JOIN members m ON m.id = n.created_by
      JOIN notice_receipts r ON r.notice_id = n.id
      WHERE n.level = 'urgent' AND n.deleted_at IS NULL AND n.published_at IS NOT NULL AND n.renotify_minutes IS NOT NULL
@@ -195,7 +195,7 @@ export function registerNoticeRoutes(app: FastifyInstance, ctx: ServerContext, g
   /** Called right after (re)connecting: notices not yet delivered to me (13.7). */
   app.get('/api/notices/pending', auth, async (req) => {
     const rows = db.all<NoticeRow>(
-      `SELECT n.*, m.name AS author_name FROM notice_receipts r JOIN notices n ON n.id = r.notice_id JOIN members m ON m.id = n.created_by
+      `SELECT n.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS author_name FROM notice_receipts r JOIN notices n ON n.id = r.notice_id JOIN members m ON m.id = n.created_by
        WHERE r.member_id = ? AND r.delivered_at IS NULL AND n.deleted_at IS NULL AND n.published_at IS NOT NULL
          AND (n.expires_at IS NULL OR n.expires_at > ?) ORDER BY n.published_at`,
       [req.member.id, Date.now()]
@@ -204,7 +204,7 @@ export function registerNoticeRoutes(app: FastifyInstance, ctx: ServerContext, g
     for (const r of rows) db.run('UPDATE notice_receipts SET delivered_at = ?, last_notified_at = ? WHERE notice_id = ? AND member_id = ?', [t, t, r.id, req.member.id])
     // Unacknowledged urgent notices are shown again after reconnecting, even if delivered before.
     const unacked = db.all<NoticeRow>(
-      `SELECT n.*, m.name AS author_name FROM notice_receipts r JOIN notices n ON n.id = r.notice_id JOIN members m ON m.id = n.created_by
+      `SELECT n.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS author_name FROM notice_receipts r JOIN notices n ON n.id = r.notice_id JOIN members m ON m.id = n.created_by
        WHERE r.member_id = ? AND r.delivered_at IS NOT NULL AND n.level = 'urgent' AND n.deleted_at IS NULL
          AND ((n.require_ack = 1 AND r.acked_at IS NULL) OR (n.require_ack = 0 AND r.read_at IS NULL))
          AND (n.expires_at IS NULL OR n.expires_at > ?)`,

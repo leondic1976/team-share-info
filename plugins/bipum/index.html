@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>비품관리대장</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="__sdk.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>🗄️ 비품관리대장</h1>
+      <select id="bookSel" class="hidden" aria-label="대장 고르기"></select>
+      <nav role="tablist">
+        <button role="tab" data-tab="list" aria-selected="true">대장</button>
+        <button role="tab" data-tab="loans">대여·지급</button>
+        <button role="tab" data-tab="audit">재물조사</button>
+        <button role="tab" data-tab="summary">현황</button>
+      </nav>
+      <span class="grow"></span>
+      <button id="addBtn" class="primary hidden">＋ 물품 등록</button>
+      <button id="manageBtn">대장 관리</button>
+    </header>
+
+    <div id="printHead" class="print-only"></div>
+    <main id="main" aria-live="polite"></main>
+
+    <!-- item: add / edit (manager) -->
+    <dialog id="itemDlg">
+      <form id="itemForm" method="dialog">
+        <h2 id="itemTitle">물품 등록</h2>
+        <div class="seg" role="radiogroup" aria-label="구분">
+          <label class="inline"><input type="radio" name="iKind" value="0" checked /> 비품 <small>(하나씩 관리하는 물건)</small></label>
+          <label class="inline"><input type="radio" name="iKind" value="1" /> 소모품 <small>(재고를 세는 물건)</small></label>
+        </div>
+        <div class="row">
+          <div>
+            <label for="iName">품명</label>
+            <input id="iName" maxlength="60" required placeholder="예: 노트북" />
+          </div>
+          <div>
+            <label for="iCat">분류</label>
+            <input id="iCat" maxlength="20" list="catList" placeholder="예: 전산장비" />
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label for="iSpec">규격·모델</label>
+            <input id="iSpec" maxlength="80" placeholder="예: LG gram 16" />
+          </div>
+          <div>
+            <label for="iNo">관리번호</label>
+            <input id="iNo" maxlength="30" placeholder="예: 2025-전산-001" />
+          </div>
+        </div>
+        <div class="row3">
+          <div>
+            <label for="iQty">수량</label>
+            <input id="iQty" type="number" min="0" max="9999999" step="1" value="1" required />
+          </div>
+          <div>
+            <label for="iUnit">단위</label>
+            <input id="iUnit" maxlength="8" list="unitList" value="개" />
+          </div>
+          <div id="iMinBox" class="hidden">
+            <label for="iMin">최소 재고 <small>(이하면 경고)</small></label>
+            <input id="iMin" type="number" min="0" max="9999999" step="1" value="0" />
+          </div>
+        </div>
+        <div class="row3">
+          <div>
+            <label for="iGot">취득일</label>
+            <input id="iGot" type="date" />
+          </div>
+          <div>
+            <label for="iPrice">취득가액 <small>(1개, 원)</small></label>
+            <input id="iPrice" type="number" min="0" step="1" placeholder="0" />
+          </div>
+          <div>
+            <label for="iLife">내용연수 <small>(년)</small></label>
+            <input id="iLife" type="number" min="0" max="99" step="1" placeholder="0" />
+          </div>
+        </div>
+        <div class="row3">
+          <div>
+            <label for="iLoc">보관 위치</label>
+            <input id="iLoc" maxlength="40" list="locList" placeholder="예: 3층 사무실" />
+          </div>
+          <div>
+            <label for="iHolder">사용자 <small>(담당자)</small></label>
+            <input id="iHolder" maxlength="30" list="holderList" />
+          </div>
+          <div>
+            <label for="iStatus">상태</label>
+            <select id="iStatus"></select>
+          </div>
+        </div>
+        <label class="inline" id="iLendBox"><input type="checkbox" id="iLend" /> 대여용 <small>(팀원이 빌려 쓰는 공용 물품)</small></label>
+        <label for="iNote">비고</label>
+        <input id="iNote" maxlength="200" />
+        <datalist id="catList"></datalist>
+        <datalist id="locList"></datalist>
+        <datalist id="holderList"></datalist>
+        <datalist id="unitList">
+          <option value="개"></option>
+          <option value="대"></option>
+          <option value="박스"></option>
+          <option value="권"></option>
+          <option value="세트"></option>
+          <option value="자루"></option>
+          <option value="통"></option>
+          <option value="장"></option>
+        </datalist>
+        <p id="itemError" class="error" role="alert"></p>
+        <div class="btns">
+          <span class="grow"></span>
+          <button type="button" data-close>취소</button>
+          <button type="submit" class="primary">저장</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- item: details, history, actions -->
+    <dialog id="detailDlg">
+      <div id="detailBody"></div>
+    </dialog>
+
+    <!-- lend / issue -->
+    <dialog id="loanDlg" class="narrow">
+      <form id="loanForm" method="dialog">
+        <h2 id="loanTitle">대여</h2>
+        <p id="loanItem" class="muted"></p>
+        <div class="row">
+          <div>
+            <label for="lQty">수량</label>
+            <input id="lQty" type="number" min="1" step="1" value="1" required />
+          </div>
+          <div id="lDueBox">
+            <label for="lDue">반납 예정일 <small>(선택)</small></label>
+            <input id="lDue" type="date" />
+          </div>
+        </div>
+        <div id="lWhoBox" class="hidden">
+          <label for="lWho">받는 사람 <small>(담당자가 대신 기록)</small></label>
+          <select id="lWho"></select>
+        </div>
+        <label for="lNote">비고 <small>(선택)</small></label>
+        <input id="lNote" maxlength="200" placeholder="예: 외부 회의용" />
+        <p id="loanError" class="error" role="alert"></p>
+        <div class="btns">
+          <span class="grow"></span>
+          <button type="button" data-close>취소</button>
+          <button type="submit" class="primary" id="loanSubmit">대여</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- stock of a consumable (manager) -->
+    <dialog id="stockDlg" class="narrow">
+      <form id="stockForm" method="dialog">
+        <h2>입고·재고 조정</h2>
+        <p id="stockItem" class="muted"></p>
+        <label class="inline"><input type="radio" name="sMode" value="in" checked /> 입고 <small>(지금 재고에 더함)</small></label>
+        <label class="inline"><input type="radio" name="sMode" value="set" /> 재고 조정 <small>(세어 본 수량으로 맞춤)</small></label>
+        <label for="sQty">수량</label>
+        <input id="sQty" type="number" min="0" max="9999999" step="1" required />
+        <p id="stockError" class="error" role="alert"></p>
+        <div class="btns">
+          <span class="grow"></span>
+          <button type="button" data-close>취소</button>
+          <button type="submit" class="primary">저장</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- register: info, new, backup, delete -->
+    <dialog id="manageDlg">
+      <div id="manageBody"></div>
+    </dialog>
+    <dialog id="newDlg">
+      <form id="newForm" method="dialog">
+        <h2>새 대장 만들기</h2>
+        <p class="muted small">대장을 만든 사람이 담당자가 되어 물품을 등록·수정합니다. 볼 수 있는 사람은 찾아보고 대여·지급·재물조사를 기록할 수 있습니다.</p>
+        <label for="nTitle">대장 이름</label>
+        <input id="nTitle" maxlength="40" required placeholder="예: 총무팀 비품관리대장" />
+        <label>볼 수 있는 사람</label>
+        <label class="inline"><input type="radio" name="nScope" value="team" checked /> 팀 전체</label>
+        <label class="inline"><input type="radio" name="nScope" value="members" /> 지정한 사람 <small>(초대 알림이 갑니다. 나중에 바꿀 수 없습니다)</small></label>
+        <div id="nMembers" class="members hidden"></div>
+        <label>처음 내용</label>
+        <div class="btns start">
+          <button type="button" id="nBackup">백업 파일에서 가져오기</button>
+          <span id="nBackupInfo" class="muted small">고르지 않으면 빈 대장으로 시작합니다. 엑셀 자료는 만든 뒤 [CSV 가져오기]로 넣습니다.</span>
+        </div>
+        <p id="newError" class="error" role="alert"></p>
+        <div class="btns">
+          <span class="grow"></span>
+          <button type="button" data-close>취소</button>
+          <button type="submit" class="primary">만들기</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" role="status"></div>
+    <script src="bipum.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

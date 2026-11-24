@@ -9,6 +9,7 @@ import { Label, Textarea } from '@renderer/components/ui/input'
 import { Dialog, confirmDialog } from '@renderer/components/Dialog'
 import { EmptyState, OfflineState } from '@renderer/components/EmptyState'
 import { ScopePicker, ScopeTags, defaultScope, scopeIsValid } from '@renderer/components/ScopePicker'
+import { sendOrQueue } from '@renderer/lib/outbox'
 import { api, errorMessage } from '@renderer/lib/api'
 import { useMe } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
@@ -90,7 +91,7 @@ function SharedMemoDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const [scope, setScope] = useState<ScopeInput>(defaultScope(space))
   const [err, setErr] = useState('')
   const save = useMutation({
-    mutationFn: () => api.post('/api/shared-memos', { body, color, scope }),
+    mutationFn: () => sendOrQueue({ kind: 'shared-memo', label: `공유 메모: ${body.trim().slice(0, 60)}`, path: '/api/shared-memos', body: { body, color, scope } }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['shared-memos'] })
       setBody('')

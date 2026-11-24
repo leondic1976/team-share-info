@@ -12,7 +12,7 @@ const CONN_LABEL: Record<ConnState, { text: string; dot: string }> = {
   unconfigured: { text: '서버 미설정', dot: 'bg-muted-foreground' },
   connecting: { text: '서버 연결 중', dot: 'bg-important animate-pulse' },
   online: { text: '서버 연결됨', dot: 'bg-success' },
-  offline: { text: '서버 연결 끊김(재접속 중)', dot: 'bg-urgent animate-pulse' },
+  offline: { text: '서버 연결 끊김 · 보관된 내용 표시 중(자동 재접속)', dot: 'bg-urgent animate-pulse' },
   pending: { text: '승인 대기 중', dot: 'bg-important' },
   rejected: { text: '사용 중지됨', dot: 'bg-urgent' },
   'update-required': { text: '업데이트 필요', dot: 'bg-urgent' }

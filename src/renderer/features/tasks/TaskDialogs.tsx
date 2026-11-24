@@ -1,3 +1,4 @@
+import { sendOrQueue } from '@renderer/lib/outbox'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -9,13 +10,13 @@ import { Badge } from '@renderer/components/ui/badge'
 import { Editor, RichView } from '@renderer/components/Editor'
 import { AttachmentInput, AttachmentList, type Att } from '@renderer/components/Attachments'
 import { Comments } from '@renderer/components/Comments'
+import { MemberLink } from '@renderer/components/MemberLink'
 import { MemberPicker, ScopeTags } from '@renderer/components/ScopePicker'
 import { Field } from '@renderer/features/setup/SetupFrame'
 import { api, errorMessage } from '@renderer/lib/api'
 import { invoke } from '@renderer/lib/bridge'
 import { fromInputValue, toInputValue } from '@renderer/lib/dates'
 import { useMe } from '@renderer/lib/queries'
-import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
 import { MAX_TASK_ASSIGNEES, PRIORITY_LABEL, TASK_STATE_LABEL, canTransition, isTaskAssignee, taskProgress, type TaskDto, type TaskState } from '@shared/schemas/work'
 import type { PersonalTaskDto } from '@shared/schemas/personal'
@@ -28,9 +29,8 @@ function refreshAll(qc: ReturnType<typeof useQueryClient>): void {
 
 export function NewTaskDialog({ onClose, personal: initialPersonal }: { onClose: () => void; personal?: boolean }): React.JSX.Element {
   const qc = useQueryClient()
-  const online = useConn((s) => s.state === 'online')
   const space = useSpace((s) => s.space)
-  const [personal, setPersonal] = useState(initialPersonal ?? !online)
+  const [personal, setPersonal] = useState(initialPersonal ?? false)
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [note, setNote] = useState('')
@@ -45,17 +45,22 @@ export function NewTaskDialog({ onClose, personal: initialPersonal }: { onClose:
       const dueAt = due ? fromInputValue(due) : null
       if (personal) await invoke('local:tasks.save', { title, note, dueAt, priority })
       else
-        await api.post('/api/tasks', {
-          title,
-          bodyHtml: body,
-          // assigneeId is what a server older than this client reads.
-          assigneeId: assignees[0],
-          assigneeIds: assignees,
-          doneMode: each && assignees.length > 1 ? 'each' : 'any',
-          dueAt,
-          priority,
-          attachmentIds: atts.map((a) => a.id),
-          scope: space === 'team' ? undefined : { type: 'group', groupIds: [space], memberIds: [] }
+        await sendOrQueue({
+          kind: 'task',
+          label: `업무 요청: ${title.trim().slice(0, 60)}`,
+          path: '/api/tasks',
+          body: {
+            title,
+            bodyHtml: body,
+            // assigneeId is what a server older than this client reads.
+            assigneeId: assignees[0],
+            assigneeIds: assignees,
+            doneMode: each && assignees.length > 1 ? 'each' : 'any',
+            dueAt,
+            priority,
+            attachmentIds: atts.map((a) => a.id),
+            scope: space === 'team' ? undefined : { type: 'group', groupIds: [space], memberIds: [] }
+          }
         })
     },
     onSuccess: () => {
@@ -88,7 +93,6 @@ export function NewTaskDialog({ onClose, personal: initialPersonal }: { onClose:
             type="button"
             role="radio"
             aria-checked={!personal}
-            disabled={!online}
             onClick={() => setPersonal(false)}
             className={cn('cursor-pointer rounded-md border-2 px-3 py-2 text-left disabled:opacity-50', !personal ? 'border-primary bg-primary/5' : 'border-border')}
           >
@@ -196,7 +200,13 @@ export function TaskDetailDialog({ id, onClose }: { id: string; onClose: () => v
           {stateBadge(t.state)}
           <Badge variant={t.priority === 'high' ? 'urgent' : 'muted'}>우선순위 {PRIORITY_LABEL[t.priority]}</Badge>
           <span>
-            {t.requesterName} → <b>{t.assigneeName}</b>
+            <MemberLink memberId={t.requesterId} name={t.requesterName} /> →{' '}
+            <b>{t.assignees?.length ? t.assignees.map((a, i) => (
+                    <span key={a.id}>
+                      {i > 0 && ', '}
+                      <MemberLink memberId={a.id} name={a.name} />
+                    </span>
+                  )) : <MemberLink memberId={t.assigneeId} name={t.assigneeName} />}</b>
           </span>
           {t.dueAt && <span className={cn('text-muted-foreground', overdue && 'font-semibold text-urgent')}>마감 {format(t.dueAt, 'M/d HH:mm')}</span>}
           <ScopeTags scope={t.scope} />

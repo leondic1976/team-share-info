@@ -35,7 +35,10 @@ export function App(): React.JSX.Element {
     const info = await invoke('conn:get')
     loadConn(info)
     // Restore the last known org info and profile so the footer is right while offline (13.11).
-    const [hello, me] = await Promise.all([localKv.get<Hello>('lastHello'), localKv.get<MeDto>('lastMe')])
+    const [hello, me] = await Promise.all([
+      info.serverUrl ? localKv.get<Hello>(`hello:${info.serverUrl}`) : null,
+      info.memberId ? localKv.get<MeDto>(`me:${info.memberId}`).then((m) => m ?? localKv.get<MeDto>('lastMe')) : null
+    ])
     if (hello && info.serverUrl) queryClient.setQueryData(['hello', info.serverUrl], hello)
     if (me && info.memberId === me.id) useConn.getState().setMe(me)
     // Last results seen are shown at once, also while the server is unreachable (13.11).

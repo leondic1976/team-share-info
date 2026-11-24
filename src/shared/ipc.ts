@@ -179,6 +179,42 @@ export interface LockState {
   locked: boolean
   /** Too many wrong tries: nothing is accepted for this long. */
   waitMs: number
+  /** Shared PC: the lock asks for the PIN of this signed-in person (the optional PIN is not used). */
+  seat?: { name: string; owner: boolean }
+}
+
+/** Shared PC (공용 PC 사용): several people use one member PC, each with a name and a PIN. */
+export interface SeatInfo {
+  id: string
+  name: string
+  /** PC 책임자: turned the mode on; adds and removes people. */
+  owner: boolean
+  lastUsedAt: number
+  /** Too many wrong tries for this person: nothing is accepted for this long. */
+  waitMs: number
+}
+
+export interface SeatState {
+  enabled: boolean
+  /** The list of people cannot be read. */
+  damaged: boolean
+  /** Somebody is signed in (false in the sign-in window). */
+  signedIn: boolean
+  /** The mode may be turned on here: a member PC that is connected to a server. */
+  allowed: boolean
+  active: { id: string; name: string; owner: boolean } | null
+  /** The program locks itself after this many minutes without input. */
+  idleMinutes: number
+  seats: SeatInfo[]
+}
+
+export interface SeatResult {
+  ok: boolean
+  error?: string
+  waitMs?: number
+  /** Shown once: recovery code of the PC 책임자's PIN. */
+  recovery?: string
+  warning?: string
 }
 
 export interface LockResult {
@@ -232,7 +268,13 @@ export interface IpcMap {
   'local:import': { req: void; res: ExportResult }
   'local:cache.save': { req: { entries: { key: string; value: string }[] }; res: void }
   'local:cache.load': { req: { prefix: string }; res: { key: string; value: string; updatedAt: number }[] }
-  'local:cache.clear': { req: void; res: void }
+  /** prefix '' clears every member's cache; otherwise only the keys of that member */
+  'local:cache.clear': { req: { prefix: string }; res: void }
+  'local:outbox.list': { req: { owner: string }; res: OutboxItem[] }
+  /** false: could not be kept (no key to seal with, or the outbox is full) */
+  'local:outbox.add': { req: { id: string; owner: string; kind: string; label: string; body: string }; res: boolean }
+  'local:outbox.update': { req: { id: string; state: 'waiting' | 'failed'; error: string }; res: void }
+  'local:outbox.remove': { req: { id: string }; res: void }
   'conn:get': { req: void; res: ConnInfo }
   'conn:saveDevice': { req: { serverUrl: string; deviceId: string; deviceKey: string; memberId: string }; res: void }
   'conn:setPending': { req: { serverUrl: string; requestId: string; pollToken: string; name: string } | null; res: void }
@@ -413,6 +455,7 @@ export interface IpcMap {
   'meeting:inviteClose': { req: { id: string; accept: boolean }; res: void }
   'plugins:list': { req: void; res: InstalledPlugin[] }
   'plugins:catalog': { req: void; res: { ok: boolean; error?: string; data?: CatalogPlugin[] } }
+  'plugins:downloadCounts': { req: { ids: string[] }; res: Record<string, number> }
   'plugins:installCatalog': { req: { id: string; builtin?: boolean }; res: { ok: boolean; error?: string; data?: PluginManifest } }
   'plugins:pickFile': { req: void; res: { ok: boolean; path?: string; manifest?: PluginManifest; error?: string } }
   'plugins:inspectFile': { req: { path: string }; res: { ok: boolean; path?: string; manifest?: PluginManifest; error?: string } }
@@ -437,9 +480,35 @@ export interface IpcMap {
   'lock:recover': { req: { code: string; newPin: string }; res: LockResult }
   'lock:remove': { req: { pin: string }; res: LockResult }
   'lock:now': { req: void; res: void }
+  'seat:state': { req: void; res: SeatState }
+  /** Sign-in window only: the PIN is checked in the main process, which then starts that person's session. */
+  'seat:signIn': { req: { id: string; pin: string }; res: SeatResult }
+  'seat:enable': { req: { name: string; pin: string }; res: SeatResult }
+  'seat:disable': { req: { ownerPin: string }; res: SeatResult }
+  'seat:add': { req: { ownerPin: string; name: string; pin: string }; res: SeatResult }
+  'seat:remove': { req: { id: string; pin: string; by: 'self' | 'owner' }; res: SeatResult }
+  'seat:resetPin': { req: { ownerPin: string; id: string; newPin: string }; res: SeatResult }
+  'seat:changePin': { req: { oldPin: string; newPin: string }; res: SeatResult }
+  'seat:recover': { req: { code: string; newPin: string }; res: SeatResult }
+  'seat:setIdle': { req: { ownerPin: string; minutes: number }; res: SeatResult }
+  /** Ends the session and starts the program again at the sign-in window. */
+  'seat:switch': { req: void; res: void }
   'feedback:open': { req: void; res: void }
   'feedback:info': { req: void; res: FeedbackInfo }
   'feedback:submit': { req: FeedbackSubmit; res: FeedbackSubmitResult }
+}
+
+/** Something written for the server while it was unreachable (sent in order when it is back). */
+export interface OutboxItem {
+  /** also the idempotency key of the request: a repeated send is answered, not done twice */
+  id: string
+  kind: string
+  label: string
+  /** JSON of { method, path, body } */
+  body: string
+  state: 'waiting' | 'failed'
+  error: string
+  createdAt: number
 }
 
 export interface UpdateState {
@@ -499,6 +568,10 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'local:cache.save',
   'local:cache.load',
   'local:cache.clear',
+  'local:outbox.list',
+  'local:outbox.add',
+  'local:outbox.update',
+  'local:outbox.remove',
   'conn:get',
   'conn:saveDevice',
   'conn:setPending',
@@ -689,6 +762,7 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'plugins:openFile',
   'plugins:ocr',
   'plugins:openCopilot',
+  'plugins:downloadCounts',
   'storage:info',
   'storage:clearLast',
   'storage:pick',
@@ -703,6 +777,17 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'lock:recover',
   'lock:remove',
   'lock:now',
+  'seat:state',
+  'seat:signIn',
+  'seat:enable',
+  'seat:disable',
+  'seat:add',
+  'seat:remove',
+  'seat:resetPin',
+  'seat:changePin',
+  'seat:recover',
+  'seat:setIdle',
+  'seat:switch',
   'feedback:open',
   'feedback:info',
   'feedback:submit'

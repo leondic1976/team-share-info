@@ -55,6 +55,8 @@ export interface CatalogPlugin {
   sha256: string
   size: number
   features?: string[]
+  /** date of the last change, YYYY-MM-DD (manifest "updated"); the gallery's "최신순" */
+  updated?: string
   /** shipped inside the app: installs without a network (set by the app, not by the site) */
   builtin?: boolean
 }

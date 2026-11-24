@@ -1,3 +1,4 @@
+import { cn } from '@renderer/lib/utils'
 import { useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import FullCalendar from '@fullcalendar/react'
@@ -8,7 +9,7 @@ import interactionPlugin from '@fullcalendar/interaction'
 import koLocale from '@fullcalendar/core/locales/ko'
 import type { EventClickArg, EventDropArg, DatesSetArg, EventContentArg } from '@fullcalendar/core'
 import type { EventResizeDoneArg, DateClickArg } from '@fullcalendar/interaction'
-import { Plus, Printer, Upload, Download, Lock } from 'lucide-react'
+import { Plus, Printer, Upload, Download, Lock, Users } from 'lucide-react'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Select } from '@renderer/components/ui/input'
@@ -27,7 +28,8 @@ import { useAnnualTasks } from '@renderer/features/docs/AnnualCalendar'
 import { annualDate } from '@renderer/features/docs/useDocAlerts'
 import { EventDialog, ModeDialog, type EditMode, type EventTarget } from './EventDialog'
 
-type Show = 'all' | 'mine' | 'personal' | string
+/** 'personal' = only what is on this PC, 'shared' = only what is on the server; a member id = that member's shared events */
+type Show = 'all' | 'mine' | 'personal' | 'shared' | string
 
 function download(name: string, text: string, type: string): void {
   const url = URL.createObjectURL(new Blob([text], { type }))
@@ -52,7 +54,7 @@ export function CalendarPage(): React.JSX.Element {
   const [msg, setMsg] = useState('')
   const [pendingMove, setPendingMove] = useState<null | { run: (m: EditMode) => Promise<void>; revert: () => void }>(null)
 
-  const memberFilter = show !== 'all' && show !== 'personal' ? (show === 'mine' ? me?.id : show) : undefined
+  const memberFilter = show !== 'all' && show !== 'personal' && show !== 'shared' ? (show === 'mine' ? me?.id : show) : undefined
   const server = useServerEvents(show === 'personal' ? null : range, { groupId: space === 'team' ? undefined : space, memberId: memberFilter })
   const personal = usePersonalEvents(show === 'all' || show === 'mine' || show === 'personal' ? range : null)
   const holidays = useHolidays(range)
@@ -224,13 +226,14 @@ export function CalendarPage(): React.JSX.Element {
     <div className="flex h-full flex-col">
       <PageHeader
         title="일정"
-        description="🔒 회색은 내 PC에만 저장된 개인 일정, 색깔 일정은 공유 일정입니다."
+        description="개인 일정(🔒 회색)은 내 PC에만 저장되고, 공유 일정(색깔)은 서버에 저장되어 팀·그룹·지정한 사람이 함께 봅니다."
         actions={
           <>
             <Select aria-label="보기 대상" className="w-40" value={show} onChange={(e) => setShow(e.target.value)}>
               <option value="all">전체 일정</option>
               <option value="mine">내 일정만</option>
               <option value="personal">개인 일정만</option>
+              <option value="shared">공유 일정만</option>
               {(members ?? [])
                 .filter((m) => m.id !== me?.id)
                 .map((m) => (
@@ -255,6 +258,28 @@ export function CalendarPage(): React.JSX.Element {
           </>
         }
       />
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-5 py-2" data-testid="calendar-kind">
+        <div className="flex overflow-hidden rounded-md border border-border" role="tablist" aria-label="일정 구분">
+          {(
+            [
+              ['all', '전체', null],
+              ['personal', '개인 일정', Lock],
+              ['shared', '공유 일정', Users]
+            ] as const
+          ).map(([v, l, Icon]) => {
+            const on = v === 'all' ? show !== 'personal' && show !== 'shared' : show === v
+            return (
+              <button key={v} role="tab" aria-selected={on} onClick={() => setShow(v)} className={cn('flex cursor-pointer items-center gap-1.5 border-r border-border px-3.5 py-1.5 text-sm font-semibold last:border-r-0', on ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')}>
+                {Icon && <Icon className="size-3.5" aria-hidden />}
+                {l}
+              </button>
+            )
+          })}
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {show === 'personal' ? '내 PC에만 저장된 일정입니다. 다른 사람에게 보이지 않고 서버가 꺼져 있어도 쓸 수 있습니다.' : show === 'shared' ? '서버에 저장되어 함께 보는 일정입니다(팀·부서·그룹·지정한 사람).' : '개인 일정(🔒 회색)과 공유 일정(색깔)을 함께 봅니다.'}
+        </span>
+      </div>
       {msg && (
         <p className="border-b border-border px-5 py-1.5 text-xs text-muted-foreground" onClick={() => setMsg('')}>
           {msg}

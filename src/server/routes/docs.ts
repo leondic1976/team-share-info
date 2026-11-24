@@ -41,7 +41,7 @@ interface DocRow {
   updated_at: number
 }
 
-const SELECT = `SELECT d.*, a.name AS author_name, u.name AS updated_by_name FROM docs d JOIN members a ON a.id = d.created_by LEFT JOIN members u ON u.id = d.updated_by`
+const SELECT = `SELECT d.*, CASE WHEN IFNULL(LENGTH(a.nickname), 0) = 0 THEN a.name ELSE a.name || char(40) || a.nickname || char(41) END AS author_name, CASE WHEN IFNULL(LENGTH(u.nickname), 0) = 0 THEN u.name ELSE u.name || char(40) || u.nickname || char(41) END AS updated_by_name FROM docs d JOIN members a ON a.id = d.created_by LEFT JOIN members u ON u.id = d.updated_by`
 
 /** Team knowledge: must-read notes, manuals, handovers, minutes, FAQ, annual calendar (6.11). */
 export function registerDocRoutes(app: FastifyInstance, ctx: ServerContext, guards: { requireAuth: preHandlerAsyncHookHandler; requireAdmin: preHandlerAsyncHookHandler }): void {
@@ -299,7 +299,7 @@ export function registerDocRoutes(app: FastifyInstance, ctx: ServerContext, guar
   })
   app.get('/api/annual-tasks', auth, async (req) => {
     const w = visibleWhere('t', 'annual', req.member.id)
-    const rows = db.all<Parameters<typeof annualDto>[0]>(`SELECT t.*, m.name AS author_name FROM annual_tasks t JOIN members m ON m.id = t.created_by WHERE t.deleted_at IS NULL AND ${w.sql} ORDER BY t.month, t.day`, w.params)
+    const rows = db.all<Parameters<typeof annualDto>[0]>(`SELECT t.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS author_name FROM annual_tasks t JOIN members m ON m.id = t.created_by WHERE t.deleted_at IS NULL AND ${w.sql} ORDER BY t.month, t.day`, w.params)
     return ok(rows.map((r) => annualDto(r, req)))
   })
   app.post('/api/annual-tasks', auth, async (req) => {

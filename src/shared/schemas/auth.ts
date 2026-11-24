@@ -9,6 +9,8 @@ export const helloSchema = z.object({
   version: z.string(),
   protocol: z.number(),
   minProtocol: z.number(),
+  /** What this server can do beyond the protocol number (older servers send none). 'idem': X-Idempotency-Key */
+  caps: z.array(z.string()).optional(),
   initialized: z.boolean()
 })
 export type Hello = z.infer<typeof helloSchema>
@@ -22,7 +24,12 @@ export const joinRequestInputSchema = z.object({
   winUser: z.string().trim().min(1).max(80),
   appVersion: z.string().trim().max(40).default(''),
   /** The unique value of the asking PC (older versions do not send it). */
-  pcUid: z.string().regex(PC_UID_RE).optional()
+  pcUid: z.string().regex(PC_UID_RE).optional(),
+  /**
+   * 공용 PC: the asking person shares the PC and its Windows account with others, each with an
+   * own unique value. The server then recognises this person by the unique value only.
+   */
+  sharedPc: z.boolean().optional()
 })
 export type JoinRequestInput = z.infer<typeof joinRequestInputSchema>
 
@@ -54,14 +61,29 @@ export interface MemberDto {
   nickname: string | null
   /** Details an admin set (name, deptId, title, ext, mobile, duty): the member cannot change these. */
   adminFields: string[]
+  /**
+   * The server PC's own account: the 최종관리자. Other members with role 'admin' are 서무.
+   * Absent from servers older than the two admin tiers.
+   */
+  isOwner?: boolean
+  /** 직급 (e.g. 6급), set in 조직 관리. Absent from servers older than the org chart. */
+  rank?: string | null
+  /** Place inside the department in the org chart (0: none given). */
+  orgSort?: number
+}
+
+/** What to call a member's role: 최종관리자 (server PC), 서무 (other admins), 일반. */
+export function roleLabel(m: { role: Role; isOwner?: boolean }): string {
+  if (m.role !== 'admin') return '일반'
+  return m.isOwner === undefined ? '관리자' : m.isOwner ? '최종관리자' : '서무'
 }
 
 /** Details of a member that an admin may set; once set by an admin they stay as set. */
 export const ADMIN_SET_FIELDS = ['name', 'deptId', 'title', 'ext', 'mobile', 'duty'] as const
 
-/** "홍길동 (길동이)" where there is a nickname. */
+/** "홍길동(길동이)": the real name, then the pen name (필명) the member chose, if any. */
 export function displayName(m: { name: string; nickname?: string | null }): string {
-  return m.nickname ? `${m.name} (${m.nickname})` : m.name
+  return m.nickname ? `${m.name}(${m.nickname})` : m.name
 }
 
 export type Presence = 'online' | 'away' | 'offline' | 'absent'
@@ -76,12 +98,19 @@ export interface GroupBrief {
 }
 
 export interface MeDto extends MemberDto {
+  /**
+   * For me this is stricter than for other members: true only when this PC is the server PC
+   * itself, which is what the server asks for on data storage and critical settings.
+   */
+  isOwner?: boolean
   deviceId: string
   groups: GroupBrief[]
   disabledFeatures: string[]
   adminPinSet: boolean
   /** Join requests waiting for a decision; always 0 for non-admins. */
   pendingJoins: number
+  /** I may send an emergency notice (긴급 level): admins, or everyone when the setting says so. Older servers do not send it. */
+  canSendUrgent?: boolean
   /** team ledgers somebody else changed since I last opened them */
   ledgerUnseen: number
 }
@@ -114,6 +143,8 @@ export interface JoinRequestDto {
   pcUid: string | null
   /** This PC already has an account: approving gives it back instead of making a second one. */
   knownMember: { id: string; name: string } | null
+  /** 공용 PC: one of several people on that PC (absent from older servers). */
+  sharedPc?: boolean
 }
 
 export interface DeviceDto {
@@ -133,6 +164,8 @@ export interface DeviceDto {
   pcUid: string | null
   /** The server PC's own entry. */
   isServer: boolean
+  /** 공용 PC: several people (accounts) use this PC under one Windows account (absent from older servers). */
+  sharedPc?: boolean
 }
 
 /** A PC shut out for good (관리 → 구성원 → 영구 차단한 PC). */

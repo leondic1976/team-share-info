@@ -30,7 +30,7 @@ interface TaskRow {
   confirmed_at: number | null
 }
 
-const SELECT = `SELECT t.*, r.name AS requester_name FROM tasks t JOIN members r ON r.id = t.created_by`
+const SELECT = `SELECT t.*, CASE WHEN IFNULL(LENGTH(r.nickname), 0) = 0 THEN r.name ELSE r.name || char(40) || r.nickname || char(41) END AS requester_name FROM tasks t JOIN members r ON r.id = t.created_by`
 const IS_ASSIGNEE = 'EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.member_id = ?)'
 
 /**

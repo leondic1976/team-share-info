@@ -1,8 +1,10 @@
 import { app, BrowserWindow } from 'electron'
 import log from 'electron-log/main'
 import { setupPaths, userDataPath } from './paths'
-import { createMainWindow, setQuitting, showMainWindow } from './windows/main-window'
-import { createTray } from './tray'
+import { createMainWindow, setQuitting } from './windows/main-window'
+import { createTray, getTray, refreshTrayMenu } from './tray'
+import { markSessionStarted, onSeatsChanged, openSeatPicker, sessionStarted, setSessionStarter, sharedEnabled, showFront } from './seats'
+import { registerSeatIpc } from './ipc/seats'
 import { startedHidden } from './autostart'
 import { openLocalDb, closeLocalDb, localDb } from './localdb'
 import { registerAppIpc } from './ipc/app'
@@ -56,16 +58,23 @@ if (!app.requestSingleInstanceLock()) {
     if (route) getMainWindow()?.webContents.send('app:navigate', { path: route })
   }
   app.on('second-instance', (_e, argv) => {
-    showMainWindow()
+    // (shared PC, nobody signed in yet: the sign-in window)
+    showFront()
     openLink(argv)
   })
   // The teamhub:// scheme is registered by the installer (electron-builder protocols), not at run time.
 
-  app.whenReady().then(async () => {
+  /**
+   * Everything that works for the person using the program: local DB, IPC, windows, alarms,
+   * transfers, shortcuts, updater. On a shared PC it runs only after that person signed in
+   * (userData already points at their folder); otherwise right at start, as always.
+   */
+  const startSession = async (fromPicker: boolean): Promise<void> => {
     // a staged change of the personal data folder is carried out before the local DB opens (6.20)
     await applyPendingLocalChange()
     resolveLocalDir()
     openLocalDb(localDataPath('local.db'))
+    markSessionStarted()
     registerAppIpc()
     registerStorageIpc()
     registerLocalIpc()
@@ -88,8 +97,9 @@ if (!app.requestSingleInstanceLock()) {
     onServerStatus((st) => {
       for (const w of BrowserWindow.getAllWindows()) w.webContents.send('server:status', st)
     })
-    createTray()
-    createMainWindow({ startHidden: startedHidden() })
+    if (!getTray()) createTray()
+    // after the sign-in window the main window is what the person is waiting for
+    createMainWindow({ startHidden: !fromPicker && startedHidden() })
     startTools()
     startLauncher()
     startSysutil()
@@ -99,6 +109,18 @@ if (!app.requestSingleInstanceLock()) {
     startUpdater({ serverUrl: () => readCredential()?.serverUrl ?? getPendingJoin()?.serverUrl ?? null, resumeServer: autoStartServer })
     getMainWindow()?.webContents.once('did-finish-load', () => setTimeout(() => openLink(process.argv), 1500))
     log.info(`TeamHub ${app.getVersion()} started (userData=${app.getPath('userData')})`)
+  }
+
+  app.whenReady().then(async () => {
+    registerSeatIpc()
+    setSessionStarter(startSession)
+    onSeatsChanged(refreshTrayMenu)
+    if (!sharedEnabled()) return startSession(false)
+    // Shared PC: nobody is signed in, so nothing of anybody is opened. Only the tray and the
+    // sign-in window exist (started with Windows: the tray alone, until somebody opens TeamHub).
+    createTray()
+    openSeatPicker(!startedHidden())
+    log.info(`TeamHub ${app.getVersion()} started on a shared PC: waiting for sign-in`)
   })
 
   let cleanedUp = false
@@ -112,6 +134,8 @@ if (!app.requestSingleInstanceLock()) {
       .finally(() => app.quit())
   })
   app.on('will-quit', () => {
+    // quit from the sign-in window: no session was started, nothing to stop
+    if (!sessionStarted()) return
     stopScheduler()
     stopTools()
     stopWatches()
@@ -122,7 +146,7 @@ if (!app.requestSingleInstanceLock()) {
     /* stay alive in tray */
   })
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow({ startHidden: false })
+    if (sessionStarted() && BrowserWindow.getAllWindows().length === 0) createMainWindow({ startHidden: false })
   })
 }
 

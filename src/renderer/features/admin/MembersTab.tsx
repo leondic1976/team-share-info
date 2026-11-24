@@ -12,10 +12,12 @@ import { useConn } from '@renderer/app/conn-store'
 import { DepartmentsCard } from './DepartmentsCard'
 import { BanDialog, BlockedPcsCard, type BanTarget } from './PcBlock'
 import { MemberEditDialog } from './MemberEditDialog'
-import { displayName } from '@shared/schemas/auth'
+import { displayName, roleLabel } from '@shared/schemas/auth'
+import { OwnerOnlyNote, useIsOwner } from './owner'
 
 export function MembersTab(): React.JSX.Element {
   const qc = useQueryClient()
+  const owner = useIsOwner()
   const myDevice = useConn((s) => s.deviceId)
   const [err, setErr] = useState('')
   const [ban, setBan] = useState<BanTarget | null>(null)
@@ -34,9 +36,11 @@ export function MembersTab(): React.JSX.Element {
   const patchDevice = useMutation({ mutationFn: ({ id, action }: { id: string; action: string }) => api.patch(`/api/admin/devices/${id}`, { action }), ...done })
 
   if (members.isLoading || devices.isLoading) return <Loading />
+  const adminIds = new Set((members.data ?? []).filter((m) => m.role === 'admin').map((m) => m.id))
   return (
     <div className="space-y-4">
       {err && <p className="text-sm text-urgent">{err}</p>}
+      {!owner && <OwnerOnlyNote>서무 지정·해제, 서무의 사용 중지·PC 차단, 최종관리자 정보 수정, 영구 차단 해제는 최종관리자(서버 PC)만 할 수 있습니다.</OwnerOnlyNote>}
       <Card>
         <CardHeader>
           <CardTitle>구성원 ({members.data?.length ?? 0})</CardTitle>
@@ -60,23 +64,30 @@ export function MembersTab(): React.JSX.Element {
                   </span>
                 </td>
                 <td className="text-muted-foreground">{[m.deptName, m.title].filter(Boolean).join(' · ')}</td>
-                <td>{m.role === 'admin' ? <Badge>관리자</Badge> : <span className="text-muted-foreground">일반</span>}</td>
+                <td>{m.role === 'admin' ? <Badge variant={m.isOwner ? 'important' : undefined}>{roleLabel(m)}</Badge> : <span className="text-muted-foreground">일반</span>}</td>
                 <td>{m.status === 'active' ? <Badge variant="success">사용 중</Badge> : <Badge variant="urgent">중지</Badge>}</td>
                 <td className="space-x-1 pr-4 text-right">
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(m)}>
-                    정보 수정
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => patchMember.mutate({ id: m.id, body: { role: m.role === 'admin' ? 'member' : 'admin' } })}>
-                    {m.role === 'admin' ? '관리자 해제' : '관리자 지정'}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className={m.status === 'active' ? 'text-urgent' : ''}
-                    onClick={() => patchMember.mutate({ id: m.id, body: { status: m.status === 'active' ? 'suspended' : 'active' } })}
-                  >
-                    {m.status === 'active' ? '사용 중지' : '다시 사용'}
-                  </Button>
+                  {(owner || !m.isOwner) && (
+                    <Button size="sm" variant="ghost" onClick={() => setEditing(m)}>
+                      정보 수정
+                    </Button>
+                  )}
+                  {/* the server PC's account is the 최종관리자 for good; naming a 서무 is the 최종관리자's */}
+                  {owner && !m.isOwner && (
+                    <Button size="sm" variant="ghost" onClick={() => patchMember.mutate({ id: m.id, body: { role: m.role === 'admin' ? 'member' : 'admin' } })}>
+                      {m.role === 'admin' ? '서무 해제' : '서무 지정'}
+                    </Button>
+                  )}
+                  {!m.isOwner && (owner || m.role !== 'admin') && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className={m.status === 'active' ? 'text-urgent' : ''}
+                      onClick={() => patchMember.mutate({ id: m.id, body: { status: m.status === 'active' ? 'suspended' : 'active' } })}
+                    >
+                      {m.status === 'active' ? '사용 중지' : '다시 사용'}
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -84,7 +95,7 @@ export function MembersTab(): React.JSX.Element {
         </table>
       </Card>
 
-      <DepartmentsCard members={members.data ?? []} />
+      <DepartmentsCard />
 
       <Card>
         <CardHeader>
@@ -113,6 +124,11 @@ export function MembersTab(): React.JSX.Element {
                 <td className="text-muted-foreground">
                   {d.pcName} / {d.winUser}
                   {d.pcUid && <span className="ml-2 text-xs text-muted-foreground">고유값 {d.pcUid}</span>}
+                  {d.sharedPc && (
+                    <Badge className="ml-2" title="PC 한 대를 여러 명이 함께 쓰는 PC입니다. 같은 PC 이름·계정의 항목이 사람 수만큼 있는 것이 정상입니다. 영구 차단하면 이 PC의 모든 사용자가 차단됩니다." data-testid="device-shared">
+                      공용 PC
+                    </Badge>
+                  )}
                 </td>
                 <td>
                   {d.lastIp ?? d.approvedIp}
@@ -135,12 +151,12 @@ export function MembersTab(): React.JSX.Element {
                       <Button size="sm" variant="ghost" title="이 PC가 이전 승인 그대로 다시 접속할 수 있게 합니다" onClick={() => patchDevice.mutate({ id: d.id, action: 'restore' })}>
                         차단 해제
                       </Button>
-                    ) : (
+                    ) : !d.isServer && (owner || !adminIds.has(d.memberId)) ? (
                       <Button size="sm" variant="ghost" className="text-urgent" title="접속을 끊습니다. 이 PC는 다시 사용 신청을 할 수 있습니다" onClick={() => patchDevice.mutate({ id: d.id, action: 'revoke' })}>
                         차단
                       </Button>
-                    ))}
-                  {d.id !== myDevice && !d.isServer && (
+                    ) : null)}
+                  {d.id !== myDevice && !d.isServer && !adminIds.has(d.memberId) && (
                     <Button size="sm" variant="ghost" className="text-urgent" title="다시 신청도 할 수 없게 막습니다" onClick={() => setBan({ deviceId: d.id, who: d.memberName, pc: `${d.pcName} / ${d.winUser}` })}>
                       영구 차단
                     </Button>
@@ -155,7 +171,7 @@ export function MembersTab(): React.JSX.Element {
         </p>
       </Card>
 
-      <BlockedPcsCard />
+      <BlockedPcsCard canUnblock={owner} />
       {ban && <BanDialog target={ban} onClose={() => setBan(null)} />}
       {editing && <MemberEditDialog member={editing} onClose={() => setEditing(null)} />}
     </div>

@@ -465,3 +465,43 @@ textarea,
 .dark .calendar-wrap .fc .fc-col-header-cell.fc-day-sat {
   color: #60a5fa;
 }
+
+/* 긴급공지 popup: a red window in the middle of the screen. The pulsing frame draws the eye
+   without flashing the whole screen (people sensitive to flashing light). */
+.th-emergency {
+  box-shadow: inset 0 0 0 6px rgb(255 255 255 / 0.85);
+  animation: th-emergency-frame 1.2s ease-in-out infinite;
+}
+@keyframes th-emergency-frame {
+  50% {
+    box-shadow: inset 0 0 0 6px rgb(255 255 255 / 0.25);
+  }
+}
+.th-emergency-blink {
+  animation: th-emergency-blink 1s steps(2, start) infinite;
+}
+@keyframes th-emergency-blink {
+  to {
+    opacity: 0.35;
+  }
+}
+.th-emergency-shake {
+  animation: th-emergency-shake 0.5s linear;
+}
+@keyframes th-emergency-shake {
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .th-emergency,
+  .th-emergency-blink,
+  .th-emergency-shake {
+    animation: none;
+  }
+}

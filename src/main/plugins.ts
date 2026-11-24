@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import log from 'electron-log/main'
 import { DOWNLOAD_SITE } from '../shared/constants'
 import { compareVersions } from '../shared/semver'
+import { fetchDownloadCounts, hitDownload, type CounterFetch } from '../shared/plugin-stats'
 import { pluginBundleSchema, PLUGIN_ID_RE, type CatalogPlugin, type InstalledPlugin, type PluginBundle, type PluginManifest, type PluginPermission } from '../shared/schemas/plugins'
 import { localDb } from './localdb'
 import { localDataPath } from './storage'
@@ -184,6 +185,31 @@ export async function installFromCatalog(id: string): Promise<PluginManifest> {
   const buf = Buffer.from(await res.arrayBuffer())
   if (createHash('sha256').update(buf).digest('hex') !== entry.sha256) throw new Error('받은 파일이 목록과 다릅니다(해시 불일치). 설치하지 않았습니다.')
   return install(checkBundle(JSON.parse(buf.toString('utf8'))), 'catalog')
+}
+
+// ---------- download counts of the gallery (optional, needs the internet) ----------
+const counterFetch: CounterFetch = (url, init) => net.fetch(url, init)
+const COUNTS_TTL = 5 * 60_000
+let countsCache: { at: number; data: Record<string, number> } = { at: 0, data: {} }
+
+/** Download counts by plugin id; empty when the counter cannot be reached (closed networks). */
+export async function downloadCounts(ids: string[]): Promise<Record<string, number>> {
+  const want = ids.filter((id) => PLUGIN_ID_RE.test(id))
+  if (Date.now() - countsCache.at < COUNTS_TTL && want.every((id) => id in countsCache.data)) return countsCache.data
+  const data = await fetchDownloadCounts(want, counterFetch)
+  if (Object.keys(data).length) countsCache = { at: Date.now(), data: { ...countsCache.data, ...data } }
+  return data
+}
+
+/**
+ * Count an install from the gallery. Sends only the plugin's id, never waits and never
+ * fails: the install is already done. Development and test runs do not count.
+ */
+export function countDownload(id: string): void {
+  if (!app.isPackaged || !PLUGIN_ID_RE.test(id)) return
+  void hitDownload(id, counterFetch).then((v) => {
+    if (v !== null) countsCache.data[id] = v
+  })
 }
 
 /** Read a .thplugin file and return its manifest for the confirmation dialog. */

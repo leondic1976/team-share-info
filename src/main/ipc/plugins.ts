@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { handle } from './registry'
 import { recognizeImage } from '../ocr'
-import { fetchCatalog, openCopilot, hasPluginPermission, installBuiltin, inspectFile, installFromCatalog, installFromFile, listPlugins, pickPluginFile, pluginOpenFile, pluginSaveFile, setPluginEnabled, uninstallPlugin } from '../plugins'
+import { countDownload, downloadCounts, fetchCatalog, openCopilot, hasPluginPermission, installBuiltin, inspectFile, installFromCatalog, installFromFile, listPlugins, pickPluginFile, pluginOpenFile, pluginSaveFile, setPluginEnabled, uninstallPlugin } from '../plugins'
 import { PLUGIN_ID_RE } from '../../shared/schemas/plugins'
 
 const result = async <T,>(fn: () => Promise<T> | T): Promise<{ ok: boolean; error?: string; data?: T }> => {
@@ -18,7 +18,12 @@ export function registerPluginIpc(): void {
   handle('plugins:list', null, () => listPlugins())
   handle('plugins:catalog', null, () => result(fetchCatalog))
   // builtin: the card showed the copy shipped with the app, so it installs at once without asking the download site
-  handle('plugins:installCatalog', z.object({ id: z.string().regex(PLUGIN_ID_RE), builtin: z.boolean().optional() }), ({ id: pid, builtin }) => result(() => (builtin ? installBuiltin(pid) : installFromCatalog(pid))))
+  handle('plugins:installCatalog', z.object({ id: z.string().regex(PLUGIN_ID_RE), builtin: z.boolean().optional() }), async ({ id: pid, builtin }) => {
+    const r = await result(() => (builtin ? installBuiltin(pid) : installFromCatalog(pid)))
+    if (r.ok) countDownload(pid)
+    return r
+  })
+  handle('plugins:downloadCounts', z.object({ ids: z.array(z.string().regex(PLUGIN_ID_RE)).max(200) }), ({ ids }) => downloadCounts(ids))
   handle('plugins:pickFile', null, () => pickPluginFile())
   handle('plugins:inspectFile', z.object({ path: z.string().max(1000) }), ({ path }) => inspectFile(path))
   handle('plugins:installFile', z.object({ path: z.string().max(1000) }), ({ path }) => result(() => installFromFile(path)))

@@ -165,7 +165,8 @@ export function archiveCurrent(): boolean {
   const credential = readCredential()
   const mode = getMode()
   if (!credential || !mode) return false
-  const hello = localDb().kv.get<{ orgName?: string; teamName?: string }>('lastHello')
+  // the hello of this very server (the renderer keeps one per server address)
+  const hello = localDb().kv.get<{ orgName?: string; teamName?: string }>(`hello:${credential.serverUrl}`) ?? (mode === 'server' ? localDb().kv.get<{ orgName?: string; teamName?: string }>('lastHello') : undefined)
   const label = [hello?.orgName, hello?.teamName].filter(Boolean).join(' ') || (mode === 'server' ? '이 PC의 서버' : credential.serverUrl.replace(/^https?:\/\//, ''))
   const entry: SavedConnection = { id: `${mode}:${credential.deviceId}`, mode, label, savedAt: Date.now(), credential, serverConfig: mode === 'server' ? (getServerConfig() ?? undefined) : undefined }
   // written before anything is cleared: a failure here must leave the current connection intact
@@ -188,6 +189,9 @@ export function restoreSaved(id: string): SavedConnection | null {
   return entry
 }
 
-export function forgetSaved(id: string): void {
+/** Forget a remembered connection; gives the member id it was for (to drop what was kept of its data). */
+export function forgetSaved(id: string): string | null {
+  const entry = readSaved().find((s) => s.id === id)
   writeSaved(readSaved().filter((s) => s.id !== id))
+  return entry?.credential.memberId ?? null
 }

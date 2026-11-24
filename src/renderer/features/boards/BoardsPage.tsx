@@ -11,9 +11,11 @@ import { Dialog } from '@renderer/components/Dialog'
 import { Editor, RichView } from '@renderer/components/Editor'
 import { AttachmentInput, AttachmentList, type Att } from '@renderer/components/Attachments'
 import { Comments } from '@renderer/components/Comments'
+import { MemberLink } from '@renderer/components/MemberLink'
 import { ScopePicker, ScopeTags, defaultScope, scopeIsValid } from '@renderer/components/ScopePicker'
 import { EmptyState, Loading, OfflineState } from '@renderer/components/EmptyState'
 import { Field } from '@renderer/features/setup/SetupFrame'
+import { sendOrQueue } from '@renderer/lib/outbox'
 import { api, errorMessage } from '@renderer/lib/api'
 import { fromInputValue } from '@renderer/lib/dates'
 import { useMe } from '@renderer/lib/queries'
@@ -109,15 +111,21 @@ function PostCompose({ board, onClose, onCreated }: { board: BoardDto; onClose: 
   const [err, setErr] = useState('')
   const save = useMutation({
     mutationFn: () =>
-      api.post<{ id: string }>('/api/posts', {
-        boardId: board.id,
-        title,
-        bodyHtml: body,
-        pinned,
-        attachmentIds: atts.map((a) => a.id),
-        poll: withPoll ? { question: question || title, options: options.map((o) => o.trim()).filter(Boolean), multiple, anonymous, closesAt: closes ? fromInputValue(closes) : null } : null
+      sendOrQueue<{ id: string }>({
+        kind: 'post',
+        label: `게시글(${board.name}): ${title.trim().slice(0, 60)}`,
+        path: '/api/posts',
+        body: {
+          boardId: board.id,
+          title,
+          bodyHtml: body,
+          pinned,
+          attachmentIds: atts.map((a) => a.id),
+          poll: withPoll ? { question: question || title, options: options.map((o) => o.trim()).filter(Boolean), multiple, anonymous, closesAt: closes ? fromInputValue(closes) : null } : null
+        }
       }),
-    onSuccess: (r) => onCreated(r.id),
+    // kept for later (server off): there is no post to open yet
+    onSuccess: (r) => (r.queued ? onClose() : onCreated(r.data.id)),
     onError: (e) => setErr(errorMessage(e))
   })
   return (
@@ -273,7 +281,7 @@ function PostView({ id, onDeleted }: { id: string; onDeleted: () => void }): Rea
           <FavoriteStar itemType="post" itemId={p.id} title={p.title} route={`/boards/${p.boardId}/${p.id}`} />
         </div>
         <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-          {p.authorName} · {format(p.createdAt, 'yyyy-MM-dd HH:mm')}
+          <MemberLink memberId={p.authorId} name={p.authorName} /> · {format(p.createdAt, 'yyyy-MM-dd HH:mm')}
           <button className="flex cursor-pointer items-center gap-0.5 hover:underline" onClick={() => setShowViews(!showViews)}>
             <Eye className="size-3" /> 조회 {p.viewCount}
           </button>

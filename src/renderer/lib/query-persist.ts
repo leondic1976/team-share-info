@@ -4,11 +4,17 @@ import { invoke } from './bridge'
 
 /**
  * Read cache (13.11, M8-3): the last server results the member saw are kept in the local
- * DB and shown again when TeamHub starts without a server connection. Keys are prefixed
- * with the member id, so another account on the PC never sees them. Only server lists
- * are kept (first key element below); local data does not need it.
+ * DB (sealed, see src/main/vault.ts) and shown again while the server PC is off. Keys are
+ * prefixed with the member id, so another account on the PC - or another server this PC
+ * also uses - never sees them. Everything read from the server is kept except what is
+ * listed below; data of the local DB does not need it.
  */
-const PERSIST = new Set(['hello', 'me', 'members', 'notices', 'events', 'docs', 'tasks', 'boards', 'contacts', 'groups', 'chat', 'files', 'worklogs', 'meetings', 'shared-memos', 'launcher', 'departments'])
+const NOT_KEPT = new Set([
+  'local', // personal data: already on this PC
+  'admin', // management screens: member PCs' details, activity log, settings - not left on a PC
+  'search', // one per typed word
+  'updates'
+])
 const MAX_VALUE = 1_000_000
 
 let prefix = ''
@@ -46,7 +52,7 @@ export async function startQueryPersist(memberId: string): Promise<number> {
     queryClient.getQueryCache().subscribe((ev) => {
       if (ev.type !== 'updated' || ev.action.type !== 'success' || !prefix) return
       const k = ev.query.queryKey
-      if (typeof k[0] !== 'string' || !PERSIST.has(k[0])) return
+      if (typeof k[0] !== 'string' || NOT_KEPT.has(k[0])) return
       const json = JSON.stringify(ev.query.state.data ?? null)
       if (json.length > MAX_VALUE) return
       dirty.set(keyOf(k), json)
@@ -57,8 +63,14 @@ export async function startQueryPersist(memberId: string): Promise<number> {
   return restored
 }
 
+/**
+ * Throw away what is kept for the member in use, on disk and in memory: the server no longer
+ * accepts this PC (blocked, removed), so the team's data must not stay readable on it.
+ */
 export function clearQueryPersist(): void {
+  const mine = prefix
   prefix = ''
   dirty.clear()
-  void invoke('local:cache.clear').catch(() => undefined)
+  queryClient.removeQueries({ predicate: (q) => typeof q.queryKey[0] === 'string' && !NOT_KEPT.has(q.queryKey[0]) && q.queryKey[0] !== 'hello' })
+  if (mine) void invoke('local:cache.clear', { prefix: mine }).catch(() => undefined)
 }

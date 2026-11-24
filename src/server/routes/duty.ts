@@ -30,7 +30,7 @@ interface AbsenceRow {
 const CLERKS_KEY = 'dutyClerks'
 const MAX_RANGE_MS = 100 * 86400000
 
-/** Members an admin named 서무: they record absences for others. Gone members drop out. */
+/** Members an admin named 대리 등록자 (once labelled 서무): they record absences for others. Gone members drop out. */
 export function dutyClerks(db: Db): string[] {
   const ids = readSetting<string[]>(db, CLERKS_KEY)
   if (!Array.isArray(ids)) return []
@@ -53,7 +53,7 @@ export function registerDutyRoutes(app: FastifyInstance, ctx: ServerContext, gua
   const load = (req: FastifyRequest, id: string): AbsenceRow => {
     const r = db.get<AbsenceRow>(`SELECT e.*, NULL AS registered_by_name FROM events e WHERE e.id = ? AND e.kind = 'absence' AND e.deleted_at IS NULL`, [id])
     if (!r) throw notFound('근무상황')
-    if (r.created_by !== req.member.id && !canManage(req)) throw forbidden('본인이나 서무·관리자만 고칠 수 있습니다.')
+    if (r.created_by !== req.member.id && !canManage(req)) throw forbidden('본인이나 대리 등록자·관리자(최종관리자·서무)만 고칠 수 있습니다.')
     if (r.rrule) throw badRequest('반복되는 부재 일정입니다. 일정 화면에서 고치거나 지우세요.')
     return r
   }
@@ -62,7 +62,7 @@ export function registerDutyRoutes(app: FastifyInstance, ctx: ServerContext, gua
     const q = parse(z.object({ from: z.coerce.number().int(), to: z.coerce.number().int() }), req.query)
     if (q.to <= q.from || q.to - q.from > MAX_RANGE_MS) throw badRequest('조회 기간이 올바르지 않습니다(100일까지).')
     const rows = db.all<AbsenceRow>(
-      `SELECT e.*, r.name AS registered_by_name FROM events e
+      `SELECT e.*, CASE WHEN IFNULL(LENGTH(r.nickname), 0) = 0 THEN r.name ELSE r.name || char(40) || r.nickname || char(41) END AS registered_by_name FROM events e
          JOIN members m ON m.id = e.created_by AND m.status = 'active'
          LEFT JOIN members r ON r.id = e.registered_by
         WHERE e.kind = 'absence' AND e.deleted_at IS NULL AND e.start_at < ? AND (e.rrule IS NOT NULL OR e.end_at > ?)`,
@@ -103,7 +103,7 @@ export function registerDutyRoutes(app: FastifyInstance, ctx: ServerContext, gua
     const input = parse(dutyInputSchema, req.body)
     const memberId = input.memberId ?? req.member.id
     if (memberId !== req.member.id) {
-      if (!canManage(req)) throw forbidden('다른 사람의 근무상황은 서무나 관리자만 올릴 수 있습니다.')
+      if (!canManage(req)) throw forbidden('다른 사람의 근무상황은 대리 등록자나 관리자(최종관리자·서무)만 올릴 수 있습니다.')
       if (getMember(db, memberId)?.status !== 'active') throw badRequest('없는 구성원입니다.')
     }
     const id = newId()
@@ -151,9 +151,12 @@ export function registerDutyRoutes(app: FastifyInstance, ctx: ServerContext, gua
     return ok({ id })
   })
 
-  /** 서무 지정: admins choose who else may record for others. */
+  /**
+   * 대리 등록자 지정: admins (최종관리자 and 서무) choose who else may record for others.
+   * Not the admin tier called 서무: these members get no admin rights.
+   */
   app.put('/api/duty/clerks', auth, async (req) => {
-    if (req.member.role !== 'admin') throw forbidden('관리자만 서무를 지정할 수 있습니다.')
+    if (req.member.role !== 'admin') throw forbidden('최종관리자·서무만 대리 등록자를 지정할 수 있습니다.')
     const { memberIds } = parse(z.object({ memberIds: z.array(z.string()).max(50) }), req.body)
     const ids = [...new Set(memberIds)].filter((m) => getMember(db, m)?.status === 'active')
     writeSetting(db, CLERKS_KEY, ids)

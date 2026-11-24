@@ -13,6 +13,7 @@ import { badRequest, conflict, notFound } from '../errors'
 import { parse, ok } from '../validate'
 import { logActivity } from '../activity'
 import { getSection } from '../settings'
+import { makeRequireOwner } from '../auth'
 import { DOWNLOAD_SITE } from '../../shared/constants'
 
 export interface ReleaseRow {
@@ -168,6 +169,8 @@ export function registerUpdateRoutes(
   guards: { requireAuth: preHandlerAsyncHookHandler; requireAdmin: preHandlerAsyncHookHandler }
 ): void {
   const pre = { preHandler: [guards.requireAuth, guards.requireAdmin] }
+  // distributing a version to every PC is the 최종관리자's (server PC); a 서무 may only look
+  const ownerPre = { preHandler: [guards.requireAuth, guards.requireAdmin, makeRequireOwner(ctx)] }
 
   void app.register(fastifyStatic, {
     root: updatesDir(ctx),
@@ -193,7 +196,7 @@ export function registerUpdateRoutes(
   // Raw installer upload: body is the .exe stream; metadata in the query string.
   void app.register(async (scoped) => {
     scoped.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload))
-    scoped.post('/api/admin/releases', { ...pre, bodyLimit: 2 * 1024 * 1024 * 1024 }, async (req) => {
+    scoped.post('/api/admin/releases', { ...ownerPre, bodyLimit: 2 * 1024 * 1024 * 1024 }, async (req) => {
       const q = parse(
         z.object({
           version: z.string().trim().regex(SEMVER_RE, '버전 형식: 1.2.3'),
@@ -250,7 +253,7 @@ export function registerUpdateRoutes(
    * Closed networks: the server PC (if it has internet) fetches the newest release from
    * the public download site and offers it to members over the LAN.
    */
-  app.post('/api/admin/releases/import-web', pre, async (req) => {
+  app.post('/api/admin/releases/import-web', ownerPre, async (req) => {
     const base = (parse(z.object({ site: z.string().url().optional() }), req.body ?? {}).site ?? DOWNLOAD_SITE).replace(/\/?$/, '/')
     let yml: string
     try {
@@ -316,7 +319,7 @@ export function registerUpdateRoutes(
     return ok({ version, imported: true })
   })
 
-  app.patch('/api/admin/releases/:id', pre, async (req) => {
+  app.patch('/api/admin/releases/:id', ownerPre, async (req) => {
     const { id } = req.params as { id: string }
     const body = parse(z.object({ state: z.enum(['published', 'withdrawn']).optional(), mandatory: z.boolean().optional() }), req.body)
     const row = ctx.db.get<ReleaseRow>('SELECT * FROM app_releases WHERE id = ?', [id])

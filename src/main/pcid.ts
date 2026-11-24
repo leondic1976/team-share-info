@@ -1,4 +1,3 @@
-import { net } from 'electron'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { networkInterfaces } from 'node:os'
@@ -12,8 +11,8 @@ import { userDataPath } from './paths'
  * Identity of this installed PC, kept in the app data folder (not in the personal DB, which
  * can be exported to another PC):
  *  - uid: the unique value of the PC. Made once, soon after the first start, from the network
- *    card address (MAC), the office-network address and the internet address, mixed with
- *    random bytes and hashed. The addresses themselves are neither stored nor sent. The server
+ *    card address (MAC) and the office-network address, mixed with random bytes and hashed.
+ *    Nothing is asked from the internet for it. The addresses themselves are neither stored nor sent. The server
  *    uses it to recognise a PC that asks to join again (no second account), the feedback board
  *    to tell writers apart.
  *  - role: server PC or member PC. Decided at the first setup and never changed afterwards;
@@ -65,18 +64,6 @@ function cards(): { mac: string; lanIp: string }[] {
   return all.sort((x, y) => Number(x.virtual) - Number(y.virtual))
 }
 
-/** This PC's address as the internet sees it; '' when it cannot be asked (closed network). */
-async function wanIp(): Promise<string> {
-  if (process.env.TEAMHUB_E2E) return ''
-  try {
-    const r = await net.fetch('https://api.ipify.org', { signal: AbortSignal.timeout(4000), cache: 'no-store' })
-    const t = r.ok ? (await r.text()).trim() : ''
-    return /^[0-9a-f.:]{3,45}$/i.test(t) ? t : ''
-  } catch {
-    return ''
-  }
-}
-
 /** The stored value still belongs to this PC (same network card, or at least the same PC name). */
 function own(id: PcIdentity): boolean {
   if (!id.uid || !PC_UID_RE.test(id.uid)) return false
@@ -101,7 +88,10 @@ export function ensurePcUid(): Promise<string> {
     const before = read()
     if (before.uid) log.warn('[pcid] app data belongs to another PC (network card and PC name differ): a new unique value is made')
     const card = cards()[0] ?? { mac: '', lanIp: '' }
-    const uid = installIdFrom({ ...card, wanIp: await wanIp() })
+    // No internet address in the mix (it used to be asked from a public "what is my IP" service):
+    // security programs treat that request as a sign of malware, and the random bytes already
+    // make the value unique.
+    const uid = installIdFrom({ ...card, wanIp: '' })
     write({ ...read(), uid, card: card.mac ? cardHash(card.mac) : undefined, pcName: pcName(), createdAt: Date.now() })
     log.info(`[pcid] unique value of this PC: ${uid}`)
     return uid

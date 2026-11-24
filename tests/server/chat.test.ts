@@ -66,6 +66,94 @@ describe('messenger (M5)', () => {
     expect((await s.req(c, { method: 'GET', url: `/api/conversations/${room.id}`, ip: IP })).statusCode).toBe(404)
   })
 
+  it('rooms: the maker and admins remove a participant, others cannot; the removed one is shut out', async () => {
+    s = await createTestServer()
+    const a = await s.join('A')
+    const b = await s.join('B')
+    const c = await s.join('C')
+    const d = await s.join('D')
+    const url = (id: string, tail = ''): string => `/api/conversations/${id}${tail}`
+    // the admin is a participant too: only people in the room can see or manage it
+    const room = (await s.req(a, { method: 'POST', url: '/api/conversations', ip: IP, payload: { memberIds: [b.memberId, c.memberId, d.memberId, s.admin.memberId], title: '행사 준비' } })).json().data
+    expect(room).toMatchObject({ kind: 'room', createdBy: a.memberId, canRemove: true })
+    expect((await s.req(b, { method: 'GET', url: url(room.id), ip: IP })).json().data.canRemove).toBe(false)
+    expect((await s.req(s.admin, { method: 'GET', url: url(room.id) })).json().data.canRemove).toBe(true)
+    await s.req(a, { method: 'POST', url: url(room.id, '/messages'), ip: IP, payload: { body: '내보내기 전 메시지' } })
+
+    // another participant may not remove anyone
+    expect((await s.req(b, { method: 'DELETE', url: url(room.id, `/members/${c.memberId}`), ip: IP })).statusCode).toBe(403)
+    // somebody outside the room does not even see it
+    const e = await s.join('E')
+    expect((await s.req(e, { method: 'DELETE', url: url(room.id, `/members/${c.memberId}`), ip: IP })).statusCode).toBe(404)
+    expect((await s.req(a, { method: 'DELETE', url: url(room.id, `/members/${a.memberId}`), ip: IP })).statusCode).toBe(400)
+
+    const sent: { to: string[]; name: string; payload: unknown }[] = []
+    const orig = s.ctx.hub.sendTo.bind(s.ctx.hub)
+    s.ctx.hub.sendTo = (ids, name, payload) => {
+      sent.push({ to: [...ids], name, payload })
+      orig(ids, name, payload)
+    }
+    // the maker removes C
+    expect((await s.req(a, { method: 'DELETE', url: url(room.id, `/members/${c.memberId}`), ip: IP })).statusCode).toBe(200)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ name: 'conversation.changed', payload: { id: room.id, removed: [c.memberId] } })
+    expect(sent[0].to).toContain(c.memberId)
+    // an admin removes D
+    expect((await s.req(s.admin, { method: 'DELETE', url: url(room.id, `/members/${d.memberId}`) })).statusCode).toBe(200)
+    expect((await s.req(a, { method: 'DELETE', url: url(room.id, `/members/${d.memberId}`), ip: IP })).statusCode).toBe(404)
+
+    const msgs = (await s.req(b, { method: 'GET', url: url(room.id, '/messages'), ip: IP })).json().data
+    expect(msgs.slice(-2).map((m: { kind: string; body: string }) => [m.kind, m.body])).toEqual([
+      ['system', 'A님이 C님을 내보냈습니다.'],
+      ['system', '관리자님이 D님을 내보냈습니다.']
+    ])
+    const info = (await s.req(b, { method: 'GET', url: url(room.id), ip: IP })).json().data
+    expect(info.memberIds.sort()).toEqual([a.memberId, b.memberId, s.admin.memberId].sort())
+
+    // C: no list entry, no reading (not even what was said before), no posting, no search hit
+    expect((await s.req(c, { method: 'GET', url: '/api/conversations', ip: IP })).json().data).toEqual([])
+    expect((await s.req(c, { method: 'GET', url: url(room.id), ip: IP })).statusCode).toBe(404)
+    expect((await s.req(c, { method: 'GET', url: url(room.id, '/messages'), ip: IP })).statusCode).toBe(404)
+    expect((await s.req(c, { method: 'POST', url: url(room.id, '/messages'), ip: IP, payload: { body: '들리나요' } })).statusCode).toBe(404)
+    expect((await s.req(c, { method: 'GET', url: '/api/messages/search?q=내보내기', ip: IP })).json().data).toEqual([])
+
+    // later messages go to the people still in the room only
+    sent.length = 0
+    await s.req(b, { method: 'POST', url: url(room.id, '/messages'), ip: IP, payload: { body: '남은 사람끼리' } })
+    const msgNew = sent.find((x) => x.name === 'message.new')!
+    expect(msgNew.to.sort()).toEqual([a.memberId, b.memberId, s.admin.memberId].sort())
+
+    // leaving still works, and a removed person can be added again
+    expect((await s.req(b, { method: 'DELETE', url: url(room.id, '/members/me'), ip: IP })).statusCode).toBe(200)
+    expect((await s.req(b, { method: 'GET', url: url(room.id), ip: IP })).statusCode).toBe(404)
+    expect((await s.req(a, { method: 'POST', url: url(room.id, '/members'), ip: IP, payload: { memberIds: [c.memberId, a.memberId] } })).json().data).toMatchObject({ added: 1, conversationId: room.id })
+    expect((await s.req(c, { method: 'GET', url: url(room.id), ip: IP })).statusCode).toBe(200)
+  })
+
+  it('adding people to a 1:1 conversation makes a new room and leaves the pair alone', async () => {
+    s = await createTestServer()
+    const a = await s.join('A')
+    const b = await s.join('B')
+    const c = await s.join('C')
+    const dm = (await s.req(a, { method: 'POST', url: '/api/conversations', ip: IP, payload: { memberIds: [b.memberId] } })).json().data
+    expect(dm).toMatchObject({ kind: 'dm', canRemove: false })
+    await s.req(a, { method: 'POST', url: `/api/conversations/${dm.id}/messages`, ip: IP, payload: { body: '둘만의 이야기' } })
+    // nobody new chosen: nothing is made
+    expect((await s.req(a, { method: 'POST', url: `/api/conversations/${dm.id}/members`, ip: IP, payload: { memberIds: [b.memberId] } })).statusCode).toBe(400)
+    const r = (await s.req(a, { method: 'POST', url: `/api/conversations/${dm.id}/members`, ip: IP, payload: { memberIds: [c.memberId] } })).json().data
+    expect(r).toMatchObject({ added: 1, created: true })
+    expect(r.conversationId).not.toBe(dm.id)
+    const room = (await s.req(c, { method: 'GET', url: `/api/conversations/${r.conversationId}`, ip: IP })).json().data
+    expect(room).toMatchObject({ kind: 'room', memberCount: 3, createdBy: a.memberId })
+    // the old messages are not copied, and the 1:1 stays closed to C
+    const msgs = (await s.req(c, { method: 'GET', url: `/api/conversations/${r.conversationId}/messages`, ip: IP })).json().data
+    expect(msgs.map((m: { kind: string; body: string }) => [m.kind, m.body])).toEqual([['system', 'A님이 C님을 추가해 새 대화방을 만들었습니다.']])
+    expect((await s.req(c, { method: 'GET', url: `/api/conversations/${dm.id}/messages`, ip: IP })).statusCode).toBe(404)
+    expect((await s.req(b, { method: 'GET', url: `/api/conversations/${dm.id}`, ip: IP })).json().data).toMatchObject({ kind: 'dm', memberCount: 2 })
+    // a 1:1 has nobody to remove
+    expect((await s.req(a, { method: 'DELETE', url: `/api/conversations/${dm.id}/members/${b.memberId}`, ip: IP })).statusCode).toBe(400)
+  })
+
   it('group chat is created automatically and follows group membership', async () => {
     s = await createTestServer()
     const a = await s.join('A')
@@ -80,6 +168,11 @@ describe('messenger (M5)', () => {
     await s.req(b, { method: 'PATCH', url: `/api/groups/${g.id}/invites/${inv.id}`, ip: IP, payload: { action: 'accept' } })
     const msgs = (await s.req(b, { method: 'GET', url: `/api/conversations/${gc.id}/messages`, ip: IP })).json().data
     expect(msgs[0].body).toBe('그룹 첫 메시지')
+    // participants of a group chat are managed in the group
+    const c = await s.join('C')
+    expect((await s.req(a, { method: 'POST', url: `/api/conversations/${gc.id}/members`, ip: IP, payload: { memberIds: [c.memberId] } })).statusCode).toBe(400)
+    expect((await s.req(a, { method: 'DELETE', url: `/api/conversations/${gc.id}/members/${b.memberId}`, ip: IP })).statusCode).toBe(400)
+    expect((await s.req(a, { method: 'DELETE', url: `/api/conversations/${gc.id}/members/me`, ip: IP })).statusCode).toBe(400)
   })
 
   it('notes: send to many, read receipt for the sender, delete per side', async () => {

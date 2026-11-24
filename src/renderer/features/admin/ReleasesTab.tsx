@@ -12,6 +12,7 @@ import { useSession } from '@renderer/app/session-store'
 import type { DeviceDto } from '@shared/schemas/auth'
 import { DOWNLOAD_SITE } from '@shared/constants'
 import { compareVersions } from '@shared/semver'
+import { OwnerOnlyNote, useIsOwner } from './owner'
 
 interface ReleaseDto {
   id: string
@@ -49,6 +50,7 @@ function uploadRelease(file: File, meta: { version: string; notes: string; manda
 
 export function ReleasesTab(): React.JSX.Element {
   const qc = useQueryClient()
+  const owner = useIsOwner()
   const app = useSession((s) => s.app)
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -105,6 +107,8 @@ export function ReleasesTab(): React.JSX.Element {
 
   return (
     <div className="max-w-3xl space-y-4">
+      {!owner && <OwnerOnlyNote>새 버전 배포·가져오기·배포 회수는 최종관리자(서버 PC)만 할 수 있습니다. 서무는 배포 기록과 팀원 설치 버전을 볼 수 있습니다.</OwnerOnlyNote>}
+      {owner && (
       <Card>
         <CardHeader>
           <CardTitle>다운로드 사이트에서 가져오기</CardTitle>
@@ -116,6 +120,8 @@ export function ReleasesTab(): React.JSX.Element {
           인터넷이 되는 PC는 다운로드 사이트({DOWNLOAD_SITE})에서 직접 업데이트됩니다. 팀원 PC가 폐쇄망이면 이 서버 PC가 최신 버전을 가져와 사내에 배포합니다(서버 PC에 인터넷 연결 필요). 인터넷이 없으면 다운로드 사이트에서 받은 설치 파일을 아래에서 직접 올리세요.
         </CardContent>
       </Card>
+      )}
+      {owner && (
       <Card>
         <CardHeader>
           <CardTitle>새 버전 배포</CardTitle>
@@ -145,6 +151,7 @@ export function ReleasesTab(): React.JSX.Element {
           </div>
         </CardContent>
       </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -181,9 +188,11 @@ export function ReleasesTab(): React.JSX.Element {
                 </div>
                 {r.notes && <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{r.notes}</p>}
               </div>
-              <Button size="sm" variant="ghost" onClick={() => patch.mutate({ id: r.id, body: { state: r.state === 'published' ? 'withdrawn' : 'published' } })}>
-                {r.state === 'published' ? '배포 회수' : '다시 배포'}
-              </Button>
+              {owner && (
+                <Button size="sm" variant="ghost" onClick={() => patch.mutate({ id: r.id, body: { state: r.state === 'published' ? 'withdrawn' : 'published' } })}>
+                  {r.state === 'published' ? '배포 회수' : '다시 배포'}
+                </Button>
+              )}
             </div>
           ))}
         </div>

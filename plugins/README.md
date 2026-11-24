@@ -23,9 +23,13 @@ plugins/<id>/
   "entry": "index.html",
   "permissions": ["members", "storage", "rooms", "notify", "clipboard", "files", "ocr", "copilot"],
   "minAppVersion": "0.1.0",
+  "updated": "2026-11-24",        // 내용을 바꾼 날. 확장 기능 모음의 '최신순'에 씀(버전을 올릴 때 함께 고침)
   "features": ["사이트 카드에 보일 기능 소개"]
 }
 ```
+`updated`와 `features`는 목록(`catalog.json`)에만 들어가고 설치되는 묶음에는 들어가지 않습니다.
+다운로드 수는 외부 집계(`abacus.jasoncameron.dev`, 키 `teamhub-lan-app/plugin-<id>`)에 사이트의 **파일 받기**와
+앱의 확장 기능 모음 설치가 더해집니다. 따로 등록할 것은 없습니다.
 
 ## 실행 환경
 - 격리된 iframe(`sandbox="allow-scripts allow-forms allow-modals"`), 주소 `teamhub-plugin://<id>/`.
@@ -64,5 +68,5 @@ plugins/<id>/
 - 묶기: `pnpm plugins:pack` → `release/plugins/<id>-<버전>.thplugin`
 - TeamHub **확장 기능 → 파일에서 설치**로 넣어 봅니다.
 - 순수 로직은 `tests/plugins/`에 단위 테스트를 둡니다(예: `ladder.test.ts`).
-- 예시: `plugins/ladder`(함께하기 방), `plugins/matjip`(방 하나를 팀 게시판으로: 각자의 글·좋아요·댓글을 자기 참여 데이터에), `plugins/survey`(방 하나 = 설문 하나), `plugins/meal`(관리자가 만든 방 하나에 마감 시각, 각자의 날짜별 신청은 자기 참여 데이터에), `plugins/dutchpay`(이 PC 저장만), `plugins/ocr`·`plugins/copilot`(본체 기능 호출). 표 편집·수식 엔진·파일 저장/열기는 같은 방식으로 만든 본 기능 `resources/ledger`(관리대장)를 참고하세요.
+- 예시: `plugins/ladder`(함께하기 방), `plugins/matjip`(방 하나를 팀 게시판으로: 각자의 글·좋아요·댓글을 자기 참여 데이터에), `plugins/survey`(방 하나 = 설문 하나), `plugins/meal`(관리자가 만든 방 하나에 마감 시각, 각자의 날짜별 신청은 자기 참여 데이터에), `plugins/bipum`(64KB 한도를 넘는 목록을 만든 사람의 방 여러 개에 나누어 담기, 각자의 기록은 참여 데이터에, CSV 가져오기·인쇄), `plugins/dutchpay`(이 PC 저장만), `plugins/ocr`·`plugins/copilot`(본체 기능 호출). 표 편집·수식 엔진·파일 저장/열기는 같은 방식으로 만든 본 기능 `resources/ledger`(관리대장)를 참고하세요.
 - `sandbox`에서는 `prompt()`가 동작하지 않습니다(Electron). 입력은 `<dialog>`로 받으세요. 붙여넣기는 `paste` 이벤트의 `clipboardData`로 읽습니다(클립보드 읽기 권한 없음).

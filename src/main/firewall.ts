@@ -21,7 +21,7 @@ export function registerFirewallRules(port: number): Promise<{ ok: boolean; mess
     `netsh advfirewall firewall add rule name='TeamHub App' dir=in action=allow program='${exe}' enable=yes profile=private,domain`
   ].join('; ')
   const inner = cmds.replace(/"/g, '\\"')
-  const script = `try { Start-Process powershell.exe -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-Command',"${inner}"; 'OK' } catch { 'CANCELLED' }`
+  const script = `try { Start-Process powershell.exe -Verb RunAs -Wait -ArgumentList '-NoProfile','-Command',"${inner}"; 'OK' } catch { 'CANCELLED' }`
   return new Promise((resolve) => {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout: 120000 }, (err, stdout) => {
       if (err) resolve({ ok: false, message: `방화벽 등록 실패: ${err.message}` })

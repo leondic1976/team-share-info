@@ -1,8 +1,10 @@
+import { sendOrQueue } from '@renderer/lib/outbox'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addMonths, format, startOfMonth, startOfWeek } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Download, List, Pencil, Plus, Repeat, Trash2, UserCheck, UserCog, UserPlus } from 'lucide-react'
+import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Download, List, MessageSquare, Pencil, Plus, Repeat, Trash2, UserCheck, UserCog, UserPlus } from 'lucide-react'
+import { MemberLink } from '@renderer/components/MemberLink'
 import { useNavigate } from 'react-router-dom'
 import { DUTY_COLORS, DUTY_TYPE_NAMES, dayPart, dutyGroupOf, onDay, type DutyBoardDto, type DutyEntryDto, type DutyMemberDto } from '@shared/schemas/duty'
 import { toCsv } from '@shared/csv'
@@ -91,7 +93,7 @@ function DutyDialog({ board, meId, state, onClose }: { board: DutyBoardDto; meId
   const save = useMutation({
     mutationFn: () => {
       const body = { type, startAt: start, endAt: end, allDay, place, note }
-      return edit ? api.patch(`/api/duty/${edit.id}`, body) : api.post('/api/duty', { ...body, memberId })
+      return edit ? api.patch(`/api/duty/${edit.id}`, body) : sendOrQueue({ kind: 'duty', label: `근무현황: ${type}`, path: '/api/duty', body: { ...body, memberId } })
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['events'] })
@@ -110,7 +112,7 @@ function DutyDialog({ board, meId, state, onClose }: { board: DutyBoardDto; meId
     <Dialog
       open
       onClose={onClose}
-      title={edit ? '근무상황 고치기' : memberId === meId ? '내 근무상황 올리기' : '근무상황 대신 올리기'}
+      title={edit ? '근무상황 고치기' : memberId === meId ? '사고 신청 (휴가·병가·출장 등)' : '사고 대신 신청'}
       width="max-w-lg"
       footer={
         <>
@@ -129,7 +131,7 @@ function DutyDialog({ board, meId, state, onClose }: { board: DutyBoardDto; meId
             <span className="text-muted-foreground">대상</span> <b>{who?.name ?? '-'}</b> <span className="text-muted-foreground">{who?.title}</span>
           </p>
         ) : (
-          <Field label="대상" hint="서무·관리자는 다른 사람의 근무상황을 대신 올릴 수 있습니다.">
+          <Field label="대상" hint="최종관리자·서무와 대리 등록자는 다른 사람의 근무상황을 대신 올릴 수 있습니다.">
             <Select aria-label="대상" value={memberId} onChange={(e) => setMemberId(e.target.value)}>
               {board.members.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -225,7 +227,7 @@ function ClerksDialog({ board, onClose }: { board: DutyBoardDto; onClose: () => 
     <Dialog
       open
       onClose={onClose}
-      title="서무 지정"
+      title="대리 등록자 지정"
       width="max-w-md"
       footer={
         <>
@@ -239,7 +241,7 @@ function ClerksDialog({ board, onClose }: { board: DutyBoardDto; onClose: () => 
       }
     >
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">서무로 지정한 사람은 다른 팀원의 근무상황을 대신 올리고, 고치고, 지울 수 있습니다. 관리자(서버 PC 포함)는 지정하지 않아도 할 수 있습니다.</p>
+        <p className="text-sm text-muted-foreground">대리 등록자로 지정한 사람은 다른 팀원의 근무상황을 대신 올리고, 고치고, 지울 수 있습니다(관리 권한은 생기지 않습니다). 최종관리자(서버 PC)와 서무는 지정하지 않아도 할 수 있습니다.</p>
         <MemberPicker value={ids} onChange={setIds} />
         {err && <p className="text-sm text-urgent">{err}</p>}
       </div>
@@ -305,74 +307,172 @@ export function DutyPage(): React.JSX.Element {
       </>
     ) : null
 
+  /**
+   * 일별: the personnel status the way an office reports it. On top the 총괄표 (one line per
+   * department: 총원 / 현재원 / 사고, and the 사고 split by reason); below it each department
+   * with its three numbers and the people away, grouped by reason.
+   */
   const dayView = (): React.JSX.Element => {
     const d1 = day + DAY
     const shown = blocks.flatMap((b) => b.members)
     const awayOf = (m: DutyMemberDto): DutyEntryDto[] => (byMember.get(m.id) ?? []).filter((e) => onDay(e, day, d1))
-    const away = shown.filter((m) => awayOf(m).length)
-    const counts = new Map<string, number>()
-    for (const m of away) for (const t of new Set(awayOf(m).map((e) => e.type))) counts.set(t, (counts.get(t) ?? 0) + 1)
+    /** People away per reason; someone with two reasons that day is listed under each, but counted once in 사고. */
+    const stat = (members: DutyMemberDto[]): { total: number; away: DutyMemberDto[]; byType: Map<string, { m: DutyMemberDto; e: DutyEntryDto }[]> } => {
+      const byType = new Map<string, { m: DutyMemberDto; e: DutyEntryDto }[]>()
+      const away = members.filter((m) => awayOf(m).length)
+      for (const m of away) for (const e of awayOf(m)) byType.set(e.type, [...(byType.get(e.type) ?? []), { m, e }])
+      return { total: members.length, away, byType }
+    }
+    const all = stat(shown)
+    const types = [...all.byType.keys()]
+    const people = (list: { m: DutyMemberDto }[]): number => new Set(list.map((x) => x.m.id)).size
+    const num = 'px-2 py-1.5 text-center tabular-nums'
     return (
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-border bg-card px-4 py-3" data-testid="duty-summary">
-          <span className="text-sm">
-            총원 <b className="text-base">{shown.length}</b>
-          </span>
-          <span className="text-sm">
-            근무 <b className="text-base text-primary">{shown.length - away.length}</b>
-          </span>
-          <span className="text-sm">
-            부재 <b className="text-base text-urgent">{away.length}</b>
-          </span>
-          <span className="flex flex-wrap items-center gap-1.5">
-            {[...counts].map(([t, n]) => (
-              <span key={t} className="flex items-center gap-1 text-sm">
-                <TypeBadge type={t} /> {n}
-              </span>
-            ))}
-          </span>
+        <div className="rounded-lg border border-border bg-card" data-testid="duty-summary">
+          <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 border-b border-border px-4 py-2.5">
+            <h2 className="text-sm font-bold">인원 총괄표</h2>
+            <span className="text-sm">
+              총원 <b className="text-base">{all.total}</b>명
+            </span>
+            <span className="text-sm">
+              현재원 <b className="text-base text-primary">{all.total - all.away.length}</b>명
+            </span>
+            <span className="text-sm">
+              사고 <b className="text-base text-urgent">{all.away.length}</b>명
+            </span>
+            <span className="ml-auto text-xs text-muted-foreground">{format(day, 'yyyy. M. d. (EEE)', { locale: ko })} 기준</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm" data-testid="duty-total-table">
+              <thead>
+                <tr className="border-b border-border bg-muted/50 text-xs text-muted-foreground">
+                  <th rowSpan={2} className="px-3 py-1.5 text-left font-medium">
+                    부서
+                  </th>
+                  <th rowSpan={2} className="px-2 py-1.5 font-medium">
+                    총원
+                  </th>
+                  <th rowSpan={2} className="px-2 py-1.5 font-medium">
+                    현재원
+                  </th>
+                  <th colSpan={1 + types.length} className="border-l border-border px-2 py-1 font-medium">
+                    사고
+                  </th>
+                </tr>
+                <tr className="border-b border-border bg-muted/50 text-xs text-muted-foreground">
+                  <th className="border-l border-border px-2 py-1 font-medium">계</th>
+                  {types.map((t) => (
+                    <th key={t} className="px-2 py-1 font-medium">
+                      <TypeBadge type={t} />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-border font-bold">
+                  <td className="px-3 py-1.5">계</td>
+                  <td className={num}>{all.total}</td>
+                  <td className={cn(num, 'text-primary')}>{all.total - all.away.length}</td>
+                  <td className={cn(num, 'border-l border-border text-urgent')}>{all.away.length}</td>
+                  {types.map((t) => (
+                    <td key={t} className={num}>
+                      {people(all.byType.get(t) ?? [])}
+                    </td>
+                  ))}
+                </tr>
+                {blocks.map((b) => {
+                  const st = stat(b.members)
+                  return (
+                    <tr key={b.dept?.id ?? 'none'} className="border-b border-border last:border-0">
+                      <td className="px-3 py-1.5" style={{ paddingLeft: 12 + b.depth * 14 }}>
+                        {b.dept?.name ?? '부서 미지정'}
+                      </td>
+                      <td className={num}>{st.total}</td>
+                      <td className={num}>{st.total - st.away.length}</td>
+                      <td className={cn(num, 'border-l border-border', st.away.length > 0 && 'font-semibold text-urgent')}>{st.away.length}</td>
+                      {types.map((t) => {
+                        const n = people(st.byType.get(t) ?? [])
+                        return (
+                          <td key={t} className={cn(num, !n && 'text-muted-foreground/50')}>
+                            {n || '·'}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
         {!blocks.length && <EmptyState icon={UserCheck} title="구성원이 없습니다" />}
         {blocks.map((b) => {
-          const out = b.members.filter((m) => awayOf(m).length)
+          const st = stat(b.members)
           const inOffice = b.members.filter((m) => !awayOf(m).length)
           return (
             <section key={b.dept?.id ?? 'none'} style={{ marginLeft: b.depth * 16 }} className="rounded-lg border border-border bg-card" data-testid="duty-dept">
-              <h2 className="flex flex-wrap items-baseline gap-x-3 border-b border-border px-4 py-2 text-sm font-semibold">
-                {b.dept?.name ?? '부서 미지정'}
-                <span className="text-xs font-normal text-muted-foreground">
-                  총원 {b.members.length} · 근무 {inOffice.length} · 부재 {out.length}
-                </span>
-              </h2>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-2.5">
+                <h2 className="mr-auto text-sm font-bold">{b.dept?.name ?? '부서 미지정'}</h2>
+                {(
+                  [
+                    ['총원', st.total, ''],
+                    ['현재원', st.total - st.away.length, 'text-primary'],
+                    ['사고', st.away.length, st.away.length ? 'text-urgent' : '']
+                  ] as const
+                ).map(([k, v, c]) => (
+                  <span key={k} className="flex min-w-[4.5rem] flex-col items-center rounded-md border border-border px-2.5 py-1 leading-tight">
+                    <span className="text-[0.7rem] text-muted-foreground">{k}</span>
+                    <span className="text-sm">
+                      <b className={cn('text-base tabular-nums', c)}>{v}</b>명
+                    </span>
+                  </span>
+                ))}
+              </div>
               <div className="divide-y divide-border">
-                {out.flatMap((m) =>
-                  awayOf(m).map((e) => (
-                    <div key={`${e.id}:${e.key}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm" data-testid="duty-row">
-                      <span className="w-28 shrink-0 truncate font-medium">
-                        {m.name} <span className="text-xs font-normal text-muted-foreground">{m.title}</span>
-                      </span>
-                      <TypeBadge type={e.type} />
-                      <span className="w-24 shrink-0 text-xs text-muted-foreground">{dayPart(e, day, d1)}</span>
-                      <span className="min-w-0 flex-1 truncate">
-                        {[e.place, e.note].filter(Boolean).join(' · ')}
-                        {e.end - e.start > DAY && <span className="ml-2 text-xs text-muted-foreground">{fmtRange(e.start, e.end, e.allDay)}</span>}
-                      </span>
-                      {e.registeredByName && <span className="shrink-0 text-xs text-muted-foreground">{e.registeredByName} 대신 올림</span>}
-                      <span className="flex shrink-0">{actionsFor(e, m.name)}</span>
+                {[...st.byType].map(([t, list]) => (
+                  <div key={t} className="flex gap-3 px-4 py-2 text-sm" data-testid="duty-reason">
+                    <div className="flex w-24 shrink-0 items-start gap-1.5 pt-0.5">
+                      <TypeBadge type={t} />
+                      <b className="tabular-nums">{people(list)}명</b>
                     </div>
-                  ))
-                )}
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      {list.map(({ m, e }) => (
+                        <div key={`${e.id}:${e.key}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5" data-testid="duty-row">
+                          <span className="w-28 shrink-0 truncate font-medium">
+                            <MemberLink memberId={m.id} name={m.name} /> <span className="text-xs font-normal text-muted-foreground">{m.title}</span>
+                          </span>
+                          <span className="sr-only">{e.type}</span>
+                          <span className="w-24 shrink-0 text-xs text-muted-foreground">{dayPart(e, day, d1)}</span>
+                          <span className="min-w-0 flex-1 truncate">
+                            {[e.place, e.note].filter(Boolean).join(' · ')}
+                            {e.end - e.start > DAY && <span className="ml-2 text-xs text-muted-foreground">{fmtRange(e.start, e.end, e.allDay)}</span>}
+                          </span>
+                          {e.registeredByName && <span className="shrink-0 text-xs text-muted-foreground">{e.registeredByName} 대신 신청</span>}
+                          <span className="flex shrink-0">{actionsFor(e, m.name)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {!st.away.length && <p className="px-4 py-2 text-xs text-muted-foreground">사고 인원 없음</p>}
                 <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 text-sm">
-                  <span className="mr-1 shrink-0 text-xs text-muted-foreground">근무</span>
+                  <span className="mr-1 w-24 shrink-0 text-xs text-muted-foreground">현재원 {inOffice.length}명</span>
                   {inOffice.map((m) =>
                     canAddFor(m.id) ? (
-                      <button key={m.id} className="cursor-pointer rounded bg-muted px-1.5 py-0.5 text-xs hover:bg-primary/15" title="눌러서 근무상황 올리기" onClick={() => setDialog({ memberId: m.id, day })}>
-                        {m.name}
-                      </button>
-                    ) : (
-                      <span key={m.id} className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                        {m.name}
+                      <span key={m.id} className="inline-flex items-center gap-0.5">
+                        <button className="cursor-pointer rounded bg-muted px-1.5 py-0.5 text-xs hover:bg-primary/15" title="눌러서 사고 신청" onClick={() => setDialog({ memberId: m.id, day })}>
+                          {m.name}
+                        </button>
+                        {/* the name itself registers an absence here, so the messenger gets its own small button */}
+                        {m.id !== meId && (
+                          <MemberLink memberId={m.id} name={m.name} className="rounded p-0.5 text-muted-foreground hover:bg-primary/15 hover:text-primary">
+                            <MessageSquare className="size-3" aria-label={`${m.name} 메신저 열기`} />
+                          </MemberLink>
+                        )}
                       </span>
+                    ) : (
+                      <MemberLink key={m.id} memberId={m.id} name={m.name} className="rounded bg-muted px-1.5 py-0.5 text-xs" />
                     )
                   )}
                   {!inOffice.length && <span className="text-xs text-muted-foreground">없음</span>}
@@ -410,7 +510,7 @@ export function DutyPage(): React.JSX.Element {
               ...b.members.map((m) => (
                 <tr key={m.id} className="border-b border-border last:border-0">
                   <td className="truncate px-3 py-1.5">
-                    {m.name} <span className="text-xs text-muted-foreground">{m.title}</span>
+                    <MemberLink memberId={m.id} name={m.name} /> <span className="text-xs text-muted-foreground">{m.title}</span>
                   </td>
                   {days.map((d, i) => {
                     const es = (byMember.get(m.id) ?? []).filter((e) => onDay(e, d, d + DAY))
@@ -523,16 +623,16 @@ export function DutyPage(): React.JSX.Element {
           <>
             {me?.role === 'admin' && board && (
               <Button size="sm" variant="ghost" onClick={() => setClerks(true)}>
-                <UserCog /> 서무 지정
+                <UserCog /> 대리 등록자 지정
               </Button>
             )}
             {board?.canManage && (
               <Button size="sm" variant="outline" onClick={() => setDialog({ memberId: board.members.find((m) => m.id !== meId)?.id ?? meId, day: tab === 'day' ? day : today })}>
-                <UserPlus /> 대신 올리기
+                <UserPlus /> 대신 신청
               </Button>
             )}
             <Button size="sm" disabled={!board || !meId} onClick={() => setDialog({ memberId: meId, day: tab === 'day' ? day : today })}>
-              <Plus /> 내 근무상황 올리기
+              <Plus /> 사고 신청
             </Button>
           </>
         }

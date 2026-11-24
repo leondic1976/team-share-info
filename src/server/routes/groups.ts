@@ -177,7 +177,7 @@ export function registerGroupRoutes(
   /** Pending invites for me + pending join requests for groups I own. */
   app.get('/api/group-invites', auth, async (req) => {
     const rows = db.all<{ id: string; group_id: string; group_name: string; color: string; member_id: string; member_name: string; kind: 'invite' | 'request'; created_at: number }>(
-      `SELECT gi.id, gi.group_id, g.name AS group_name, g.color, gi.member_id, m.name AS member_name, gi.kind, gi.created_at
+      `SELECT gi.id, gi.group_id, g.name AS group_name, g.color, gi.member_id, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS member_name, gi.kind, gi.created_at
        FROM group_invites gi JOIN groups g ON g.id = gi.group_id JOIN members m ON m.id = gi.member_id
        WHERE gi.state = 'pending' AND g.state = 'active' AND (
          (gi.kind = 'invite' AND gi.member_id = ?) OR

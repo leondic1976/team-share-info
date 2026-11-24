@@ -26,17 +26,20 @@ export function showUrgentPopup(p: UrgentPayload): void {
     existing.flashFrame(true)
     return
   }
-  const area = screen.getPrimaryDisplay().workArea
-  const width = 520
-  const height = 440
+  // In the middle of the screen the person is looking at (where the mouse is), large enough to
+  // be read from a step away.
+  const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
+  const width = Math.min(760, area.width - 40)
+  const height = Math.min(520, area.height - 40)
   const offset = popups.size * 28
   const win = new BrowserWindow({
     width,
     height,
     x: Math.round(area.x + (area.width - width) / 2) + offset,
-    y: Math.round(area.y + (area.height - height) / 3) + offset,
-    minWidth: 400,
-    minHeight: 320,
+    y: Math.round(area.y + (area.height - height) / 2) + offset,
+    minWidth: 480,
+    minHeight: 360,
+    backgroundColor: '#b91c1c',
     alwaysOnTop: true,
     skipTaskbar: false,
     minimizable: false,

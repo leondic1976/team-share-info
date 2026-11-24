@@ -3,9 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { Send, Trash2 } from 'lucide-react'
 import type { CommentDto } from '@shared/schemas/work'
+import { sendOrQueue } from '@renderer/lib/outbox'
 import { api, errorMessage } from '@renderer/lib/api'
 import { useMe } from '@renderer/lib/queries'
 import { Button } from './ui/button'
+import { MemberLink } from './MemberLink'
 import { Textarea } from './ui/input'
 import { confirmPii } from '@renderer/lib/pii'
 
@@ -22,7 +24,7 @@ export function Comments({ type, id }: { type: 'task' | 'post'; id: string }): R
     void qc.invalidateQueries({ queryKey: [type === 'task' ? 'tasks' : 'boards'] })
   }
   const add = useMutation({
-    mutationFn: () => api.post(`/api/comments/${type}/${id}`, { body }),
+    mutationFn: () => sendOrQueue({ kind: 'comment', label: `댓글: ${body.trim().slice(0, 60)}`, path: `/api/comments/${type}/${id}`, body: { body } }),
     onSuccess: () => {
       setBody('')
       setErr('')
@@ -37,7 +39,7 @@ export function Comments({ type, id }: { type: 'task' | 'post'; id: string }): R
       {q.data?.map((c) => (
         <div key={c.id} className="group rounded-md bg-muted/60 px-3 py-2 text-sm" data-testid="comment">
           <div className="flex items-center gap-2 text-xs">
-            <b>{c.authorName}</b>
+            <MemberLink memberId={c.authorId} name={c.authorName} className="font-bold" />
             <span className="text-muted-foreground">{format(c.createdAt, 'M/d HH:mm')}</span>
             {(c.authorId === me?.id || me?.role === 'admin') && (
               <button className="invisible ml-auto cursor-pointer text-muted-foreground group-hover:visible" aria-label="댓글 삭제" onClick={() => del.mutate(c.id)}>

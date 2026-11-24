@@ -3,10 +3,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { invoke, onMain } from '@renderer/lib/bridge'
 import { NavLink } from 'react-router-dom'
 import { ChevronsLeft, ChevronsRight, Lock } from 'lucide-react'
-import { BOTTOM_MENU, subMenu, topMenu, type MenuItem } from './menu'
+import { BOTTOM_MENU, MENU_PLUGINS, subMenu, topMenu, type MenuItem } from './menu'
 import { usePrefs } from './prefs-store'
 import { cn } from '@renderer/lib/utils'
 import { SpaceSwitcher } from './SpaceSwitcher'
+
+// Items under "확장 기능": full text colour, and a long name wraps to a second line instead of being cut off.
+const SUB_ITEM = 'relative flex min-h-8 items-center gap-2 rounded-r-md py-1 text-sm'
+const SUB_LABEL = 'line-clamp-2 min-w-0 break-keep leading-tight'
 
 interface SidebarProps {
   isAdmin: boolean
@@ -71,7 +75,19 @@ export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps
       <div className="flex-1 space-y-0.5 overflow-y-auto overflow-x-hidden p-2">
         {items.map((m, i) => (
           <Fragment key={m.key}>
-            {i === split && <div className="mx-1 my-1.5 border-t border-border" role="separator" />}
+            {i === split && (
+              <div className="mx-1 mb-1 mt-2 border-t border-border pt-1.5" role="separator" data-testid="personal-section">
+                {collapsed ? (
+                  <Lock className="mx-auto size-3 text-personal" aria-label="개인용 메뉴" />
+                ) : (
+                  <div className="flex items-center gap-1 px-1.5 text-[0.7rem] font-semibold text-personal" title="여기부터는 이 PC에만 저장되는 개인용 기능입니다. 다른 팀원에게 보이지 않습니다.">
+                    <Lock className="size-3 shrink-0" aria-hidden />
+                    <span>개인용</span>
+                    <span className="truncate font-normal text-muted-foreground">내 PC에만 저장</span>
+                  </div>
+                )}
+              </div>
+            )}
             {renderItem(m)}
           </Fragment>
         ))}
@@ -85,28 +101,28 @@ export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps
                 to={m.path}
                 title={m.label}
                 aria-label={count > 0 ? `${m.label} (${count})` : m.label}
-                className={({ isActive }) => cn('relative flex h-8 items-center gap-2.5 rounded-md text-sm', collapsed ? 'px-2.5' : 'pl-5 pr-2.5', isActive ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground/70 hover:bg-muted')}
+                className={({ isActive }) => cn(SUB_ITEM, collapsed ? 'px-2.5' : 'ml-3.5 border-l border-border pl-2.5 pr-2', isActive ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground hover:bg-muted')}
               >
                 <m.icon className="size-[1.15rem] shrink-0" aria-hidden />
-                {!collapsed && <span className="truncate">{m.label}</span>}
+                {!collapsed && <span className={SUB_LABEL}>{m.label}</span>}
                 {count > 0 && <span className={cn('rounded-full bg-urgent px-1.5 text-[0.7rem] font-bold leading-4 text-white', collapsed ? 'absolute right-0.5 top-0.5' : 'ml-auto')}>{count > 99 ? '99+' : count}</span>}
               </NavLink>
             )
           })}
         {(plugins.data ?? [])
-          .filter((p) => p.enabled && !hiddenMenus.includes('plugins'))
+          .filter((p) => p.enabled && !hiddenMenus.includes('plugins') && !MENU_PLUGINS[p.manifest.id])
           .map((p) => (
             <NavLink
               key={p.manifest.id}
               to={`/plugins/${p.manifest.id}`}
               title={p.manifest.name}
               aria-label={p.manifest.name}
-              className={({ isActive }) => cn('flex h-8 items-center gap-2.5 rounded-md text-sm', collapsed ? 'px-2.5' : 'pl-5 pr-2.5', isActive ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground/70 hover:bg-muted')}
+              className={({ isActive }) => cn(SUB_ITEM, collapsed ? 'px-2.5' : 'ml-3.5 border-l border-border pl-2.5 pr-2', isActive ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground hover:bg-muted')}
             >
               <span className="w-[1.15rem] shrink-0 text-center" aria-hidden>
                 {p.manifest.icon}
               </span>
-              {!collapsed && <span className="truncate">{p.manifest.name}</span>}
+              {!collapsed && <span className={SUB_LABEL}>{p.manifest.name}</span>}
             </NavLink>
           ))}
       </div>

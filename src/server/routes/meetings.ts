@@ -23,7 +23,7 @@ interface Row {
   ended_at: number | null
 }
 
-const SELECT = 'SELECT m.*, h.name AS host_name FROM meetings m JOIN members h ON h.id = m.host_id'
+const SELECT = 'SELECT m.*, CASE WHEN IFNULL(LENGTH(h.nickname), 0) = 0 THEN h.name ELSE h.name || char(40) || h.nickname || char(41) END AS host_name FROM meetings m JOIN members h ON h.id = m.host_id'
 
 /** Members currently in a meeting (joined and not left). */
 export function activeParticipants(ctx: ServerContext, meetingId: string): string[] {

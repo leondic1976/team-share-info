@@ -1,13 +1,12 @@
 import { useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
-import { Search, Users, BookUser, UserCog, Plus, Upload, Download, MessageSquare, Mail, ListTodo, Phone, Smartphone, Pencil, Trash2 } from 'lucide-react'
+import { Search, Users, BookUser, UserCog, Plus, Upload, Download, Phone, Smartphone, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Select, Textarea } from '@renderer/components/ui/input'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Dialog } from '@renderer/components/Dialog'
-import { PresenceDot, PRESENCE_LABEL } from '@renderer/components/PresenceDot'
+import { PresenceDot } from '@renderer/components/PresenceDot'
 import { ScopePicker, ScopeTags, defaultScope } from '@renderer/components/ScopePicker'
 import { EmptyState, OfflineState } from '@renderer/components/EmptyState'
 import { Field } from '@renderer/features/setup/SetupFrame'
@@ -19,7 +18,8 @@ import { displayName, type MemberDto } from '@shared/schemas/auth'
 import type { ContactDto } from '@shared/schemas/work'
 import type { ScopeInput } from '@shared/schemas/scope'
 import { CONTACT_COLUMNS, csvToContacts, parseCsv, toCsv } from '@shared/csv'
-import { NewTaskDialog } from '@renderer/features/tasks/TaskDialogs'
+import { MemberCard } from './MemberCard'
+import { MemberLink } from '@renderer/components/MemberLink'
 
 interface Dept {
   id: string
@@ -31,52 +31,6 @@ interface Dept {
 function useDepartments() {
   const online = useConn((s) => s.state === 'online')
   return useQuery({ queryKey: ['members', 'departments'], queryFn: () => api.get<Dept[]>('/api/departments'), enabled: online })
-}
-
-function MemberCard({ m, onClose }: { m: MemberDto; onClose: () => void }): React.JSX.Element {
-  const navigate = useNavigate()
-  const { data: me } = useMe()
-  const [task, setTask] = useState(false)
-  const openChat = async (): Promise<void> => {
-    const c = await api.post<{ id: string }>('/api/conversations', { memberIds: [m.id] })
-    navigate(`/chat/${c.id}`)
-  }
-  return (
-    <Dialog open onClose={onClose} title={displayName(m)} width="max-w-md">
-      <div className="space-y-3 text-sm">
-        <div className="flex items-center gap-2">
-          <PresenceDot presence={m.presence} /> {PRESENCE_LABEL[m.presence]}
-          {m.statusMessage && <span className="text-muted-foreground">· {m.statusMessage}</span>}
-        </div>
-        <dl className="selectable grid grid-cols-[5rem_1fr] gap-y-1.5">
-          <dt className="text-muted-foreground">부서</dt>
-          <dd>{m.deptName ?? '-'}</dd>
-          <dt className="text-muted-foreground">직위</dt>
-          <dd>{m.title ?? '-'}</dd>
-          <dt className="text-muted-foreground">내선</dt>
-          <dd>{m.ext ?? '-'}</dd>
-          <dt className="text-muted-foreground">휴대폰</dt>
-          <dd>{m.mobile ?? '-'}</dd>
-          <dt className="text-muted-foreground">담당 업무</dt>
-          <dd className="whitespace-pre-wrap">{m.duty ?? '-'}</dd>
-        </dl>
-        {m.id !== me?.id && (
-          <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-            <Button size="sm" onClick={() => void openChat()}>
-              <MessageSquare /> 메시지
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => navigate('/chat/notes', { state: { noteTo: m.id } })}>
-              <Mail /> 쪽지
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setTask(true)}>
-              <ListTodo /> 업무 요청
-            </Button>
-          </div>
-        )}
-      </div>
-      {task && <NewTaskDialog onClose={() => setTask(false)} />}
-    </Dialog>
-  )
 }
 
 function MembersTab(): React.JSX.Element {
@@ -118,7 +72,10 @@ function MembersTab(): React.JSX.Element {
                   <PresenceDot presence={m.presence} />
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold">
-                      {displayName(m)} <span className="font-normal text-muted-foreground">{m.title}</span>
+                      <MemberLink memberId={m.id} name={m.name}>
+                        {displayName(m)}
+                      </MemberLink>{' '}
+                      <span className="font-normal text-muted-foreground">{m.title}</span>
                     </div>
                     <div className="truncate text-xs text-muted-foreground">{[m.ext && `내선 ${m.ext}`, m.duty].filter(Boolean).join(' · ') || ' '}</div>
                   </div>
@@ -132,7 +89,8 @@ function MembersTab(): React.JSX.Element {
   )
 }
 
-function ProfileTab(): React.JSX.Element {
+/** My own details (also shown in 설정 → 내 정보). */
+export function ProfileTab(): React.JSX.Element {
   const qc = useQueryClient()
   const { data: me } = useMe()
   const { data: depts } = useDepartments()
@@ -152,16 +110,16 @@ function ProfileTab(): React.JSX.Element {
   if (!me) return <OfflineState />
   // details the admin (server PC) set are shown but cannot be changed here
   const fixed = (k: string): boolean => me.adminFields.includes(k)
-  const fixedHint = (k: string): string | undefined => (fixed(k) ? '관리자가 정한 항목' : undefined)
+  const fixedHint = (k: string): string | undefined => (fixed(k) ? '서버 PC에서 정한 항목 (바꿀 수 없음)' : undefined)
   return (
     <Card className="max-w-xl">
       <CardContent className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="이름" hint={fixedHint('name')}>
+          <Field label="이름 (본명)" hint={fixedHint('name')}>
             <Input aria-label="내 이름" value={cur.name} disabled={fixed('name')} onChange={(e) => set('name', e.target.value)} />
           </Field>
-          <Field label="별명 (선택)" hint="자유롭게 정하는 이름. 나만 바꿀 수 있고 이름 옆에 함께 표시됩니다.">
-            <Input aria-label="내 별명" value={cur.nickname} maxLength={20} onChange={(e) => set('nickname', e.target.value)} />
+          <Field label="필명 (선택)" hint={`나만 정하고 바꿀 수 있습니다(서버 PC·서무는 못 바꿈). 정하면 "${cur.name || '본명'}(${cur.nickname || '필명'})"으로 표시됩니다.`}>
+            <Input aria-label="내 필명" value={cur.nickname} maxLength={20} onChange={(e) => set('nickname', e.target.value)} />
           </Field>
           <Field label="부서" hint={fixedHint('deptId')}>
             <Select aria-label="내 부서" value={cur.deptId} disabled={fixed('deptId')} onChange={(e) => set('deptId', e.target.value)}>

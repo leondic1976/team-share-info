@@ -12,6 +12,16 @@ import { Field } from '@renderer/features/setup/SetupFrame'
 import { Loading } from '@renderer/components/EmptyState'
 import { MENU } from '@renderer/app/menu'
 import { formatSize } from '@renderer/components/Attachments'
+import { OwnerOnlyNote, useIsOwner } from './owner'
+
+/** Controls inside are the 최종관리자's: a 서무 sees them but cannot change them. */
+function OwnerFields({ owner, className, children }: { owner: boolean; className?: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <fieldset disabled={!owner} className={`m-0 min-w-0 border-0 p-0 disabled:opacity-60 ${className ?? ''}`}>
+      {children}
+    </fieldset>
+  )
+}
 
 const GB = 1024 ** 3
 /** Bytes as a GB figure for an input: 5, 0.5, 1.25 (no trailing zeros). */
@@ -19,6 +29,7 @@ const gbText = (bytes: number): string => String(Number((bytes / GB).toFixed(3))
 
 export function SettingsTab(): React.JSX.Element {
   const qc = useQueryClient()
+  const owner = useIsOwner()
   const q = useQuery({ queryKey: ['admin', 'settings'], queryFn: () => api.get<AllSettings>('/api/admin/settings') })
   const [s, setS] = useState<AllSettings | null>(null)
   const [cidrs, setCidrs] = useState('')
@@ -72,6 +83,8 @@ export function SettingsTab(): React.JSX.Element {
 
   const submit = (): void => {
     setMsg(null)
+    // a 서무 decides only who may send urgent notices and who may make groups
+    if (!owner) return save.mutate({ ops: { urgentSenders: s.ops.urgentSenders, groupCreators: s.ops.groupCreators } })
     const quotaBytes = Math.round(Number(quotaGb) * GB)
     const maxFileBytes = Math.round(Number(maxFileGb) * GB)
     if (!(quotaBytes > 0) || !(maxFileBytes > 0)) return setMsg({ ok: false, text: '저장 공간의 용량은 0보다 큰 숫자로 입력하세요.' })
@@ -101,6 +114,12 @@ export function SettingsTab(): React.JSX.Element {
 
   return (
     <div className="max-w-3xl space-y-4">
+      {!owner && (
+        <OwnerOnlyNote>
+          서무는 <b>긴급알림 발송 권한</b>과 <b>그룹 만들기 권한</b>만 바꿀 수 있습니다. 조직 정보·네트워크·저장 공간·백업·사용할 기능·관리 PIN 등 흐리게 보이는 항목은 최종관리자(서버 PC)만 바꿉니다.
+        </OwnerOnlyNote>
+      )}
+      <OwnerFields owner={owner} className="space-y-4">
       <Card>
         <CardHeader>
           <CardTitle>조직 정보</CardTitle>
@@ -185,6 +204,7 @@ export function SettingsTab(): React.JSX.Element {
           </Field>
         </CardContent>
       </Card>
+      </OwnerFields>
 
       <Card>
         <CardHeader>
@@ -199,7 +219,7 @@ export function SettingsTab(): React.JSX.Element {
                 value={s.ops.urgentSenders}
                 onChange={(e) => upd('ops', { urgentSenders: e.target.value as 'admins' | 'everyone' })}
               >
-                <option value="admins">관리자만</option>
+                <option value="admins">최종관리자·서무만</option>
                 <option value="everyone">모든 팀원</option>
               </select>
             </Field>
@@ -211,17 +231,20 @@ export function SettingsTab(): React.JSX.Element {
                 onChange={(e) => upd('ops', { groupCreators: e.target.value as 'admins' | 'everyone' })}
               >
                 <option value="everyone">모든 팀원</option>
-                <option value="admins">관리자만</option>
+                <option value="admins">최종관리자·서무만</option>
               </select>
             </Field>
-            <Field label="메시지 보관 기간 (일)">
-              <Input
-                aria-label="메시지 보관 기간"
-                value={String(s.ops.messageRetentionDays)}
-                onChange={(e) => upd('ops', { messageRetentionDays: Number(e.target.value.replace(/\D/g, '')) || 30 })}
-              />
-            </Field>
+            <OwnerFields owner={owner}>
+              <Field label="메시지 보관 기간 (일)">
+                <Input
+                  aria-label="메시지 보관 기간"
+                  value={String(s.ops.messageRetentionDays)}
+                  onChange={(e) => upd('ops', { messageRetentionDays: Number(e.target.value.replace(/\D/g, '')) || 30 })}
+                />
+              </Field>
+            </OwnerFields>
           </div>
+          <OwnerFields owner={owner} className="space-y-3">
           <div className="flex items-center gap-4">
             <span className="flex-1 text-sm">서버 실행 중 절전 방지</span>
             <Switch checked={s.ops.preventSleep} onCheckedChange={(v) => upd('ops', { preventSleep: v })} label="절전 방지" />
@@ -238,6 +261,7 @@ export function SettingsTab(): React.JSX.Element {
               ))}
             </div>
           </div>
+          </OwnerFields>
         </CardContent>
       </Card>
 
@@ -248,19 +272,21 @@ export function SettingsTab(): React.JSX.Element {
         {msg && <span className={msg.ok ? 'text-sm text-success' : 'text-sm text-urgent'}>{msg.text}</span>}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>관리 PIN</CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-end gap-2">
-          <Field label="새 PIN (숫자 4~8자리, 비우고 저장하면 PIN 해제)">
-            <Input aria-label="새 관리 PIN" type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} className="w-48" />
-          </Field>
-          <Button variant="outline" onClick={() => save.mutate({ adminPin: pin })}>
-            PIN 저장
-          </Button>
-        </CardContent>
-      </Card>
+      {owner && (
+        <Card>
+          <CardHeader>
+            <CardTitle>관리 PIN</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-end gap-2">
+            <Field label="새 PIN (숫자 4~8자리, 비우고 저장하면 PIN 해제)">
+              <Input aria-label="새 관리 PIN" type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} className="w-48" />
+            </Field>
+            <Button variant="outline" onClick={() => save.mutate({ adminPin: pin })}>
+              PIN 저장
+            </Button>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

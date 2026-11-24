@@ -798,5 +798,48 @@ ALTER TABLE members ADD COLUMN admin_fields TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE events ADD COLUMN registered_by TEXT;
 CREATE INDEX idx_events_absence ON events(kind, start_at, end_at);
 `
+  },
+  {
+    id: 18,
+    name: 'idempotency',
+    sql: `
+-- A change a PC wrote while the server was unreachable is sent when it is back, with a key
+-- (X-Idempotency-Key). If the answer got lost and the PC sends it again, the stored answer is
+-- returned instead of doing the change twice. Rows are removed after 30 days.
+CREATE TABLE idempotency (
+  key TEXT NOT NULL,
+  member_id TEXT NOT NULL,
+  status INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (key, member_id)
+);
+CREATE INDEX idx_idempotency_created ON idempotency(created_at);
+`
+  },
+  {
+    id: 19,
+    name: 'org-chart',
+    sql: `
+-- 조직도: what a department shows besides its name (head, main phone, what it is in charge of,
+-- where it sits), and how a member is listed inside a department (직급, display order; 0 = none given)
+ALTER TABLE departments ADD COLUMN head_id TEXT;
+ALTER TABLE departments ADD COLUMN phone TEXT;
+ALTER TABLE departments ADD COLUMN duties TEXT;
+ALTER TABLE departments ADD COLUMN location TEXT;
+ALTER TABLE members ADD COLUMN rank TEXT;
+ALTER TABLE members ADD COLUMN org_sort INTEGER NOT NULL DEFAULT 0;
+`
+  },
+  {
+    id: 20,
+    name: 'shared-pc',
+    sql: `
+-- 공용 PC: several people use TeamHub on one PC under one Windows account, each with an own
+-- unique value and an own account. Such a request (and the device made from it) is marked, so
+-- it is never matched to another person of that PC by PC name + Windows account.
+ALTER TABLE join_requests ADD COLUMN shared_pc INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE devices ADD COLUMN shared_pc INTEGER NOT NULL DEFAULT 0;
+`
   }
 ]

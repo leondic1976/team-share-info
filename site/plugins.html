@@ -98,6 +98,34 @@
         flex-wrap: wrap;
         margin-top: auto;
       }
+      .sortbar {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 8px;
+        margin-top: 16px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .sortbar select {
+        font: inherit;
+        color: var(--fg);
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 4px 8px;
+      }
+      .grid {
+        margin-top: 12px;
+      }
+      .stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px 12px;
+        margin: 0;
+        font-size: 12px;
+        color: var(--muted);
+      }
       .note {
         background: var(--card);
         border: 1px solid var(--line);
@@ -113,6 +141,14 @@
       <p><a href="./">← TeamHub 다운로드</a></p>
       <h1>🧩 확장 기능</h1>
       <p class="muted">TeamHub에 기능을 더합니다. 이 페이지에서는 고르기만 하고, <b>설치는 TeamHub 프로그램 안에서</b> 권한을 확인한 뒤 진행됩니다.</p>
+      <div class="sortbar">
+        <label for="sort">정렬</label>
+        <select id="sort">
+          <option value="popular">인기순</option>
+          <option value="recent">최신순</option>
+          <option value="name">이름순</option>
+        </select>
+      </div>
       <div class="grid" id="cards"><p class="muted">불러오는 중…</p></div>
       <div class="note">
         <b>설치 방법</b>
@@ -127,27 +163,81 @@
     <script>
       const PERM = { members: '팀원 이름 보기', storage: '이 PC에 데이터 저장', rooms: '팀원과 함께하는 방', notify: '알림', clipboard: '클립보드 복사', files: '고른 파일 저장·열기', ocr: '이미지 글자 읽기(PC 안에서)', copilot: 'Copilot 열기' }
       const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
-      fetch('plugins/catalog.json', { cache: 'no-store' })
-        .then((r) => (r.ok ? r.json() : []))
-        .then((list) => {
+      // Download counts: the same external counter as the installer (index.html), one key per
+      // plugin. Only that key is sent. If the counter is unreachable no numbers are shown.
+      const COUNTER = 'https://abacus.jasoncameron.dev'
+      const counterKey = (id) => 'teamhub-lan-app/plugin-' + id
+      const counts = {}
+      let list = []
+      const sortSel = document.getElementById('sort')
+      try {
+        const s = localStorage.getItem('teamhub.plugins.sort')
+        if (s && [...sortSel.options].some((o) => o.value === s)) sortSel.value = s
+      } catch {
+        // storage blocked: the default order
+      }
+      const sorted = () => {
+        const byName = (a, b) => a.name.localeCompare(b.name, 'ko')
+        const mode = sortSel.value
+        return [...list].sort((a, b) => (mode === 'popular' ? (counts[b.id] || 0) - (counts[a.id] || 0) || byName(a, b) : mode === 'recent' ? (b.updated || '').localeCompare(a.updated || '') || byName(a, b) : byName(a, b)))
+      }
+      const render = () => {
           const box = document.getElementById('cards')
           box.innerHTML = list.length
-            ? list
+            ? sorted()
                 .map(
                   (p) => `<article class="card" data-plugin="${esc(p.id)}">
                     <div class="icon">${esc(p.icon)}</div>
                     <h2>${esc(p.name)} <span class="muted" style="font-size:13px;font-weight:400">v${esc(p.version)}</span></h2>
+                    ${counts[p.id] !== undefined || p.updated ? `<p class="stats">${counts[p.id] !== undefined ? `<span class="dl">⬇ 다운로드 ${counts[p.id].toLocaleString('ko-KR')}회</span>` : ''}${p.updated ? `<span>${esc(p.updated)} 갱신</span>` : ''}</p>` : ''}
                     <p>${esc(p.description)}</p>
                     ${p.features && p.features.length ? `<ul>${p.features.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
                     <p class="perms">권한: ${p.permissions.map((x) => esc(PERM[x] || x)).join(', ') || '없음'}</p>
                     <div class="links">
                       <a class="btn" href="teamhub://plugins/install?id=${encodeURIComponent(p.id)}">TeamHub에서 설치</a>
-                      <a href="plugins/${encodeURIComponent(p.file)}" download>파일 받기 (${(p.size / 1024).toFixed(0)} KB)</a>
+                      <a href="plugins/${encodeURIComponent(p.file)}" download data-count="${esc(p.id)}">파일 받기 (${(p.size / 1024).toFixed(0)} KB)</a>
                     </div>
                   </article>`
                 )
                 .join('')
             : '<p class="muted">아직 확장 기능이 없습니다.</p>'
+      }
+      const readCount = (id, how) =>
+        fetch(COUNTER + '/' + how + '/' + counterKey(id), { cache: 'no-store', keepalive: how === 'hit' })
+          .then((r) => (r.ok ? r.json() : r.status === 404 && how === 'get' ? { value: 0 } : Promise.reject()))
+          .then((j) => {
+            counts[id] = Number(j.value) || 0
+          })
+          .catch(() => {})
+      sortSel.addEventListener('change', () => {
+        try {
+          localStorage.setItem('teamhub.plugins.sort', sortSel.value)
+        } catch {
+          // storage blocked
+        }
+        render()
+      })
+      // "파일 받기" counts as a download. "TeamHub에서 설치" is counted by the app when it installs.
+      document.getElementById('cards').addEventListener('click', (e) => {
+        const a = e.target.closest('a[data-count]')
+        if (!a) return
+        const id = a.dataset.count
+        readCount(id, 'hit').then(() => {
+          const el = document.querySelector('[data-plugin="' + id + '"] .stats .dl')
+          // only the number changes: reordering the cards under the pointer would be confusing
+          if (el && counts[id] !== undefined) el.textContent ='⬇ 다운로드 ' + counts[id].toLocaleString('ko-KR') + '회'
+        })
+      })
+      fetch('plugins/catalog.json', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((data) => {
+          list = data
+          render()
+          return Promise.all(list.map((p) => readCount(p.id, 'get')))
+        })
+        .then(() => render())
+        .catch(() => {
+          if (!list.length) document.getElementById('cards').innerHTML = '<p class="muted">확장 기능 목록을 불러오지 못했습니다.</p>'
         })
     </script>
   </body>

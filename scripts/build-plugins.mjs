@@ -23,11 +23,14 @@ for (const id of readdirSync(src)) {
     if (rel === 'manifest.json' || rel.startsWith('.')) continue
     files[rel] = readFileSync(f).toString('base64')
   }
-  const { features, ...m } = manifest
+  // "updated" (YYYY-MM-DD, the gallery's 최신순) is written in the manifest by hand: CI checks out
+  // without history, so a date taken from git or the file times would be the same for all.
+  const { features, updated, ...m } = manifest
+  if (updated !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(updated)) throw new Error(`${id}: manifest "updated" must be YYYY-MM-DD`)
   const bundle = Buffer.from(JSON.stringify({ format: 'teamhub-plugin@1', manifest: m, files }))
   const file = `${id}-${m.version}.thplugin`
   writeFileSync(join(out, file), bundle)
-  catalog.push({ id, name: m.name, version: m.version, description: m.description ?? '', author: m.author ?? '', icon: m.icon ?? '🧩', permissions: m.permissions ?? [], file, sha256: createHash('sha256').update(bundle).digest('hex'), size: bundle.length, features: features ?? [] })
+  catalog.push({ id, name: m.name, version: m.version, description: m.description ?? '', author: m.author ?? '', icon: m.icon ?? '🧩', permissions: m.permissions ?? [], file, sha256: createHash('sha256').update(bundle).digest('hex'), size: bundle.length, features: features ?? [], updated: updated ?? '' })
   console.log(`packed ${file} (${bundle.length} bytes)`)
 }
 writeFileSync(join(out, 'catalog.json'), JSON.stringify(catalog, null, 2))

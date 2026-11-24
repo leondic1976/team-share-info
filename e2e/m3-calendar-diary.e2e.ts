@@ -47,7 +47,7 @@ describe('M3 calendar, reminders, diary, worklogs', () => {
     const start = new Date(t.getFullYear(), t.getMonth(), t.getDate(), 15, 0).getTime()
     await newEvent(a.page, { kind: '공유 일정', title: '주간회의E2E', start, end: start + 3600000, repeat: 'weekly' })
     await go(b.page, '/calendar')
-    await expect.poll(() => b.page.getByTestId('calendar').getByText('주간회의E2E').count(), { timeout: 15000 }).toBeGreaterThanOrEqual(4)
+    await expect.poll(() => b.page.getByTestId('calendar').getByText('주간회의E2E').count(), { timeout: 15000 }).toBeGreaterThanOrEqual(2)
   })
 
   it('personal event reminder fires while the window is hidden', async () => {

@@ -343,5 +343,26 @@ CREATE TABLE ledger_versions (
 );
 CREATE INDEX idx_ledger_versions ON ledger_versions(ledger_id, created_at);
 `
+  },
+  {
+    id: 8,
+    name: 'outbox',
+    sql: `
+-- Things written for the server while it could not be reached; sent in order when it is back.
+-- body is sealed (src/node/seal.ts). The id doubles as the idempotency key of the request.
+CREATE TABLE outbox (
+  id TEXT PRIMARY KEY,
+  owner TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  label TEXT NOT NULL,
+  body TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'waiting',
+  error TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_outbox_owner ON outbox(owner, created_at);
+-- cached server data from before sealing was plain text: not kept
+DELETE FROM query_cache;
+`
   }
 ]

@@ -4,6 +4,7 @@ import { SetupFrame } from './SetupFrame'
 import { invoke } from '@renderer/lib/bridge'
 import { cn } from '@renderer/lib/utils'
 import type { ConnInfo } from '@shared/ipc'
+import { SavedServers } from '@renderer/app/ConnChip'
 
 export function FirstRun({ onChoose }: { onChoose: (m: 'server' | 'client' | 'import') => void }): React.JSX.Element {
   // Server PC or member PC is decided once; a PC that was set up before can only be set up the same way again.
@@ -20,6 +21,9 @@ export function FirstRun({ onChoose }: { onChoose: (m: 'server' | 'client' | 'im
       subtitle={locked ? '이 PC는 처음 설정한 용도로만 사용할 수 있습니다.' : '이 PC를 어떻게 사용할지 선택하세요. 한 번 정하면 나중에 바꿀 수 없습니다.'}
       wide
     >
+      <div className="mb-4 empty:hidden">
+        <SavedServers />
+      </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <button className={card(locked === 'server')} disabled={locked === 'server'} onClick={() => onChoose('client')}>
           <MonitorSmartphone className="mb-3 size-9 text-primary" />

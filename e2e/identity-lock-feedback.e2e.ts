@@ -136,10 +136,10 @@ describe('PC identity, fixed role, blocks, program lock and feedback', () => {
     expect(await b.page.getByLabel('내 이름').isDisabled()).toBe(true)
     expect(await b.page.getByLabel('내 내선번호').isDisabled()).toBe(true)
     expect(await b.page.getByLabel('내 직위').isDisabled()).toBe(false)
-    await b.page.getByLabel('내 별명').fill('팀원짱')
+    await b.page.getByLabel('내 필명').fill('팀원짱')
     await b.page.getByRole('button', { name: '저장', exact: true }).click()
     await b.page.getByText('저장했습니다.').waitFor({ timeout: 10000 })
-    await expect.poll(() => a.page.getByTestId('member-row-김팀원').textContent(), { timeout: 15000 }).toContain('김팀원 (팀원짱)')
+    await expect.poll(() => a.page.getByTestId('member-row-김팀원').textContent(), { timeout: 15000 }).toContain('김팀원(팀원짱)')
   }, 90000)
 
   it('permanent block asks for a reason and a confirmation; the PC is cut off and listed; it can be taken off the list', async () => {

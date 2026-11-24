@@ -5,6 +5,9 @@ import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { UpdateChip } from './UpdateChip'
 import { OrgBadge } from './OrgBadge'
+import { ConnChip } from './ConnChip'
+import { EmergencyButton } from '@renderer/features/notices/Emergency'
+import { clearQueryPersist } from '@renderer/lib/query-persist'
 import { SearchPalette } from './SearchPalette'
 import { Search } from 'lucide-react'
 import { StatusBar } from './StatusBar'
@@ -25,6 +28,7 @@ import { useSpace } from './space-store'
 import { useEventReminders } from '@renderer/features/calendar/useEventReminders'
 import { TransferPanel } from '@renderer/features/files/TransferPanel'
 import { useChatAlerts, useChatUnread } from '@renderer/features/chat/useChatAlerts'
+import { ChatDock } from '@renderer/features/chat/ChatDock'
 import { useTaskAlerts } from '@renderer/features/tasks/useTaskAlerts'
 import { useJoinAlerts } from '@renderer/features/admin/useJoinAlerts'
 import { useLedgerAlerts } from '@renderer/features/ledger/useLedgerAlerts'
@@ -46,6 +50,7 @@ const ChatPage = lazy(() => import('@renderer/features/chat/ChatPage').then((m) 
 const TasksPage = lazy(() => import('@renderer/features/tasks/TasksPage').then((m) => ({ default: m.TasksPage })))
 const BoardsPage = lazy(() => import('@renderer/features/boards/BoardsPage').then((m) => ({ default: m.BoardsPage })))
 const DutyPage = lazy(() => import('@renderer/features/duty/DutyPage').then((m) => ({ default: m.DutyPage })))
+const OrgChartPage = lazy(() => import('@renderer/features/org/OrgChartPage').then((m) => ({ default: m.OrgChartPage })))
 const DirectoryPage = lazy(() => import('@renderer/features/directory/DirectoryPage').then((m) => ({ default: m.DirectoryPage })))
 const DocsPage = lazy(() => import('@renderer/features/docs/DocsPage').then((m) => ({ default: m.DocsPage })))
 const MemosPage = lazy(() => import('@renderer/features/memos/MemosPage').then((m) => ({ default: m.MemosPage })))
@@ -57,6 +62,7 @@ const NotesPage = lazy(() => import('@renderer/features/notes/NotesPage').then((
 const PluginsPage = lazy(() => import('@renderer/features/plugins/PluginsPage').then((m) => ({ default: m.PluginsPage })))
 const LedgerPage = lazy(() => import('@renderer/features/ledger/LedgerPage').then((m) => ({ default: m.LedgerPage })))
 const PluginHost = lazy(() => import('@renderer/features/plugins/PluginHost').then((m) => ({ default: m.PluginHost })))
+const MenuPlugin = lazy(() => import('@renderer/features/plugins/PluginHost').then((m) => ({ default: m.MenuPlugin })))
 
 export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Element {
   const state = useConn((s) => s.state)
@@ -125,6 +131,12 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
     }
   }, [serverUrl])
 
+  // A PC the server no longer accepts (blocked, removed) must not keep the team's data readable.
+  // What the member wrote and could not send yet stays: it is theirs, and is sent if they are let in again.
+  useEffect(() => {
+    if (state === 'rejected') clearQueryPersist()
+  }, [state])
+
   if (state === 'rejected' || state === 'update-required') return <BlockingScreen onReset={onReset} />
 
   const isAdmin = me?.role === 'admin'
@@ -133,13 +145,19 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
     <div className="relative isolate flex h-full flex-col">
       <WallpaperLayer />
       <TopBar
-        left={<OrgBadge />}
+        left={
+          <>
+            <OrgBadge />
+            <ConnChip />
+          </>
+        }
         center={
           <div className="flex w-full max-w-2xl items-center justify-center gap-2">
             <button className="no-drag flex h-8 w-full max-w-md cursor-pointer items-center gap-2 rounded-md border border-border bg-muted/60 px-2.5 text-sm text-muted-foreground hover:bg-muted" onClick={() => setSearchOpen(true)} data-testid="open-search">
               <Search className="size-4" aria-hidden />
               <span>검색 (Ctrl+K)</span>
             </button>
+            <EmergencyButton />
             <UpdateChip />
           </div>
         }
@@ -166,6 +184,8 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/boards/:boardId" element={<BoardsPage />} />
             <Route path="/boards/:boardId/:postId" element={<BoardsPage />} />
             <Route path="/duty" element={<DutyPage />} />
+            <Route path="/org" element={<OrgChartPage />} />
+            <Route path="/meal" element={<MenuPlugin id="meal" />} />
             <Route path="/directory" element={<DirectoryPage />} />
             <Route path="/docs" element={<DocsPage />} />
             <Route path="/docs/:section" element={<DocsPage />} />
@@ -182,7 +202,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/plugins" element={<PluginsPage />} />
             <Route path="/plugins/:id" element={<PluginHost />} />
             <Route path="/notes/:id" element={<NotesPage />} />
-            {MENU.filter((m) => !['home', 'notices', 'calendar', 'diary', 'files', 'chat', 'tasks', 'boards', 'duty', 'directory', 'docs', 'memos', 'alarms', 'utilities', 'launcher', 'myfiles', 'notes', 'meetings', 'plugins'].includes(m.key)).map((m) => (
+            {MENU.filter((m) => !['home', 'notices', 'calendar', 'diary', 'files', 'chat', 'tasks', 'boards', 'duty', 'org', 'meal', 'directory', 'docs', 'memos', 'alarms', 'utilities', 'launcher', 'myfiles', 'notes', 'meetings', 'plugins'].includes(m.key)).map((m) => (
               <Route key={m.key} path={`${m.path}/*`} element={<ComingSoon title={m.label} />} />
             ))}
             <Route path="/settings" element={<SettingsPage extra={<ConnectionCard onReset={onReset} />} />} />
@@ -195,6 +215,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
       </div>
       <StatusBar />
       <TransferPanel />
+      <ChatDock />
       <CaptureDialog />
     </div>
   )

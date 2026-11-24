@@ -34,7 +34,7 @@ interface EventRow {
   my_response: EventOccurrenceDto['myResponse']
 }
 
-const SELECT = `SELECT e.*, m.name AS author_name,
+const SELECT = `SELECT e.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS author_name,
   (SELECT COUNT(*) FROM event_attendees a WHERE a.event_id = e.id) AS attendee_count,
   (SELECT response FROM event_attendees a WHERE a.event_id = e.id AND a.member_id = ?) AS my_response
   FROM events e JOIN members m ON m.id = e.created_by`

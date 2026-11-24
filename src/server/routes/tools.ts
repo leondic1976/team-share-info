@@ -33,9 +33,9 @@ interface SentAlarmRow {
   dismissed_at: number | null
 }
 
-const MEMO_SELECT = `SELECT s.*, m.name AS author_name, c.name AS checked_name FROM shared_memos s
+const MEMO_SELECT = `SELECT s.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS author_name, CASE WHEN IFNULL(LENGTH(c.nickname), 0) = 0 THEN c.name ELSE c.name || char(40) || c.nickname || char(41) END AS checked_name FROM shared_memos s
   JOIN members m ON m.id = s.created_by LEFT JOIN members c ON c.id = s.checked_by`
-const ALARM_SELECT = `SELECT a.*, f.name AS from_name, t.name AS to_name FROM sent_alarms a
+const ALARM_SELECT = `SELECT a.*, CASE WHEN IFNULL(LENGTH(f.nickname), 0) = 0 THEN f.name ELSE f.name || char(40) || f.nickname || char(41) END AS from_name, CASE WHEN IFNULL(LENGTH(t.nickname), 0) = 0 THEN t.name ELSE t.name || char(40) || t.nickname || char(41) END AS to_name FROM sent_alarms a
   JOIN members f ON f.id = a.from_id JOIN members t ON t.id = a.to_id`
 
 /** Undismissed alarms are re-delivered on reconnect for this long (6.12). */

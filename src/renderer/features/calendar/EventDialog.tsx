@@ -1,3 +1,4 @@
+import { sendOrQueue } from '@renderer/lib/outbox'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { NotebookText, Video } from 'lucide-react'
@@ -248,6 +249,9 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
     if (f.busy || f.busyEventId) await syncBusy(id)
   }
 
+  /** Changing a shared event that exists needs the server; a new one can wait in the outbox. */
+  const existingShared = target.origin === 'server' && !!target.id
+
   const saveServer = async (mode: EditMode): Promise<void> => {
     const body = {
       kind: f.kind === 'absence' ? 'absence' : 'team',
@@ -265,7 +269,7 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
       const times = mode === 'all' && isRecurringExisting ? seriesTimes() : { startAt: f.start, endAt: f.end }
       await api.patch(`/api/events/${target.id}`, { ...body, ...times, mode, occurrenceStart: target.occurrence, rrule: mode === 'this' ? null : f.rrule })
     } else {
-      await api.post('/api/events', { ...body, startAt: f.start, endAt: f.end })
+      await sendOrQueue({ kind: 'event', label: `일정: ${f.title.trim().slice(0, 60)}`, path: '/api/events', body: { ...body, startAt: f.start, endAt: f.end } })
     }
   }
 
@@ -373,7 +377,7 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
                   <Download /> 개인 일정으로 옮기기
                 </Button>
               )}
-              <Button onClick={save} disabled={busyAct || (f.kind !== 'personal' && !online)}>
+              <Button onClick={save} disabled={busyAct || (f.kind !== 'personal' && !online && existingShared)}>
                 <Save /> 저장
               </Button>
             </>
@@ -519,7 +523,9 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
               <Editor value={f.bodyHtml} onChange={(h) => set('bodyHtml', h)} minHeight={100} />
             </Field>
             {target.origin === 'server' && server && server.attendees.length > 0 && <AttendeesBlock event={server} onChanged={refresh} />}
-            {f.kind !== 'personal' && !online && <p className="text-sm text-important">서버에 연결되어 있지 않아 공유 일정을 저장할 수 없습니다.</p>}
+            {f.kind !== 'personal' && !online && (
+              <p className="text-sm text-important">{existingShared ? '서버가 꺼져 있어 이미 있는 공유 일정은 고칠 수 없습니다. 서버에 연결된 뒤 고치세요.' : '서버가 꺼져 있습니다. 저장하면 이 PC에 보관했다가 서버에 연결되면 자동으로 올립니다.'}</p>
+            )}
             {err && <p className="text-sm text-urgent">{err}</p>}
           </div>
         )}

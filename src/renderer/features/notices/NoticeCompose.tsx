@@ -1,3 +1,4 @@
+import { sendOrQueue } from '@renderer/lib/outbox'
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Send } from 'lucide-react'
@@ -8,7 +9,7 @@ import { Editor } from '@renderer/components/Editor'
 import { ScopePicker, defaultScope, scopeIsValid } from '@renderer/components/ScopePicker'
 import { AttachmentInput, type Att } from '@renderer/components/Attachments'
 import { Field } from '@renderer/features/setup/SetupFrame'
-import { api, errorMessage } from '@renderer/lib/api'
+import { errorMessage } from '@renderer/lib/api'
 import { useSpace } from '@renderer/app/space-store'
 import type { NoticeLevel, NoticeSummaryDto } from '@shared/schemas/notices'
 import type { ScopeInput } from '@shared/schemas/scope'
@@ -59,29 +60,35 @@ export function NoticeCompose({ open, onClose, onCreated }: { open: boolean; onC
 
   const send = useMutation({
     mutationFn: () =>
-      api.post<NoticeSummaryDto>('/api/notices', {
-        level,
-        title,
-        bodyHtml: body,
-        scope,
-        requireAck,
-        replyOptions: requireAck
-          ? replies
-              .split(',')
-              .map((x) => x.trim())
-              .filter(Boolean)
-          : [],
-        pinned,
-        publishAt: schedule ? new Date(schedule).getTime() : null,
-        expiresAt: expires ? new Date(expires).getTime() : null,
-        renotifyMinutes: level === 'urgent' && renotify ? Number(renotify) : null,
-        attachmentIds: atts.map((a) => a.id)
+      sendOrQueue<NoticeSummaryDto>({
+        kind: 'notice',
+        label: `공지: ${title.trim().slice(0, 60)}`,
+        path: '/api/notices',
+        body: {
+          level,
+          title,
+          bodyHtml: body,
+          scope,
+          requireAck,
+          replyOptions: requireAck
+            ? replies
+                .split(',')
+                .map((x) => x.trim())
+                .filter(Boolean)
+            : [],
+          pinned,
+          publishAt: schedule ? new Date(schedule).getTime() : null,
+          expiresAt: expires ? new Date(expires).getTime() : null,
+          renotifyMinutes: level === 'urgent' && renotify ? Number(renotify) : null,
+          attachmentIds: atts.map((a) => a.id)
+        }
       }),
-    onSuccess: (n) => {
+    onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ['notices'] })
       reset()
       onClose()
-      onCreated(n.id)
+      // kept for later (server off): there is no notice to open yet
+      if (!r.queued) onCreated(r.data.id)
     },
     onError: (e) => setErr(errorMessage(e))
   })

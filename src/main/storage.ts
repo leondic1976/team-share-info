@@ -8,7 +8,7 @@ import { Db } from '../node/sqlite'
 import { readSetting, writeSetting } from '../server/settings'
 import { isProtected } from './files/fm'
 import { driveUsable } from './netinfo'
-import { PROFILE } from './paths'
+import { PROFILE, seatSubPath } from './paths'
 
 /**
  * Where data lives (6.20 저장 위치 변경).
@@ -55,7 +55,10 @@ export function driveLocalDir(): string | null {
   } catch {
     // keep the generic name
   }
-  return join('D:\\', PROFILE ? `TeamHub-${PROFILE}` : 'TeamHub', user)
+  const dir = join('D:\\', PROFILE ? `TeamHub-${PROFILE}` : 'TeamHub', user)
+  // shared PC: the people share the Windows account, so everyone but the first user gets a folder below it
+  const seat = seatSubPath()
+  return seat ? join(dir, seat) : dir
 }
 
 /** A new installation keeps personal data on the D: drive when there is one, else in the app data folder. */

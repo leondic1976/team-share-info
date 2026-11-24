@@ -1,0 +1,108 @@
+/*
+ * Org chart (조직도): a top-down tree drawn with nested lists. Every <li> is one department
+ * (its box, then a <ul> of the departments below it); the connector lines are borders of
+ * pseudo-elements, so they follow the layout without any measuring.
+ */
+.org-tree,
+.org-tree ul {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.org-tree {
+  --org-gap: 1.6rem;
+  --org-line: color-mix(in srgb, var(--foreground) 38%, transparent);
+}
+.org-tree ul {
+  padding-top: var(--org-gap);
+}
+.org-tree li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--org-gap) 0.6rem 0;
+}
+.org-tree > li {
+  padding-top: 0;
+}
+/* from a box down to the bar over its children */
+.org-tree ul::before,
+/* from the bar down to each child */
+.org-tree li::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: var(--org-gap);
+  margin-left: -1px;
+  border-left: 2px solid var(--org-line);
+}
+/* the bar: each child draws its part, the first and the last only up to their middle */
+.org-tree li::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  border-top: 2px solid var(--org-line);
+}
+.org-tree li:first-child::before {
+  left: 50%;
+}
+.org-tree li:last-child::before {
+  right: 50%;
+}
+.org-tree li:only-child::before,
+.org-tree > li::before,
+.org-tree > li::after {
+  display: none;
+}
+
+.org-clamp-2 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* dragging the empty area moves the chart */
+.org-canvas {
+  cursor: grab;
+}
+.org-canvas.org-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+@page orgchart {
+  size: A4 landscape;
+  margin: 10mm;
+}
+@media print {
+  .org-page {
+    page: orgchart;
+    height: auto !important;
+  }
+  .org-canvas {
+    overflow: visible !important;
+    height: auto !important;
+    padding: 0 !important;
+  }
+  .org-tree {
+    --org-line: #64748b;
+  }
+  .org-box,
+  .org-person,
+  .org-list-dept {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+  /* search dimming and highlights are for the screen */
+  .org-person {
+    opacity: 1 !important;
+  }
+}

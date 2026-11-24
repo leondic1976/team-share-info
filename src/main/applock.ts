@@ -1,9 +1,10 @@
 import { BrowserWindow, powerMonitor } from 'electron'
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import log from 'electron-log/main'
 import type { LockState } from '../shared/ipc'
+import { FREE_TRIES, newRecoveryCode, normRecoveryCode as normCode, pinMatches as matches, sealPin as sealed, waitAfter } from '../node/pin'
 import { userDataPath } from './paths'
+import { activeSeat, activeSeatWaitMs, seatIdleMinutes, verifyActiveSeat } from './seats'
 
 /**
  * Program lock (optional, off until the user makes a PIN in the settings): a 4-digit PIN is
@@ -25,10 +26,16 @@ interface LockFile {
 
 const FILE = (): string => userDataPath('app-lock.json')
 export const PIN_RE = /^\d{4}$/
-const FREE_TRIES = 5
 
 let file: LockFile | null | undefined
 let locked = true
+/**
+ * Shared PC (seats.ts): the lock is not optional and uses the PIN of the signed-in person;
+ * the optional PIN above is not asked while that mode is on. Starts unlocked: the person
+ * has just typed the PIN to sign in.
+ */
+let seatLocked = false
+const SEAT_ONLY = '공용 PC 사용 중에는 사용자 PIN으로 잠급니다. PIN은 설정의 "공용 PC 사용"에서 바꿉니다.'
 
 function load(): LockFile | null {
   if (file !== undefined) return file
@@ -46,25 +53,9 @@ function save(next: LockFile): void {
   writeFileSync(FILE(), JSON.stringify(next))
 }
 
-const digest = (secret: string, salt: string): Buffer => scryptSync(secret, Buffer.from(salt, 'hex'), 32)
-const matches = (secret: string, salt: string, hash: string): boolean => {
-  const want = Buffer.from(hash, 'hex')
-  const got = digest(secret, salt)
-  return want.length === got.length && timingSafeEqual(want, got)
-}
-const sealed = (secret: string): { salt: string; hash: string } => {
-  const salt = randomBytes(16).toString('hex')
-  return { salt, hash: digest(secret, salt).toString('hex') }
-}
-const normCode = (code: string): string => code.toUpperCase().replace(/[^A-Z0-9]/g, '')
-
-function newRecoveryCode(): string {
-  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  const c = [...randomBytes(8)].map((b) => abc[b % abc.length]).join('')
-  return `${c.slice(0, 4)}-${c.slice(4)}`
-}
-
 export function lockState(): LockState {
+  const seat = activeSeat()
+  if (seat) return { hasPin: true, locked: seatLocked, waitMs: activeSeatWaitMs(), seat: { name: seat.name, owner: seat.owner } }
   const f = load()
   return { hasPin: !!f, locked: !!f && locked, waitMs: Math.max(0, (f?.waitUntil ?? 0) - Date.now()) }
 }
@@ -74,8 +65,17 @@ function changed(): void {
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('lock:changed', st)
 }
 
+/** Shared mode was turned on or off: every window learns which lock applies now. */
+export function lockModeChanged(): void {
+  seatLocked = false
+  // the optional PIN was not asked while the shared mode was on; it is not asked out of the blue now
+  locked = false
+  changed()
+}
+
 /** Turn the lock on: make the PIN. Returns the recovery code, which is shown once and not kept readable. */
 export function createPin(pin: string): { ok: boolean; recovery?: string; error?: string } {
+  if (activeSeat()) return { ok: false, error: SEAT_ONLY }
   if (load()) return { ok: false, error: 'PIN이 이미 있습니다.' }
   if (!PIN_RE.test(pin)) return { ok: false, error: 'PIN은 숫자 4자리입니다.' }
   const recovery = newRecoveryCode()
@@ -91,7 +91,7 @@ export function createPin(pin: string): { ok: boolean; recovery?: string; error?
 /** Count a wrong try; from the fifth on, each one makes the wait longer (30s, 1min, ... 10min). */
 function wrong(f: LockFile): { waitMs: number; left: number } {
   const fails = f.fails + 1
-  const waitMs = fails >= FREE_TRIES ? Math.min(600_000, 30_000 * 2 ** (fails - FREE_TRIES)) : 0
+  const waitMs = waitAfter(fails)
   save({ ...f, fails, waitUntil: waitMs ? Date.now() + waitMs : 0 })
   return { waitMs, left: Math.max(0, FREE_TRIES - fails) }
 }
@@ -110,6 +110,14 @@ function check(pin: string): { ok: boolean; error?: string; waitMs?: number; lef
 }
 
 export function unlock(pin: string): { ok: boolean; error?: string; waitMs?: number } {
+  if (activeSeat()) {
+    const s = verifyActiveSeat(pin)
+    if (s.ok) {
+      seatLocked = false
+      changed()
+    }
+    return { ok: s.ok, error: s.error, waitMs: s.waitMs }
+  }
   const r = check(pin)
   if (r.ok) {
     locked = false
@@ -119,6 +127,7 @@ export function unlock(pin: string): { ok: boolean; error?: string; waitMs?: num
 }
 
 export function changePin(oldPin: string, newPin: string): { ok: boolean; error?: string; waitMs?: number } {
+  if (activeSeat()) return { ok: false, error: SEAT_ONLY }
   if (!PIN_RE.test(newPin)) return { ok: false, error: '새 PIN은 숫자 4자리입니다.' }
   const r = check(oldPin)
   if (!r.ok) return r
@@ -130,6 +139,7 @@ export function changePin(oldPin: string, newPin: string): { ok: boolean; error?
 
 /** Forgotten PIN: the recovery code allows a new PIN and is replaced by a new code. */
 export function recoverPin(code: string, newPin: string): { ok: boolean; recovery?: string; error?: string; waitMs?: number } {
+  if (activeSeat()) return { ok: false, error: SEAT_ONLY }
   const f = load()
   if (!f) return { ok: false, error: 'PIN이 없습니다.' }
   if (!PIN_RE.test(newPin)) return { ok: false, error: '새 PIN은 숫자 4자리입니다.' }
@@ -150,6 +160,7 @@ export function recoverPin(code: string, newPin: string): { ok: boolean; recover
 
 /** Turn the lock off again (needs the PIN). */
 export function removePin(pin: string): { ok: boolean; error?: string; waitMs?: number } {
+  if (activeSeat()) return { ok: false, error: SEAT_ONLY }
   const r = check(pin)
   if (!r.ok) return r
   file = null
@@ -161,12 +172,32 @@ export function removePin(pin: string): { ok: boolean; error?: string; waitMs?: 
 }
 
 export function lockNow(): void {
+  if (activeSeat()) {
+    if (seatLocked) return
+    seatLocked = true
+    changed()
+    return
+  }
   if (!load() || locked) return
   locked = true
+  changed()
+}
+
+/** After the shared-PC lock was opened with the PC 책임자's recovery code (seats.ts made the new PIN). */
+export function seatUnlocked(): void {
+  seatLocked = false
   changed()
 }
 
 export function startAppLock(): void {
   // whoever sits down after Windows was locked has to know the PIN of the program too
   powerMonitor.on('lock-screen', () => lockNow())
+  // Shared PC: the next person may sit down without Windows being locked in between, so the
+  // program locks itself when the PC was not touched for a while. Only the screen is covered;
+  // nothing is closed, so writing in progress is kept. (E2E runs unattended: see app:idleSeconds.)
+  if (process.env.TEAMHUB_E2E && !process.env.TEAMHUB_E2E_IDLE) return
+  setInterval(() => {
+    if (!activeSeat() || seatLocked) return
+    if (powerMonitor.getSystemIdleTime() >= seatIdleMinutes() * 60) lockNow()
+  }, 15_000).unref()
 }

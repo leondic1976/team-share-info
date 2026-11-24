@@ -15,6 +15,10 @@ import { MenuCard } from './MenuCard'
 import { StorageCard } from './StorageCard'
 import { WallpaperCard } from './WallpaperCard'
 import { LockCard } from './LockCard'
+import { SharedPcCard } from './SharedPcCard'
+import { OrgManageCard } from './OrgManageCard'
+import { ProfileTab } from '@renderer/features/directory/DirectoryPage'
+import { useConn } from '@renderer/app/conn-store'
 import type { ReactNode } from 'react'
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }): React.JSX.Element {
@@ -40,6 +44,7 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
   const app = useSession((s) => s.app)
   const [autostart, setAutostartState] = useState(false)
   const [msg, setMsg] = useState('')
+  const hasAccount = useConn((s) => !!s.memberId)
 
   useEffect(() => {
     void invoke('app:getAutostart').then(setAutostartState)
@@ -49,6 +54,13 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
     <div className="flex h-full flex-col">
       <PageHeader title="설정" description="이 PC에서만 적용되는 설정입니다." />
       <div className="flex-1 space-y-4 overflow-y-auto p-5">
+        {hasAccount && (
+          <section data-testid="my-profile">
+            <h2 className="mb-1.5 text-sm font-semibold">내 정보</h2>
+            <p className="mb-2 text-xs text-muted-foreground">팀원에게 보이는 내 정보입니다. 서버에 저장되며, 서버 PC(최종관리자)가 정해 둔 항목은 여기서 바꿀 수 없습니다.</p>
+            <ProfileTab />
+          </section>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>화면</CardTitle>
@@ -163,9 +175,13 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
 
         <LockCard />
 
+        <SharedPcCard />
+
         <StorageCard kind="local" />
 
         {extra}
+
+        <OrgManageCard />
 
         <MenuCard />
 

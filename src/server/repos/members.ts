@@ -1,6 +1,7 @@
 import type { Db } from '../../node/sqlite'
 import { newId } from '../../node/sqlite'
 import type { MemberDto, Presence, Role } from '../../shared/schemas/auth'
+import type { DepartmentDto } from '../../shared/schemas/org'
 
 export interface MemberRow {
   id: string
@@ -17,12 +18,16 @@ export interface MemberRow {
   last_seen_at: number | null
   nickname: string | null
   admin_fields: string
+  rank: string | null
+  org_sort: number
 }
 
 const SELECT = `SELECT m.*, d.name AS dept_name FROM members m LEFT JOIN departments d ON d.id = m.dept_id`
 
-export function toMemberDto(r: MemberRow, presence: Presence = 'offline'): MemberDto {
+/** `ownerId`: the server PC's account (ownerMemberId), which marks the 최종관리자. */
+export function toMemberDto(r: MemberRow, presence: Presence = 'offline', ownerId = ''): MemberDto {
   return {
+    isOwner: !!ownerId && r.id === ownerId,
     id: r.id,
     name: r.name,
     deptId: r.dept_id,
@@ -37,7 +42,9 @@ export function toMemberDto(r: MemberRow, presence: Presence = 'offline'): Membe
     lastSeenAt: r.last_seen_at,
     presence,
     nickname: r.nickname,
-    adminFields: adminFieldsOf(r)
+    adminFields: adminFieldsOf(r),
+    rank: r.rank ?? null,
+    orgSort: r.org_sort ?? 0
   }
 }
 
@@ -101,7 +108,9 @@ export function updateMember(db: Db, id: string, patch: Record<string, string | 
     mobile: 'mobile',
     duty: 'duty',
     statusMessage: 'status_message',
-    nickname: 'nickname'
+    nickname: 'nickname',
+    rank: 'rank',
+    orgSort: 'org_sort'
   }
   const sets: string[] = []
   const vals: (string | number | null)[] = []
@@ -120,10 +129,10 @@ export function countAdmins(db: Db): number {
   return db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM members WHERE role = 'admin' AND status = 'active'`)?.n ?? 0
 }
 
-export function listDepartments(db: Db): { id: string; name: string; parentId: string | null; sort: number }[] {
+export function listDepartments(db: Db): DepartmentDto[] {
   return db
-    .all<{ id: string; name: string; parent_id: string | null; sort: number }>(
-      'SELECT id, name, parent_id, sort FROM departments ORDER BY sort, name'
+    .all<{ id: string; name: string; parent_id: string | null; sort: number; head_id: string | null; phone: string | null; duties: string | null; location: string | null }>(
+      'SELECT id, name, parent_id, sort, head_id, phone, duties, location FROM departments ORDER BY sort, name'
     )
-    .map((d) => ({ id: d.id, name: d.name, parentId: d.parent_id, sort: d.sort }))
+    .map((d) => ({ id: d.id, name: d.name, parentId: d.parent_id, sort: d.sort, headId: d.head_id, phone: d.phone, duties: d.duties, location: d.location }))
 }

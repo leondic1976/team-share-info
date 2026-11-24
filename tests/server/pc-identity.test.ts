@@ -142,7 +142,7 @@ describe('one PC, one account (unique value of the PC)', () => {
     expect((await s.req(s.admin, { method: 'POST', url: '/api/admin/blocked-pcs', payload: { deviceId: serverDevice, reason: '실수' } })).statusCode).toBe(400)
     const boss = await approve(s, await ask(s, { name: '부관리자', pcName: 'PC-BOSS', winUser: 'boss', pcUid: UID_B }), 'boss')
     await s.req(s.admin, { method: 'PATCH', url: `/api/admin/members/${boss.memberId}`, payload: { role: 'admin' } })
-    expect((await s.req(s.admin, { method: 'POST', url: '/api/admin/blocked-pcs', payload: { deviceId: boss.deviceId, reason: '실수' } })).json().error.message).toContain('관리자')
+    expect((await s.req(s.admin, { method: 'POST', url: '/api/admin/blocked-pcs', payload: { deviceId: boss.deviceId, reason: '실수' } })).json().error.message).toContain('서무')
     const stranger = await ask(s, { name: '모르는사람', pcName: 'PC-X', winUser: 'x', pcUid: UID_A })
     expect((await s.req(s.admin, { method: 'POST', url: '/api/admin/blocked-pcs', payload: { requestId: stranger.requestId, reason: '모르는 PC의 반복 신청' } })).statusCode).toBe(200)
     expect((await s.req(s.admin, { method: 'GET', url: '/api/admin/join-requests' })).json().data).toEqual([])
