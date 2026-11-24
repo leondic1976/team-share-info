@@ -92,6 +92,11 @@ export function servePlugins(): void {
   } catch (e) {
     log.warn('[plugins] could not retire built-in plugins', e)
   }
+  try {
+    refreshBuiltinPlugins()
+  } catch (e) {
+    log.warn('[plugins] could not refresh built-in plugins', e)
+  }
   protocol.handle(PLUGIN_SCHEME, async (req) => {
     const u = new URL(req.url)
     const id = u.hostname
@@ -176,6 +181,28 @@ export async function fetchCatalog(): Promise<CatalogPlugin[]> {
   }
   // an older download site may still list what is now part of the app
   return [...byId.values()].filter((p) => !isBuiltinApp(p.id)).sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+}
+
+/**
+ * Extensions shipped with the program follow the program: an installed one that is older than
+ * the copy inside this version is replaced when the program starts (no internet, no question).
+ * Otherwise an update of TeamHub would leave the old extension - with its old look - in place
+ * until somebody pressed "update" by hand. On/off and the extension's data are kept.
+ */
+function refreshBuiltinPlugins(): void {
+  const r = registry()
+  for (const c of builtinCatalog()) {
+    const have = r[c.id]
+    if (!have || compareVersions(c.version, have.manifest.version) <= 0) continue
+    try {
+      const wasOn = have.enabled
+      installBuiltin(c.id)
+      if (!wasOn) setPluginEnabled(c.id, false)
+      log.info(`[plugins] ${c.id} ${have.manifest.version} -> ${c.version} (shipped with this version)`)
+    } catch (e) {
+      log.warn(`[plugins] could not update ${c.id}`, e)
+    }
+  }
 }
 
 /** Install a plugin shipped with the app: no network, checked against its catalog hash. */

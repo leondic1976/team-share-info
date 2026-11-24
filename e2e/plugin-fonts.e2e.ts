@@ -1,7 +1,7 @@
 import { describe, it, afterAll, expect } from 'vitest'
 import { go, launch, runWizard, type Launched } from './helpers'
 // Extension frames are sandboxed and offline: the program serves them its fonts (__fonts.css).
-describe('extension frames use the program fonts', () => {
+describe('extension frames use the program fonts; shipped extensions follow the program', () => {
   let a: Launched
   afterAll(async () => {
     await a?.close()
@@ -19,5 +19,25 @@ describe('extension frames use the program fonts', () => {
       return [document.fonts.check("14px 'Pretendard Variable'", '가'), document.fonts.check("20px 'Do Hyeon'", '관'), leak]
     })
     expect(r).toEqual([true, true, 'blocked'])
+  }, 120000)
+  it('an installed extension older than the copy shipped with the program is replaced at the next start', async () => {
+    const r = await a.page.evaluate(() => window.teamhub.invoke('plugins:installCatalog', { id: 'meal', builtin: true }))
+    expect(r.ok, r.error ?? '').toBe(true)
+    const shipped = r.data!.version
+    // make it look like the copy an older TeamHub installed, switched off by the user
+    await a.page.evaluate(async () => {
+      const reg = (await window.teamhub.invoke('local:kv.get', { key: 'plugins' })) as Record<string, { manifest: { version: string }; enabled: boolean }>
+      reg.meal.manifest.version = '0.0.1'
+      reg.meal.enabled = false
+      await window.teamhub.invoke('local:kv.set', { key: 'plugins', value: reg })
+    })
+    const userData = a.userData
+    await a.close({ keepData: true })
+    a = await launch({ userData, profile: 'e2e-fonts' })
+    await a.page.getByTestId('status-bar').waitFor({ timeout: 20000 })
+    const meal = (await a.page.evaluate(() => window.teamhub.invoke('plugins:list', undefined))).find((p) => p.manifest.id === 'meal')!
+    expect(meal.manifest.version).toBe(shipped)
+    // what the user chose stays
+    expect(meal.enabled).toBe(false)
   }, 120000)
 })
