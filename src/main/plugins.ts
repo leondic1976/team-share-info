@@ -64,7 +64,10 @@ export const listPlugins = (): InstalledPlugin[] => Object.values(registry()).so
 
 /** Must run before app ready. */
 export function registerPluginScheme(): void {
-  protocol.registerSchemesAsPrivileged([{ scheme: PLUGIN_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: false, corsEnabled: false, stream: true } }])
+  // corsEnabled: fonts are always requested in CORS mode, and for a sandboxed frame (opaque
+  // origin) even its own scheme is cross-origin. Only the font responses carry the allow header;
+  // fetch stays off (supportFetchAPI false, connect-src 'none' in the CSP).
+  protocol.registerSchemesAsPrivileged([{ scheme: PLUGIN_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: false, corsEnabled: true, stream: true } }])
 }
 
 /**
@@ -97,6 +100,15 @@ export function servePlugins(): void {
     if (!builtin && (!p || !p.enabled || !PLUGIN_ID_RE.test(id))) return new Response('not installed', { status: 404 })
     const rel = decodeURIComponent(u.pathname).replace(/^\/+/, '') || (p ? p.manifest.entry : 'index.html')
     if (rel === '__sdk.js') return new Response(PLUGIN_SDK, { headers: { 'content-type': MIME['.js'], 'content-security-policy': CSP } })
+    // the program's fonts, the same for every frame (resources/fonts, scripts/build-fonts.mjs)
+    if (rel === '__fonts.css' || /^__font\/[\w.-]+\.woff2$/.test(rel)) {
+      const f = join(resourcePath('fonts'), rel === '__fonts.css' ? 'fonts.css' : rel.slice('__font/'.length))
+      if (!existsSync(f)) return new Response(rel === '__fonts.css' ? '' : 'not found', { status: rel === '__fonts.css' ? 200 : 404, headers: { 'content-type': MIME['.css'] } })
+      const r = await net.fetch(pathToFileURL(f).toString())
+      // The frames are sandboxed (opaque origin), so a font request is cross-origin for them and
+      // is refused without this header. The fonts are public files; nothing else is opened up.
+      return new Response(r.body, { headers: { 'content-type': rel === '__fonts.css' ? MIME['.css'] : 'font/woff2', 'content-security-policy': CSP, 'cache-control': 'max-age=86400', 'access-control-allow-origin': '*' } })
+    }
     const base = builtin ? resourcePath(BUILTIN_APPS[id]) : join(root(), id)
     const file = normalize(join(base, rel))
     if (!file.startsWith(base + '\\') || !ALLOWED_EXT.has(extname(file).toLowerCase()) || !existsSync(file)) return new Response('not found', { status: 404 })

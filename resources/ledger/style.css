@@ -360,7 +360,8 @@ input.title:hover {
 }
 .addr {
   min-width: 56px;
-  font-family: Consolas, monospace;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
 .fx {
@@ -369,7 +370,8 @@ input.title:hover {
 }
 #fx {
   flex: 1;
-  font-family: Consolas, 'Malgun Gothic', monospace;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
 }
 .note {
   padding: 6px 12px;
@@ -689,7 +691,8 @@ table.fn td {
   vertical-align: top;
 }
 table.fn td:first-child {
-  font-family: Consolas, monospace;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 

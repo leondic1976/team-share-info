@@ -5,6 +5,8 @@
  * check records into their own entry of the head room. */
 ;(function () {
   'use strict'
+  // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
+  const icon = (n, o) => (window.TeamHub.icon ? window.TeamHub.icon(n, o) : '')
   const $ = (id) => document.getElementById(id)
   const B = window.Bipum
   const call = (m, p) => window.TeamHub.call(m, p)
@@ -199,11 +201,11 @@
     $('fLoc').innerHTML = options(B.locsOf(items), filter.loc, '위치 전체')
     const list = visible()
     if (!items.length) {
-      $('listBody').innerHTML = empty('🗄️', '등록된 물품이 없습니다', isManager() ? '[＋ 물품 등록]으로 하나씩 넣거나, 엑셀 자료를 [CSV 가져오기]로 한 번에 넣으세요.' : '담당자가 물품을 등록하면 여기에 나타납니다.', isManager() ? '<div class="btns center"><button id="tplBtn">CSV 양식 받기</button></div>' : '')
+      $('listBody').innerHTML = empty(icon('archive'), '등록된 물품이 없습니다', isManager() ? '[＋ 물품 등록]으로 하나씩 넣거나, 엑셀 자료를 [CSV 가져오기]로 한 번에 넣으세요.' : '담당자가 물품을 등록하면 여기에 나타납니다.', isManager() ? '<div class="btns center"><button id="tplBtn">CSV 양식 받기</button></div>' : '')
       return
     }
     if (!list.length) {
-      $('listBody').innerHTML = empty('🔍', '맞는 물품이 없습니다', '찾는 말이나 필터를 바꿔 보세요.')
+      $('listBody').innerHTML = empty(icon('search'), '맞는 물품이 없습니다', '찾는 말이나 필터를 바꿔 보세요.')
       return
     }
     const th = (key, label, cls) => `<th class="${cls || ''}" data-sort="${key}" aria-sort="${sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}">${label}${sort.key === key ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}</th>`
@@ -436,7 +438,7 @@
         <button id="printBtn" ${list.length ? '' : 'disabled'}>인쇄</button>
       </div>
       <p class="muted small no-print">대여하거나 소모품을 받으려면 [대장]에서 물품을 눌러 기록합니다. 빌린 사람과 담당자가 반납을 기록할 수 있습니다.</p>
-      ${list.length ? loanTable(list.slice(0, 500), true) : empty('📦', loanView === 'open' ? '대여 중인 물품이 없습니다' : '기록이 없습니다', '대여·반납과 소모품 지급 기록이 여기에 모입니다.')}`
+      ${list.length ? loanTable(list.slice(0, 500), true) : empty(icon('package'), loanView === 'open' ? '대여 중인 물품이 없습니다' : '기록이 없습니다', '대여·반납과 소모품 지급 기록이 여기에 모입니다.')}`
   }
   function returnLoan(key) {
     const l = loans.find((x) => x.key === key)
@@ -494,7 +496,7 @@
     if (!a) {
       const last = book.head.shared.last
       $('main').innerHTML = `<div class="wrap">
-        ${empty('📋', '진행 중인 재물조사가 없습니다', isManager() ? '재물조사를 시작하면 대장을 볼 수 있는 모두가 물품을 나누어 확인할 수 있습니다.' : '담당자가 재물조사를 시작하면 여기서 물품을 확인합니다.', isManager() ? `<div class="btns center"><input id="auditTitle" maxlength="40" value="${esc(`${today().slice(0, 4)}년 ${Number(today().slice(5, 7))}월 재물조사`)}" aria-label="재물조사 이름" /><button class="primary" id="auditStart" ${items.length ? '' : 'disabled'}>재물조사 시작</button></div>` : '')}
+        ${empty(icon('clipboard-list'), '진행 중인 재물조사가 없습니다', isManager() ? '재물조사를 시작하면 대장을 볼 수 있는 모두가 물품을 나누어 확인할 수 있습니다.' : '담당자가 재물조사를 시작하면 여기서 물품을 확인합니다.', isManager() ? `<div class="btns center"><input id="auditTitle" maxlength="40" value="${esc(`${today().slice(0, 4)}년 ${Number(today().slice(5, 7))}월 재물조사`)}" aria-label="재물조사 이름" /><button class="primary" id="auditStart" ${items.length ? '' : 'disabled'}>재물조사 시작</button></div>` : '')}
         ${last ? `<section class="card"><h3>지난 재물조사</h3><b>${esc(last.title)}</b><div class="meta"><span>${B.ymd(last.at)} ~ ${B.ymd(last.closedAt)}</span><span>대상 ${num(last.total)}</span><span>확인 ${num(last.ok)}</span><span>이상 ${num(last.bad)}</span><span>없음 ${num(last.missing)}</span><span>미확인 ${num(last.todo)}</span><span>수량 차이 ${num(last.diff)}</span></div></section>` : ''}
       </div>`
       return
@@ -514,7 +516,7 @@
       ${
         list.length
           ? `<table class="grid audit"><thead><tr><th>관리번호</th><th>품명</th><th>위치·사용자</th><th class="r">장부 수량</th><th class="r">조사 수량</th><th class="no-print">결과</th><th class="print-only">결과</th><th>메모</th><th>조사한 사람</th></tr></thead><tbody>${list.slice(0, 1000).map(auditRow).join('')}</tbody></table>`
-          : empty('✅', auditView === 'todo' ? '모두 확인했습니다' : '해당하는 물품이 없습니다', auditView === 'todo' ? '[전체]에서 결과를 볼 수 있습니다.' : '')
+          : empty(icon('circle-check'), auditView === 'todo' ? '모두 확인했습니다' : '해당하는 물품이 없습니다', auditView === 'todo' ? '[전체]에서 결과를 볼 수 있습니다.' : '')
       }`
   }
   function doCheck(tr, code) {
@@ -566,7 +568,7 @@
           ? `<section class="card"><h3>분류별</h3>${bars(s.byCat, 'count', (r) => `${num(r.count)}개 · ${won(r.amount) || '0원'}`) || '<p class="muted small">없음</p>'}</section>
              <section class="card"><h3>상태별</h3>${bars(s.byStatus, 'count', (r) => `${num(r.count)}개 · 수량 ${num(r.qty)}`)}</section>
              <section class="card"><h3>보관 위치별</h3>${bars(s.byLoc, 'count', (r) => `${num(r.count)}개 · 수량 ${num(r.qty)}`) || '<p class="muted small">없음</p>'}</section>`
-          : empty('📊', '등록된 물품이 없습니다', '물품을 등록하면 분류·상태·위치별 현황이 보입니다.')
+          : empty(icon('chart-column'), '등록된 물품이 없습니다', '물품을 등록하면 분류·상태·위치별 현황이 보입니다.')
       }
     </div>`
   }
@@ -698,7 +700,7 @@
     document.querySelector('nav').classList.toggle('hidden', !book)
     document.title = book ? book.head.title : '비품관리대장'
     if (!book) {
-      $('main').innerHTML = empty('🗄️', '비품관리대장을 만드세요', '대장을 만든 사람이 담당자가 되어 물품을 등록하고, 팀원은 찾아보고 대여·지급·재물조사를 기록합니다.', '<div class="btns center"><button class="primary" id="firstBook">＋ 대장 만들기</button></div>')
+      $('main').innerHTML = empty(icon('archive'), '비품관리대장을 만드세요', '대장을 만든 사람이 담당자가 되어 물품을 등록하고, 팀원은 찾아보고 대여·지급·재물조사를 기록합니다.', '<div class="btns center"><button class="primary" id="firstBook">＋ 대장 만들기</button></div>')
       return
     }
     if (tab === 'list') renderList()
@@ -935,7 +937,7 @@
       await load()
       render()
     } catch (e) {
-      $('main').innerHTML = empty('⚠️', '불러오지 못했습니다', e.message || '서버 연결을 확인하세요.')
+      $('main').innerHTML = empty(icon('triangle-alert'), '불러오지 못했습니다', e.message || '서버 연결을 확인하세요.')
     }
   })()
   setInterval(() => void syncClock(), 10 * 60000)

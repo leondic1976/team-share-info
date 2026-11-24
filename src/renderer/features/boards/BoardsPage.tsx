@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { format } from 'date-fns'
-import { Plus, ClipboardList, Pin, Paperclip, MessageSquare, Eye, Vote, Trash2, Settings2, Search, Lock, X } from 'lucide-react'
+import { Plus, ClipboardList, Pin, Paperclip, MessageSquare, Eye, Vote, Trash2, Settings2, Search, Lock, TriangleAlert, X } from 'lucide-react'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -190,7 +190,7 @@ function PostCompose({ board, onClose, onCreated }: { board: BoardDto; onClose: 
             </div>
           </div>
         )}
-        <p className="text-xs text-[var(--notice-fg)]">⚠ 중요 보안 내용, 개인정보, 비공개 정보는 올릴 수 없습니다.</p>
+        <p className="text-xs text-[var(--notice-fg)]"><TriangleAlert className="mr-1 inline size-3.5 align-[-0.15em]" aria-hidden />중요 보안 내용, 개인정보, 비공개 정보는 올릴 수 없습니다.</p>
         {err && <p className="text-sm text-urgent">{err}</p>}
       </div>
     </Dialog>

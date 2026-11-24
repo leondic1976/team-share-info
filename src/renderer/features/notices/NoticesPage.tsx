@@ -14,7 +14,8 @@ import { ScopeTags } from '@renderer/components/ScopePicker'
 import { api, errorMessage } from '@renderer/lib/api'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
-import { useMe } from '@renderer/lib/queries'
+import { useDisplayName, useMe } from '@renderer/lib/queries'
+import { MemberLink } from '@renderer/components/MemberLink'
 import { EmergencyDialog, useCanSendEmergency } from './Emergency'
 import { NOTICE_LEVEL_LABEL, type NoticeDto, type NoticeSummaryDto, type ReceiptDto } from '@shared/schemas/notices'
 import { cn } from '@renderer/lib/utils'
@@ -35,6 +36,7 @@ const fmt = (t: number | null): string => (t ? format(t, 'M/d HH:mm') : '-')
 function ReceiptsBoard({ notice }: { notice: NoticeDto }): React.JSX.Element {
   const [tab, setTab] = useState<'pending' | 'done'>('pending')
   const [msg, setMsg] = useState('')
+  const dn = useDisplayName()
   const q = useQuery({ queryKey: ['notices', notice.id, 'receipts'], queryFn: () => api.get<ReceiptDto[]>(`/api/notices/${notice.id}/receipts`), refetchInterval: 15000 })
   const renotify = useMutation({
     mutationFn: () => api.post<{ count: number; online: number }>(`/api/notices/${notice.id}/renotify`),
@@ -82,7 +84,10 @@ function ReceiptsBoard({ notice }: { notice: NoticeDto }): React.JSX.Element {
               <td className="px-4 py-1.5">
                 <span className="flex items-center gap-1.5">
                   <span className={cn('inline-block size-2 rounded-full', r.online ? 'bg-success' : 'bg-muted-foreground/40')} />
-                  {r.name} <span className="text-xs text-muted-foreground">{r.deptName}</span>
+                  <MemberLink memberId={r.memberId} name={r.name} className="font-medium">
+                    {dn({ id: r.memberId, name: r.name })}
+                  </MemberLink>{' '}
+                  <span className="text-xs text-muted-foreground">{r.deptName}</span>
                 </span>
               </td>
               <td className="text-muted-foreground">{fmt(r.deliveredAt)}</td>

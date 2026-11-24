@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, isSameDay } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { Paperclip, Send, Bell, BellOff, Users, LogOut, Pencil, Loader2, Download, Trash2, Video, MoreHorizontal } from 'lucide-react'
+import { Paperclip, Send, Bell, BellOff, Users, LogOut, Pencil, Loader2, Download, Trash2, Video, MoreHorizontal, TriangleAlert } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Textarea } from '@renderer/components/ui/input'
 import { Dialog } from '@renderer/components/Dialog'
@@ -16,6 +16,9 @@ import { useMe, useMembers } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import type { ConversationChangedPayload, MessageDto, MessageNewPayload } from '@shared/schemas/chat'
 import { useChatUi } from './chat-store'
+import { GROUP_LEAVE_HINT, leaveConversation } from './leave'
+import { convTitle } from './title'
+import { displayName } from '@shared/schemas/auth'
 import { ParticipantsDialog, type ConversationDetail } from './Participants'
 import { cn } from '@renderer/lib/utils'
 import { startMeeting } from '@renderer/features/meetings/MeetingsPage'
@@ -257,12 +260,15 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
     void qc.invalidateQueries({ queryKey: ['chat'] })
   }
   const leave = async (): Promise<void> => {
-    if (!window.confirm('대화방에서 나갈까요?')) return
-    await api.del(`/api/conversations/${id}/members/me`)
-    void qc.invalidateQueries({ queryKey: ['chat'] })
+    if (!c || !(await leaveConversation(c, me?.name ?? ''))) return
     onLeft()
   }
   const report = (e: unknown): void => setErr(errorMessage(e))
+  /** "본명(필명)" of a participant, from the members list */
+  const nameOf = (m: { id: string; name: string }): string => {
+    const full = team?.find((x) => x.id === m.id)
+    return full ? displayName(full) : m.name
+  }
   const menuItem = 'flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted [&_svg]:size-4 [&_svg]:shrink-0'
   // Dialogs opened from a small window go to the document body: inside the window they would be stacked with it, below other layers.
   const layer = (node: ReactNode): ReactNode => (compact ? createPortal(node, document.body) : node)
@@ -279,12 +285,12 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
         {c?.groupColor && <span className="size-3 shrink-0 rounded-full" style={{ background: c.groupColor }} />}
         {other && <PresenceDot presence={other.presence} />}
         <h2 className={cn('truncate font-bold', compact && 'text-sm')} data-testid="conv-title">
-          {c?.title ?? '…'}
+          {c ? convTitle(c, team, me?.id) : '…'}
         </h2>
         <button
           type="button"
           className="shrink-0 cursor-pointer rounded px-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default"
-          title={c ? `${c.members.map((m) => m.name).join(', ')} · 눌러서 참가자 보기` : undefined}
+          title={c ? `${c.members.map((m) => nameOf(m)).join(', ')} · 눌러서 참가자 보기` : undefined}
           disabled={!c}
           onClick={() => setPeople(true)}
           data-testid="conv-count"
@@ -327,11 +333,18 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
                     <Video /> 이 대화방에서 회의 시작
                   </button>
                 )}
-                {c?.kind !== 'group' && (
-                  <button type="button" role="menuitem" className={cn(menuItem, 'text-urgent')} onClick={() => void leave().catch(report)}>
-                    <LogOut /> 대화방 나가기
-                  </button>
-                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={cn(menuItem, 'border-t border-border text-urgent disabled:cursor-not-allowed disabled:opacity-50')}
+                  disabled={!c || c.kind === 'group' || !online}
+                  title={c?.kind === 'group' ? GROUP_LEAVE_HINT : !online ? '서버에 연결되어 있을 때 나갈 수 있습니다.' : undefined}
+                  onClick={() => void leave().catch(report)}
+                  data-testid="dock-leave"
+                >
+                  <LogOut /> 나가기
+                  {c?.kind === 'group' && <span className="ml-auto text-[0.65rem] font-normal text-muted-foreground">그룹에서 나가기</span>}
+                </button>
               </div>
             )}
           </div>
@@ -353,11 +366,11 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
             <Button size="icon-sm" variant="ghost" aria-label="참가자" title="참가자 (추가·내보내기)" disabled={!c} onClick={() => setPeople(true)}>
               <Users />
             </Button>
-            {c?.kind !== 'group' && (
-              <Button size="icon-sm" variant="ghost" aria-label="대화방 나가기" title="대화방 나가기" onClick={() => void leave()}>
+            <span title={c?.kind === 'group' ? GROUP_LEAVE_HINT : '대화방 나가기'}>
+              <Button size="icon-sm" variant="ghost" aria-label="대화방 나가기" disabled={!c || c.kind === 'group' || !online} onClick={() => void leave().catch(report)}>
                 <LogOut />
               </Button>
-            )}
+            </span>
           </div>
         )}
       </div>
@@ -473,7 +486,7 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
           {sending ? <Loader2 className="animate-spin" /> : <Send />}
         </Button>
       </div>
-      <p className={cn('shrink-0 text-[var(--notice-fg)]', compact ? 'px-2.5 pb-1 text-[0.65rem]' : 'px-4 pb-1.5 text-[0.7rem]')}>⚠ 중요 보안 내용, 개인정보, 비공개 정보는 보낼 수 없습니다.</p>
+      <p className={cn('shrink-0 text-[var(--notice-fg)]', compact ? 'px-2.5 pb-1 text-[0.65rem]' : 'px-4 pb-1.5 text-[0.7rem]')}><TriangleAlert className="mr-1 inline size-3.5 align-[-0.15em]" aria-hidden />중요 보안 내용, 개인정보, 비공개 정보는 보낼 수 없습니다.</p>
       {people && c && layer(<ParticipantsDialog conv={c} onClose={() => setPeople(false)} onSwitch={(next) => onSwitch?.(next)} onLeft={onLeft} />)}
       {viewer &&
         layer(

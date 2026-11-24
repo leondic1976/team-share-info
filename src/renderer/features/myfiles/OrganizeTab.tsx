@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { AlertTriangle, Folder, FolderPlus, Pencil, Sparkles, Tag, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Folder, FolderPlus, Pencil, Sparkles, StickyNote, Tag, Trash2, X } from 'lucide-react'
 import { TAG_COLORS, type TaggedItem } from '@shared/organize'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -32,7 +32,10 @@ function ItemList({ items, notify, onRemove, removeLabel }: { items: TaggedItem[
               <TagChips tags={i.tags} colors={colors} />
             </span>
             <span className="block truncate text-xs text-muted-foreground">{i.path}</span>
-            {i.note && <span className="block truncate text-xs">📝 {i.note}</span>}
+            {i.note && <span className="block truncate text-xs">
+                <StickyNote className="mr-1 inline size-3 align-[-0.1em]" aria-label="메모" />
+                {i.note}
+              </span>}
           </span>
           <span className="w-20 shrink-0 text-right text-xs text-muted-foreground">{i.exists && !i.isDir ? fmtSize(i.size) : ''}</span>
           <span className="w-28 shrink-0 text-right text-xs text-muted-foreground">{i.exists ? format(i.mtime, 'yyyy-MM-dd') : ''}</span>

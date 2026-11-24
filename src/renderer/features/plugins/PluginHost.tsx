@@ -145,7 +145,7 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
         case 'rooms.delete':
           return api.del(`${rooms}/${encodeURIComponent(str('roomId', 40))}`)
         case 'notify':
-          return invoke('notify:toast', { title: `${plugin.manifest.icon} ${str('title', 100)}`, body: str('body', 300), route: `/plugins/${id}` })
+          return invoke('notify:toast', { title: str('title', 100), body: str('body', 300), route: `/plugins/${id}` })
         case 'clipboard.write':
           return invoke('clipboard:write', { text: str('text', 100_000) })
         case 'file.save':

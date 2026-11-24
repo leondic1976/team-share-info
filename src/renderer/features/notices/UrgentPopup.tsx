@@ -5,7 +5,7 @@ import type { UrgentPayload } from '@shared/schemas/notices'
 import { Button } from '@renderer/components/ui/button'
 import { RichView } from '@renderer/components/Editor'
 import { invoke, onMain } from '@renderer/lib/bridge'
-import { api, errorMessage } from '@renderer/lib/api'
+import { api, ApiError, errorMessage } from '@renderer/lib/api'
 import { useConn } from '@renderer/app/conn-store'
 
 /** Three short alarm beeps generated with WebAudio (no sound file needed). */
@@ -71,8 +71,20 @@ export function UrgentPopup({ id }: { id: string }): React.JSX.Element {
     setBusy(true)
     setErr('')
     try {
-      if (p.requireAck) await api.post(`/api/notices/${p.id}/ack`, reply ? { reply } : {})
-      else await api.post(`/api/notices/${p.id}/read`)
+      // The window can be up before the connection details are loaded (it opens the moment the
+      // program starts): wait for them, and give a server that is just coming up a few tries.
+      if (!useConn.getState().serverUrl) await load()
+      for (let i = 0; ; i++) {
+        try {
+          if (p.requireAck) await api.post(`/api/notices/${p.id}/ack`, reply ? { reply } : {})
+          else await api.post(`/api/notices/${p.id}/read`)
+          break
+        } catch (e) {
+          const net = e instanceof ApiError && (e.code === 'NETWORK' || e.code === 'NO_SERVER')
+          if (!net || i >= 4) throw e
+          await new Promise((r) => setTimeout(r, 1500))
+        }
+      }
       await invoke('notify:closeUrgent', { id: p.id })
     } catch (e) {
       setErr(errorMessage(e))

@@ -13,7 +13,7 @@
 | 설치 파일 해시 | SHA-512(base64). 다운로드 사이트의 `updates/latest.yml` 또는 `/download` 페이지에 표시 |
 | 실행 파일 위치 | `%LOCALAPPDATA%\Programs\TeamHub\TeamHub.exe` (사용자별 설치, 관리자 권한 불필요) |
 | 데이터 위치 | `%APPDATA%\TeamHub` (개인 데이터), 서버 PC는 설정한 데이터 폴더 |
-| 서버 PC ↔ 팀원 PC | TCP 47800(바꾼 경우 그 포트) — HTTP·WebSocket, 사내망 |
+| 서버 PC와 팀원 PC 사이 | TCP 47800(바꾼 경우 그 포트) — HTTP·WebSocket, 사내망 |
 | 서버 찾기 | UDP 47801 — 같은 네트워크 방송 |
 | 화상회의 | PC끼리 직접 UDP(WebRTC), 사내망 안, 외부 서버 없음 |
 | 서버 PC 방화벽 | 받는 방향 TCP 47800, UDP 47801 허용 |

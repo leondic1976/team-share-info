@@ -29,7 +29,6 @@ import { useEventReminders } from '@renderer/features/calendar/useEventReminders
 import { TransferPanel } from '@renderer/features/files/TransferPanel'
 import { useChatAlerts, useChatUnread } from '@renderer/features/chat/useChatAlerts'
 import { ChatDock } from '@renderer/features/chat/ChatDock'
-import { useTaskAlerts } from '@renderer/features/tasks/useTaskAlerts'
 import { useJoinAlerts } from '@renderer/features/admin/useJoinAlerts'
 import { useLedgerAlerts } from '@renderer/features/ledger/useLedgerAlerts'
 import { useDocAlerts } from '@renderer/features/docs/useDocAlerts'
@@ -47,7 +46,6 @@ const CalendarPage = lazy(() => import('@renderer/features/calendar/CalendarPage
 const DiaryPage = lazy(() => import('@renderer/features/diary/DiaryPage').then((m) => ({ default: m.DiaryPage })))
 const FilesPage = lazy(() => import('@renderer/features/files/FilesPage').then((m) => ({ default: m.FilesPage })))
 const ChatPage = lazy(() => import('@renderer/features/chat/ChatPage').then((m) => ({ default: m.ChatPage })))
-const TasksPage = lazy(() => import('@renderer/features/tasks/TasksPage').then((m) => ({ default: m.TasksPage })))
 const BoardsPage = lazy(() => import('@renderer/features/boards/BoardsPage').then((m) => ({ default: m.BoardsPage })))
 const DutyPage = lazy(() => import('@renderer/features/duty/DutyPage').then((m) => ({ default: m.DutyPage })))
 const OrgChartPage = lazy(() => import('@renderer/features/org/OrgChartPage').then((m) => ({ default: m.OrgChartPage })))
@@ -74,7 +72,6 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   const chatUnread = useChatUnread()
   useNoticeAlerts()
   useChatAlerts()
-  useTaskAlerts()
   useDocAlerts()
   useEventReminders()
   useTeamAlarms()
@@ -179,7 +176,8 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/files/:folderId" element={<FilesPage />} />
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/chat/:id" element={<ChatPage />} />
-            <Route path="/tasks" element={<TasksPage />} />
+            {/* 할 일 was removed: old notifications and bookmarks that point here go home */}
+            <Route path="/tasks/*" element={<Navigate to="/home" replace />} />
             <Route path="/boards" element={<BoardsPage />} />
             <Route path="/boards/:boardId" element={<BoardsPage />} />
             <Route path="/boards/:boardId/:postId" element={<BoardsPage />} />
@@ -202,7 +200,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/plugins" element={<PluginsPage />} />
             <Route path="/plugins/:id" element={<PluginHost />} />
             <Route path="/notes/:id" element={<NotesPage />} />
-            {MENU.filter((m) => !['home', 'notices', 'calendar', 'diary', 'files', 'chat', 'tasks', 'boards', 'duty', 'org', 'meal', 'directory', 'docs', 'memos', 'alarms', 'utilities', 'launcher', 'myfiles', 'notes', 'meetings', 'plugins'].includes(m.key)).map((m) => (
+            {MENU.filter((m) => !['home', 'notices', 'calendar', 'diary', 'files', 'chat', 'boards', 'duty', 'org', 'meal', 'directory', 'docs', 'memos', 'alarms', 'utilities', 'launcher', 'myfiles', 'notes', 'meetings', 'plugins'].includes(m.key)).map((m) => (
               <Route key={m.key} path={`${m.path}/*`} element={<ComingSoon title={m.label} />} />
             ))}
             <Route path="/settings" element={<SettingsPage extra={<ConnectionCard onReset={onReset} />} />} />

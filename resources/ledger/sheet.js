@@ -517,10 +517,10 @@
     return Object.assign({ id: uid('c'), name, type, width: type === 'text' ? 140 : type === 'check' ? 64 : 110, total: 'none' }, more || {})
   }
   const TEMPLATES = [
-    { key: 'blank', icon: '📄', name: '빈 대장', desc: '열을 직접 만듭니다', cols: () => [col('항목', 'text', { width: 180 }), col('내용', 'text', { width: 240 }), col('수량', 'number', { total: 'sum' }), col('비고', 'text')] },
+    { key: 'blank', icon: 'file', name: '빈 대장', desc: '열을 직접 만듭니다', cols: () => [col('항목', 'text', { width: 180 }), col('내용', 'text', { width: 240 }), col('수량', 'number', { total: 'sum' }), col('비고', 'text')] },
     {
       key: 'asset',
-      icon: '📦',
+      icon: 'package',
       name: '물품(비품) 관리 대장',
       desc: '관리번호·수량·단가·금액(자동)·상태',
       cols: () => [
@@ -540,7 +540,7 @@
     },
     {
       key: 'docs',
-      icon: '📨',
+      icon: 'inbox',
       name: '문서 수발신 대장',
       desc: '수신/발신·처리 상태·처리 기간(자동)',
       cols: () => [
@@ -558,7 +558,7 @@
     },
     {
       key: 'budget',
-      icon: '💰',
+      icon: 'coins',
       name: '예산 집행 대장',
       desc: '집행액·누적 집행액·잔액(자동)',
       cols: () => [
@@ -577,7 +577,7 @@
     },
     {
       key: 'vehicle',
-      icon: '🚗',
+      icon: 'car',
       name: '차량 운행 일지',
       desc: '출발·도착 거리 → 운행 거리(자동)',
       cols: () => [
@@ -594,7 +594,7 @@
     },
     {
       key: 'rental',
-      icon: '🔑',
+      icon: 'key',
       name: '대여·반납 대장',
       desc: '반납 예정일이 지나면 “연체” 자동 표시',
       cols: () => [
@@ -610,7 +610,7 @@
     },
     {
       key: 'trip',
-      icon: '🧳',
+      icon: 'luggage',
       name: '출장 대장',
       desc: '기간 → 일수(자동), 여비 합계, 정산 체크',
       cols: () => [
@@ -627,7 +627,7 @@
     },
     {
       key: 'training',
-      icon: '🎓',
+      icon: 'school',
       name: '교육 이수 현황',
       desc: '교육 시간 합계·이수 인원',
       cols: () => [col('이름', 'member', { width: 90 }), col('부서', 'text'), col('교육명', 'text', { width: 200 }), col('이수일', 'date'), col('시간', 'number', { format: 'dec1', total: 'sum', width: 70 }), col('이수', 'check', { total: 'checked' }), col('비고', 'text')]

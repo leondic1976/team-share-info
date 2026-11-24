@@ -35,7 +35,7 @@ describe('관리대장 (built-in ledger: personal, team and designated-people le
     expect(await a.page.evaluate(() => window.teamhub.invoke('plugins:list', undefined))).toEqual([])
     const menu = await a.page.getByRole('navigation', { name: '주 메뉴' }).getByRole('link').allTextContents()
     // listed with the extensions: right under "확장 기능", not between the shared menus
-    expect(menu.slice(menu.indexOf('할 일'), menu.indexOf('할 일') + 2)).toEqual(['할 일', '게시판'])
+    expect(menu.slice(menu.indexOf('메신저'), menu.indexOf('메신저') + 2)).toEqual(['메신저', '게시판'])
     expect(menu.slice(menu.indexOf('확장 기능'), menu.indexOf('확장 기능') + 2)).toEqual(['확장 기능', '관리대장'])
     await openLedger(a.page)
     expect(await frame(a.page).locator('#side h1').textContent()).toContain('관리대장')
@@ -147,7 +147,7 @@ describe('관리대장 (built-in ledger: personal, team and designated-people le
     await expect.poll(() => cell(a.page, 0, 1).textContent()).toBe('가위')
     // the rows are records of the local DB, not one blob
     const list = await a.page.evaluate(() => window.teamhub.invoke('local:ledger.list', undefined))
-    expect(list).toMatchObject([{ name: '비품 대장E2E', rows: 6, icon: '📦' }])
+    expect(list).toMatchObject([{ name: '비품 대장E2E', rows: 6, icon: 'package' }])
 
     const csv = readFileSync(await saveAs(a.page, 'csv'), 'utf8')
     expect(csv.charCodeAt(0)).toBe(0xfeff)
@@ -273,7 +273,7 @@ describe('관리대장 (built-in ledger: personal, team and designated-people le
     await expect.poll(() => toastOf(a.page)).toContain('팀용 대장으로 올렸습니다')
     await expect.poll(() => f.locator('#teamBooks li.on').textContent()).toContain('비품 대장E2E')
     expect(await f.locator('#books').textContent()).not.toContain('비품 대장E2E') // moved, not copied
-    expect(await bar(a.page)).toContain('👥 팀용')
+    expect(await bar(a.page)).toContain('팀용')
     expect(await bar(a.page)).toContain('팀 전체')
     expect(await state(a.page)).toContain('서버에 저장됨')
     // the read-only share is for personal ledgers only
@@ -347,7 +347,7 @@ describe('관리대장 (built-in ledger: personal, team and designated-people le
     await expect.poll(() => f.locator('#stat').textContent()).toContain('1행')
     expect(await cell(a.page, 0, 2).textContent()).toBe('A가 나중')
     await f.locator('#teamBooks li', { hasText: '비품 대장E2E' }).click()
-    await expect.poll(() => bar(a.page)).toContain('👥 팀용')
+    await expect.poll(() => bar(a.page)).toContain('팀용')
 
     // B's connection drops while typing: the edit waits and is saved when the server is back
     await b.page.evaluate(() => window.teamhub.invoke('local:kv.get', { key: 'noop' }))
@@ -409,7 +409,7 @@ describe('관리대장 (built-in ledger: personal, team and designated-people le
     await g.locator('#moreMenu button[data-act="dup"]').click()
     await expect.poll(() => toastOf(b.page)).toContain('개인용 대장으로 사본을 받았습니다')
     await expect.poll(() => g.locator('#books li.on').textContent()).toContain('비품 대장E2E (사본)')
-    expect(await bar(b.page)).toContain('🔒 개인용')
+    expect(await bar(b.page)).toContain('개인용')
     // the copy is B's own: editable, and A never sees it
     await type(b.page, 0, 2, '내 것')
     await expect.poll(() => cell(b.page, 0, 2).textContent()).toBe('내 것')
@@ -456,7 +456,7 @@ describe('관리대장 (built-in ledger: personal, team and designated-people le
     await f.locator('#teamGo').click()
     await expect.poll(() => f.locator('#pickBooks li.on').textContent()).toContain('차량 일지E2E')
     expect(await f.locator('#teamBooks').textContent()).not.toContain('차량 일지E2E')
-    expect(await bar(a.page)).toContain('👤 지정자용')
+    expect(await bar(a.page)).toContain('지정자용')
     expect(await bar(a.page)).toContain('팀원B')
     await expect.poll(() => frame(b.page).locator('#pickBooks li', { hasText: '차량 일지E2E' }).count(), { timeout: 10000 }).toBe(1)
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Users, UsersRound, User, Search, X } from 'lucide-react'
 import type { ScopeInput } from '@shared/schemas/scope'
+import { displayName } from '@shared/schemas/auth'
 import { useMe, useMembers } from '@renderer/lib/queries'
 import { Input } from './ui/input'
 import { cn } from '@renderer/lib/utils'
@@ -85,7 +86,7 @@ export function MemberPicker({ value, onChange, excludeSelf, selectAll }: { valu
     () =>
       (members ?? [])
         .filter((m) => !excludeSelf || m.id !== me?.id)
-        .filter((m) => !q.trim() || `${m.name} ${m.deptName ?? ''}`.includes(q.trim())),
+        .filter((m) => !q.trim() || `${m.name} ${m.nickname ?? ''} ${m.deptName ?? ''}`.includes(q.trim())),
     [members, me, q, excludeSelf]
   )
   const selected = (members ?? []).filter((m) => value.includes(m.id))
@@ -95,7 +96,7 @@ export function MemberPicker({ value, onChange, excludeSelf, selectAll }: { valu
         <div className="flex flex-wrap gap-1">
           {selected.map((m) => (
             <span key={m.id} className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
-              {m.name}
+              {displayName(m)}
               <button type="button" aria-label={`${m.name} 빼기`} className="cursor-pointer" onClick={() => onChange(value.filter((x) => x !== m.id))}>
                 <X className="size-3" />
               </button>
@@ -131,7 +132,7 @@ export function MemberPicker({ value, onChange, excludeSelf, selectAll }: { valu
         {list.map((m) => (
           <label key={m.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-sm hover:bg-muted">
             <input type="checkbox" checked={value.includes(m.id)} onChange={(e) => onChange(e.target.checked ? [...value, m.id] : value.filter((x) => x !== m.id))} aria-label={m.name} />
-            {m.name}
+            {displayName(m)}
             <span className="text-xs text-muted-foreground">{m.deptName}</span>
           </label>
         ))}
@@ -142,7 +143,13 @@ export function MemberPicker({ value, onChange, excludeSelf, selectAll }: { valu
 }
 
 /** Small chips describing an item's audience, with group color tags (6.2 ④). */
-export function ScopeTags({ scope }: { scope: { type: string; groups: { id: string; name: string; color: string }[]; members: { name: string }[] } }): React.JSX.Element {
+export function ScopeTags({ scope }: { scope: { type: string; groups: { id: string; name: string; color: string }[]; members: { id?: string; name: string }[] } }): React.JSX.Element {
+  // names as "본명(필명)", from the members list (the scope itself carries real names)
+  const { data: all } = useMembers()
+  const nameOf = (m: { id?: string; name: string }): string => {
+    const full = m.id ? all?.find((x) => x.id === m.id) : undefined
+    return full ? displayName(full) : m.name
+  }
   if (scope.type === 'team') return <span className="text-xs text-muted-foreground">팀 전체</span>
   if (scope.type === 'group')
     return (
@@ -155,7 +162,7 @@ export function ScopeTags({ scope }: { scope: { type: string; groups: { id: stri
       </span>
     )
   return (
-    <span className="text-xs text-muted-foreground" title={scope.members.map((m) => m.name).join(', ')}>
+    <span className="text-xs text-muted-foreground" title={scope.members.map(nameOf).join(', ')}>
       지정 {scope.members.length}명
     </span>
   )

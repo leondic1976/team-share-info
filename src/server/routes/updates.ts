@@ -361,7 +361,7 @@ ${link}
 <li>프로그램이 열리면 <b>서버에 접속</b>을 고르고, 이 페이지 주소의 IP를 입력합니다.</li>
 <li>이름·부서를 입력해 사용 신청을 하면, 관리자가 승인한 뒤 바로 사용할 수 있습니다.</li></ol>
 <div class="box">서버 주소: <b id="addr"></b></div>
-<p class="warn">⚠ ${escapeHtml(org.noticeText)}</p>
+<p class="warn">${escapeHtml(org.noticeText)}</p>
 <h2>보안 프로그램이 막을 때 — 예외 등록 요청서</h2>
 <p class="muted">백신·PC 보안 프로그램이 설치나 실행을 막으면 아래 내용을 전산(보안) 담당자에게 보내 예외 등록을 요청하세요. <button onclick="window.print()">인쇄·PDF</button></p>
 <table class="form"><tbody>
@@ -371,7 +371,7 @@ ${link}
 <tr><th>설치 파일 해시(SHA-512, base64)</th><td><code>${r ? escapeHtml(r.sha512) : ''}</code></td></tr>
 <tr><th>실행 파일 위치</th><td><code>%LOCALAPPDATA%&#92;Programs&#92;TeamHub&#92;TeamHub.exe</code> (사용자별 설치, 관리자 권한 불필요)</td></tr>
 <tr><th>데이터 위치</th><td><code>%APPDATA%&#92;TeamHub</code> (개인 데이터), 서버 PC는 설정한 데이터 폴더</td></tr>
-<tr><th>사용 통신</th><td>서버 PC ↔ 팀원 PC: <b>TCP ${getSection(ctx.db, 'network').port}</b>(HTTP·WebSocket, 사내망) · 서버 찾기: <b>UDP 47801</b>(같은 네트워크 방송) · 화상회의: PC끼리 직접 <b>UDP</b>(WebRTC, 사내망 안, 외부 서버 없음)</td></tr>
+<tr><th>사용 통신</th><td>서버 PC와 팀원 PC 사이: <b>TCP ${getSection(ctx.db, 'network').port}</b>(HTTP·WebSocket, 사내망) · 서버 찾기: <b>UDP 47801</b>(같은 네트워크 방송) · 화상회의: PC끼리 직접 <b>UDP</b>(WebRTC, 사내망 안, 외부 서버 없음)</td></tr>
 <tr><th>서버 PC</th><td>${'<span id="addr2"></span>'} — 받는 방향 TCP ${getSection(ctx.db, 'network').port}, UDP 47801 허용 필요</td></tr>
 <tr><th>인터넷 사용(선택)</th><td>업데이트·확장 기능 목록 확인: https://leondic1976.github.io/team-share-info/ (폐쇄망은 사용 안 함)</td></tr>
 <tr><th>코드 서명</th><td>없음(사내 배포용). 위 해시로 파일이 같은지 확인할 수 있습니다.</td></tr>

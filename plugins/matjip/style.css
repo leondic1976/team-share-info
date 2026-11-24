@@ -179,7 +179,10 @@ main {
 }
 .stars {
   color: var(--accent);
-  letter-spacing: 1px;
+  white-space: nowrap;
+}
+.stars .off {
+  color: var(--line);
 }
 .badge {
   border-radius: 999px;
@@ -275,6 +278,25 @@ main {
   text-align: center;
   font-size: 18px;
   font-weight: 700;
+}
+/* 1st to 3rd: a gold, silver, bronze disc */
+.rank-no.top {
+  width: 28px;
+  height: 28px;
+  margin: 0 2px;
+  border-radius: 50%;
+  line-height: 28px;
+  font-size: 15px;
+  color: #fff;
+}
+.rank-no.r1 {
+  background: #d4a017;
+}
+.rank-no.r2 {
+  background: #8e99a8;
+}
+.rank-no.r3 {
+  background: #b0703c;
 }
 .rank-main {
   flex: 1;

@@ -7,6 +7,7 @@ import { BOTTOM_MENU, MENU_PLUGINS, subMenu, topMenu, type MenuItem } from './me
 import { usePrefs } from './prefs-store'
 import { cn } from '@renderer/lib/utils'
 import { SpaceSwitcher } from './SpaceSwitcher'
+import { PluginIcon } from '@renderer/components/NamedIcon'
 
 // Items under "확장 기능": full text colour, and a long name wraps to a second line instead of being cut off.
 const SUB_ITEM = 'relative flex min-h-8 items-center gap-2 rounded-r-md py-1 text-sm'
@@ -92,7 +93,7 @@ export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps
           </Fragment>
         ))}
         {subMenu('plugins')
-          .filter((m) => !hiddenMenus.includes('plugins') && !disabledFeatures.includes('plugins') && !disabledFeatures.includes(m.key))
+          .filter((m) => !hiddenMenus.includes('plugins') && !hiddenMenus.includes(m.key) && !disabledFeatures.includes('plugins') && !disabledFeatures.includes(m.key))
           .map((m) => {
             const count = badges[m.key] ?? 0
             return (
@@ -119,9 +120,7 @@ export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps
               aria-label={p.manifest.name}
               className={({ isActive }) => cn(SUB_ITEM, collapsed ? 'px-2.5' : 'ml-3.5 border-l border-border pl-2.5 pr-2', isActive ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground hover:bg-muted')}
             >
-              <span className="w-[1.15rem] shrink-0 text-center" aria-hidden>
-                {p.manifest.icon}
-              </span>
+              <PluginIcon manifest={p.manifest} className="size-[1.15rem]" />
               {!collapsed && <span className={SUB_LABEL}>{p.manifest.name}</span>}
             </NavLink>
           ))}

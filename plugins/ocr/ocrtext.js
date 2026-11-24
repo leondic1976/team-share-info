@@ -18,7 +18,7 @@
   }
 
   const sentenceEnd = /[.!?。…:;)\]"'”’]$|[다요죠음함임됨까]\.?$/
-  const bullet = /^([-•·*○●▶□■◇◆※]|\d{1,2}[.)]|[가-하][.)]|\(\d{1,2}\)|[①-⑳])\s?/
+  const bullet = /^([-•·*○●\u25b6□■◇◆※]|\d{1,2}[.)]|[가-하][.)]|\(\d{1,2}\)|[①-⑳])\s?/
 
   /**
    * Lines of a scanned paragraph end where the paper ends, not where the sentence does:

@@ -170,7 +170,7 @@ function TodayTab(): React.JSX.Element {
   const items = q.data ?? []
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-5">
-      <p className="mb-3 text-sm text-muted-foreground">일정·할 일·연간 업무·알람에서 오늘 울리는 알림을 시간순으로 모았습니다.</p>
+      <p className="mb-3 text-sm text-muted-foreground">일정·연간 업무·알람에서 오늘 울리는 알림을 시간순으로 모았습니다.</p>
       {!items.length ? (
         <EmptyState icon={BellRing} title="오늘 울릴 알림이 없습니다" />
       ) : (

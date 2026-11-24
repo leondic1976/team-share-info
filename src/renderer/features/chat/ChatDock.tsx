@@ -11,6 +11,7 @@ import { cn } from '@renderer/lib/utils'
 import { useConn } from '@renderer/app/conn-store'
 import { ConversationView } from './ConversationView'
 import { useChatDock, type DockPanel } from './dock-store'
+import { convTitle } from './title'
 
 const PANEL_W = 340
 const PANEL_H = 460
@@ -122,7 +123,7 @@ export function ChatDock(): React.JSX.Element {
 
   const info = (id: string): { title: string; unread: number; otherId: string | null } => {
     const c = list.data?.find((x) => x.id === id) ?? qc.getQueryData<ConversationDto>(['chat', 'conv', id])
-    return { title: c?.title ?? '대화', unread: c?.unread ?? 0, otherId: c?.kind === 'dm' ? (c.memberIds.find((m) => m !== meId) ?? null) : null }
+    return { title: c ? convTitle(c, team, meId) : '대화', unread: c?.unread ?? 0, otherId: c?.kind === 'dm' ? (c.memberIds.find((m) => m !== meId) ?? null) : null }
   }
 
   // Minimised windows are tabs in the row; when they do not fit, the ones minimised longest ago go under "+N".

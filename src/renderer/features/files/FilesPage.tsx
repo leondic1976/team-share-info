@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { format } from 'date-fns'
-import { Folder, FolderPlus, Upload, FolderUp, Search, Trash2, Clock, ChevronRight, File as FileIcon, Lock, MoreHorizontal, Pencil, Download, ExternalLink, RotateCcw, Settings2, Home } from 'lucide-react'
+import { Folder, FolderPlus, Upload, FolderUp, Search, Trash2, Clock, ChevronRight, File as FileIcon, Lock, MoreHorizontal, Pencil, Download, ExternalLink, RotateCcw, Settings2, Home, TriangleAlert } from 'lucide-react'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -399,7 +399,7 @@ export function FilesPage(): React.JSX.Element {
           여기에 놓으면 '{folder?.name}' 폴더에 올립니다
         </div>
       )}
-      <p className="shrink-0 border-t border-border px-5 py-1 text-xs text-[var(--notice-fg)]">⚠ 중요 보안 내용, 개인정보, 비공개 정보는 올릴 수 없습니다.</p>
+      <p className="shrink-0 border-t border-border px-5 py-1 text-xs text-[var(--notice-fg)]"><TriangleAlert className="mr-1 inline size-3.5 align-[-0.15em]" aria-hidden />중요 보안 내용, 개인정보, 비공개 정보는 올릴 수 없습니다.</p>
       {dialog?.kind === 'folder' && <FolderDialog parent={folder} edit={dialog.edit} onClose={() => setDialog(null)} />}
       {detail && <FileDetail fileId={detail} onClose={() => setDetail(null)} />}
       {edited && (

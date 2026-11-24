@@ -163,25 +163,25 @@ export const NOTE_TEMPLATES: { key: string; title: string; icon: string; html: s
   {
     key: 'meeting',
     title: '회의 노트',
-    icon: '🗓️',
+    icon: 'calendar-days',
     html: '<h2>회의 정보</h2><p>일시: </p><p>참석: </p><h2>안건</h2><ul><li><p></p></li></ul><h2>논의 내용</h2><p></p><h2>결정 사항</h2><ul><li><p></p></li></ul><h2>할 일</h2><ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p></p></li></ul>'
   },
   {
     key: 'worklog',
     title: '업무 일지',
-    icon: '📝',
+    icon: 'notebook-pen',
     html: '<h2>오늘 한 일</h2><ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p></p></li></ul><h2>배운 점·메모</h2><p></p><h2>내일 할 일</h2><ul data-type="taskList"><li data-type="taskItem" data-checked="false"><p></p></li></ul>'
   },
   {
     key: 'project',
     title: '프로젝트',
-    icon: '📁',
+    icon: 'folder',
     html: '<h2>목표</h2><p></p><h2>범위·일정</h2><table><tbody><tr><th><p>단계</p></th><th><p>기간</p></th><th><p>담당</p></th></tr><tr><td><p></p></td><td><p></p></td><td><p></p></td></tr></tbody></table><h2>관련 자료</h2><ul><li><p></p></li></ul><h2>진행 기록</h2><p></p>'
   },
   {
     key: 'reading',
     title: '독서·학습 기록',
-    icon: '📚',
+    icon: 'library',
     html: '<h2>정보</h2><p>제목·저자: </p><p>기간: </p><h2>핵심 내용</h2><ul><li><p></p></li></ul><h2>인상 깊은 부분</h2><blockquote><p></p></blockquote><h2>업무에 적용할 점</h2><p></p>'
   }
 ]

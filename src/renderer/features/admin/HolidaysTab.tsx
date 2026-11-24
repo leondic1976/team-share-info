@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { api, errorMessage } from '@renderer/lib/api'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -28,12 +28,12 @@ export function HolidaysTab(): React.JSX.Element {
     <div className="max-w-2xl space-y-4">
       <p className="text-sm text-muted-foreground">기본으로 들어 있는 공휴일을 확인하고, 기관 휴일(창립기념일 등)을 추가하거나 잘못된 날을 지웁니다. 달력에 붉게 표시됩니다.</p>
       <div className="flex items-center gap-2">
-        <Button size="sm" variant="outline" onClick={() => setYear(year - 1)}>
-          ◀
+        <Button size="sm" variant="outline" aria-label="이전 해" onClick={() => setYear(year - 1)}>
+          <ChevronLeft />
         </Button>
         <span className="w-16 text-center font-semibold">{year}년</span>
-        <Button size="sm" variant="outline" onClick={() => setYear(year + 1)}>
-          ▶
+        <Button size="sm" variant="outline" aria-label="다음 해" onClick={() => setYear(year + 1)}>
+          <ChevronRight />
         </Button>
       </div>
       <div className="flex items-end gap-2">

@@ -11,7 +11,8 @@ import { MemberPicker } from '@renderer/components/ScopePicker'
 import { EmptyState, Loading, OfflineState } from '@renderer/components/EmptyState'
 import { Field } from '@renderer/features/setup/SetupFrame'
 import { api, errorMessage } from '@renderer/lib/api'
-import { useMe } from '@renderer/lib/queries'
+import { useDisplayName, useMe } from '@renderer/lib/queries'
+import { MemberLink } from '@renderer/components/MemberLink'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
 import { startMeeting } from '@renderer/features/meetings/MeetingsPage'
@@ -93,6 +94,7 @@ function CreateGroupDialog({ open, onClose }: { open: boolean; onClose: () => vo
 }
 
 function GroupDetail({ group, onClose }: { group: GroupDto; onClose: () => void }): React.JSX.Element {
+  const dn = useDisplayName()
   const inv = useInvalidate()
   const { data: me } = useMe()
   const [inviteIds, setInviteIds] = useState<string[]>([])
@@ -157,7 +159,9 @@ function GroupDetail({ group, onClose }: { group: GroupDto; onClose: () => void 
             {g.members.map((m) => (
               <div key={m.memberId} className="flex items-center gap-2 px-4 py-1.5 text-sm">
                 {m.role === 'owner' && <Crown className="size-4 text-important" aria-label="그룹장" />}
-                {m.name}
+                <MemberLink memberId={m.memberId} name={m.name}>
+                  {dn({ id: m.memberId, name: m.name })}
+                </MemberLink>
                 <span className="text-xs text-muted-foreground">{m.deptName}</span>
                 {isOwner && m.role !== 'owner' && (
                   <span className="ml-auto flex gap-1">

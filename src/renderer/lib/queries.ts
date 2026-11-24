@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { Hello, MeDto, MemberDto } from '@shared/schemas/auth'
+import { displayName, type Hello, type MeDto, type MemberDto } from '@shared/schemas/auth'
 import { DEFAULT_NOTICE_TEXT } from '@shared/constants'
 import { api, request } from './api'
 import { useConn } from '@renderer/app/conn-store'
@@ -48,6 +48,18 @@ export function useMe() {
     enabled: online,
     staleTime: 60_000
   })
+}
+
+/**
+ * "본명(필명)" of a member known only by id and real name (rows the server sends with the real
+ * name): looked up in the members list, the given name when the member is not in it.
+ */
+export function useDisplayName(): (m: { id?: string | null; name: string }) => string {
+  const { data } = useMembers()
+  return (m) => {
+    const full = m.id ? data?.find((x) => x.id === m.id) : undefined
+    return full ? displayName(full) : m.name
+  }
 }
 
 export function useMembers() {

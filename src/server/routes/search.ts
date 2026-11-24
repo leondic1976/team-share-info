@@ -5,7 +5,7 @@ import { parse, ok } from '../validate'
 import { visibleWhere } from '../scope'
 
 export interface SearchResultDto {
-  type: 'notice' | 'event' | 'doc' | 'post' | 'task' | 'file' | 'message' | 'contact' | 'member' | 'worklog'
+  type: 'notice' | 'event' | 'doc' | 'post' | 'file' | 'message' | 'contact' | 'member' | 'worklog'
   id: string
   title: string
   snippet: string
@@ -91,17 +91,7 @@ export function registerSearchRoutes(app: FastifyInstance, ctx: ServerContext, g
           .map((r) => ({ type: 'post', id: r.id, title: r.title, snippet: snippetOf(r.body_html, q), route: `/boards/${r.board_id}/${r.id}`, at: r.created_at }))
       )
     }
-    {
-      const w = visibleWhere('t', 'task', me)
-      add(
-        db
-          .all<{ id: string; title: string; body_html: string; updated_at: number }>(
-            `SELECT t.id, t.title, t.body_html, t.updated_at FROM tasks t WHERE t.deleted_at IS NULL AND ${w.sql} AND (t.title LIKE ? ${E} OR t.body_html LIKE ? ${E}) ORDER BY t.updated_at DESC LIMIT ?`,
-            [...w.params, like, like, limit]
-          )
-          .map((r) => ({ type: 'task', id: r.id, title: r.title, snippet: snippetOf(r.body_html, q), route: '/tasks', at: r.updated_at }))
-      )
-    }
+    // Tasks (할 일 · 업무 요청) are no longer searched: the feature left the app; its routes and data remain for older PCs.
     {
       // file visibility follows the top-level folder (6.6)
       const w = visibleWhere('r', 'folder', me)

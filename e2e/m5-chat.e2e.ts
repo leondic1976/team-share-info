@@ -79,4 +79,36 @@ describe('M5 messenger and notes', () => {
     await a.page.getByRole('button', { name: '보낸 쪽지' }).click()
     await expect.poll(() => a.page.getByTestId('note-item').first().textContent(), { timeout: 10000 }).toContain('읽음 1/1')
   })
+
+  it('leave from the list: the 1:1 goes from my list after a confirmation and returns when the other writes', async () => {
+    await go(b.page, '/chat')
+    await b.page.getByRole('button', { name: '대화', exact: true }).click()
+    await b.page.getByTestId('conv-서버관리자').click()
+    const convId = (await b.page.evaluate(() => window.location.hash)).split('/chat/')[1]!
+    // saying no keeps it
+    let asked = ''
+    b.page.once('dialog', (d) => {
+      asked = d.message()
+      void d.dismiss()
+    })
+    await b.page.getByTestId('conv-서버관리자').hover()
+    await b.page.getByTestId(`conv-leave-${convId}`).click()
+    expect(asked).toContain('내 목록에서 지울까요')
+    expect(asked).toContain('다시 나타납니다')
+    expect(await b.page.getByTestId('conv-서버관리자').count()).toBe(1)
+    // saying yes removes it and closes the open conversation
+    b.page.once('dialog', (d) => void d.accept())
+    await b.page.getByTestId(`conv-leave-${convId}`).click()
+    await expect.poll(() => b.page.getByTestId('conv-서버관리자').count(), { timeout: 10000 }).toBe(0)
+    await expect.poll(() => b.page.evaluate(() => window.location.hash)).toBe('#/chat')
+    // the other person writes again: it is back, with the earlier messages
+    await go(a.page, '/chat')
+    await a.page.getByRole('button', { name: '대화', exact: true }).click()
+    await a.page.getByTestId('conv-팀원B').click()
+    await sendText(a.page, '나간 뒤에 보낸 메시지')
+    await b.page.getByTestId('conv-서버관리자').waitFor({ timeout: 15000 })
+    await b.page.getByTestId('conv-서버관리자').click()
+    await expect.poll(() => b.page.getByTestId('message-list').textContent(), { timeout: 10000 }).toContain('나간 뒤에 보낸 메시지')
+    expect(await b.page.getByTestId('message-list').textContent()).toContain('꺼져 있을 때 보낸 메시지')
+  })
 })

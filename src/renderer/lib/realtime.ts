@@ -27,7 +27,6 @@ const INVALIDATE: Partial<Record<EventName, string[][]>> = {
   'conversation.read': [['chat']],
   'note.new': [['chat']],
   'note.changed': [['chat']],
-  'task.changed': [['tasks']],
   'post.changed': [['boards']],
   'board.changed': [['boards']],
   'contact.changed': [['contacts']],

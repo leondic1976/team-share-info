@@ -5,6 +5,8 @@
   'use strict'
   const $ = (id) => document.getElementById(id)
   const P = window.CopilotPrompts
+  // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
+  const icon = (n, o) => (window.TeamHub.icon ? window.TeamHub.icon(n, o) : '')
   const call = (m, p) => window.TeamHub.call(m, p)
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 
@@ -25,7 +27,7 @@
 
   function renderTasks() {
     $('tasks').innerHTML = P.TASKS.concat(custom)
-      .map((t) => `<button type="button" role="radio" aria-checked="${t.id === task}" data-task="${esc(t.id)}">${t.icon} ${esc(t.name)}${t.custom ? `<span class="del" data-del="${esc(t.id)}" title="이 틀 지우기">✕</span>` : ''}</button>`)
+      .map((t) => `<button type="button" role="radio" aria-checked="${t.id === task}" data-task="${esc(t.id)}">${icon(t.icon, { fallback: 'star' })} ${esc(t.name)}${t.custom ? `<span class="del" data-del="${esc(t.id)}" title="이 틀 지우기">${icon('x') || '×'}</span>` : ''}</button>`)
       .join('')
     const t = P.taskOf(task, custom)
     $('inputLabel').textContent = `2. ${t.input || '내용'}`

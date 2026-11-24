@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { AlertTriangle, CheckCircle2, CircleHelp, ExternalLink, Loader2, Play, ShieldCheck, Trash2, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CircleHelp, ExternalLink, Folder, Loader2, Play, ShieldCheck, Trash2, XCircle } from 'lucide-react'
 import { SETTINGS_SHORTCUTS, SYSTEM_TOOLS, type CheckStatus, type SecurityProgramDto, type SysResources } from '@shared/schemas/sysutil'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
@@ -306,7 +306,7 @@ export function TempTab(): React.JSX.Element {
           <label key={e.path} className="flex cursor-pointer items-center gap-2 border-b border-border px-3 py-1 text-sm last:border-0 hover:bg-muted">
             <input type="checkbox" checked={sel.has(e.path)} onChange={(ev) => setSel((s) => (ev.target.checked ? new Set([...s, e.path]) : new Set([...s].filter((x) => x !== e.path))))} />
             <span className="truncate">
-              {e.dir ? '📁 ' : ''}
+              {e.dir && <Folder className="mr-1 inline size-3.5 align-[-0.15em]" aria-label="폴더" />}
               {e.name}
             </span>
             <span className="ml-auto shrink-0 text-xs text-muted-foreground">{fmtBytes(e.size)}</span>

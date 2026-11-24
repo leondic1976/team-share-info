@@ -10,7 +10,11 @@
   const call = (m, p) => window.TeamHub.call(m, p)
   const $ = (id) => document.getElementById(id)
   const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch])
-  const TYPE_ICON = { text: 'Aa', number: '123', date: '날짜', select: '목록', check: '☑', member: '팀원', calc: 'fx' }
+  // line icons of the program (TeamHub.icon); a stored value from an older version (an emoji) maps to its icon
+  const icon = (n, o) => window.TeamHub.icon(n, o)
+  // names sent to the server stay within 8 characters: an older server accepts no more
+  const bookIcon = (v) => icon(v, { fallback: 'file' })
+  const TYPE_ICON = { text: 'Aa', number: '123', date: '날짜', select: '목록', check: '체크', member: '팀원', calc: 'fx' }
   const MAX_ROWS = 100000
   /** Height of one row in pixels; measured after the first rows are drawn (zoom and fonts change it). */
   let ROW_H = 26
@@ -80,7 +84,7 @@
     for (let i = 2; taken.has(n.toLowerCase()); i++) n = `${base} ${i}`
     return n
   }
-  const iconOf = (b) => (S.TEMPLATES.find((t) => t.key === b.template) || {}).icon || '📄'
+  const iconOf = (b) => (S.TEMPLATES.find((t) => t.key === b.template) || {}).icon || 'file'
   /** The row at index r of a sheet being changed (rows are never changed in place, see store.js). */
   const W = (b, r) => L.writable(b, r)
   const setState = (text, cls) => {
@@ -112,7 +116,7 @@
   const metaNow = () => (team ? team : src ? index.find((x) => x.id === src.id) : null)
   function savedState() {
     if (!book) return
-    setState(team ? '✓ 서버에 저장됨' : '✓ 이 PC에 저장됨', 'ok')
+    setState(team ? '서버에 저장됨' : '이 PC에 저장됨', 'ok')
   }
 
   async function save() {
@@ -237,7 +241,7 @@
     const hit = (b) => !q || b.name.toLowerCase().includes(q)
     const mine = index.filter(hit).sort((a, b) => b.updatedAt - a.updatedAt)
     $('books').innerHTML =
-      mine.map((b) => `<li data-id="${esc(b.id)}" class="${src && src.kind === 'local' && src.id === b.id ? 'on' : ''}" title="${esc(b.name)}"><span class="n">${esc(b.icon || '📄')} ${esc(b.name)}</span><span class="m">${num(b.rows)}행 · ${fmtDate(b.updatedAt)}</span></li>`).join('') ||
+      mine.map((b) => `<li data-id="${esc(b.id)}" class="${src && src.kind === 'local' && src.id === b.id ? 'on' : ''}" title="${esc(b.name)}"><span class="n">${bookIcon(b.icon)} ${esc(b.name)}</span><span class="m">${num(b.rows)}행 · ${fmtDate(b.updatedAt)}</span></li>`).join('') ||
       '<li class="muted small none">대장이 없습니다</li>'
     const shared = (picked) =>
       teamList
@@ -245,7 +249,7 @@
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map(
           (t) =>
-            `<li data-team="${esc(t.id)}" class="${team && team.id === t.id ? 'on' : ''}" title="${esc(t.name)}"><span class="n">${t.unseen && !(team && team.id === t.id) ? '<i class="dot" title="다른 사람이 고친 새 내용이 있습니다"></i>' : ''}${esc(t.icon || '📄')} ${esc(t.name)}${t.canEdit ? '' : ' <i class="tag">보기</i>'}</span><span class="m">${num(t.rows)}행 · ${esc(t.updatedByName || t.ownerName)} · ${fmtDate(t.updatedAt)}</span></li>`
+            `<li data-team="${esc(t.id)}" class="${team && team.id === t.id ? 'on' : ''}" title="${esc(t.name)}"><span class="n">${t.unseen && !(team && team.id === t.id) ? '<i class="dot" title="다른 사람이 고친 새 내용이 있습니다"></i>' : ''}${bookIcon(t.icon)} ${esc(t.name)}${t.canEdit ? '' : ' <i class="tag">보기</i>'}</span><span class="m">${num(t.rows)}행 · ${esc(t.updatedByName || t.ownerName)} · ${fmtDate(t.updatedAt)}</span></li>`
         )
     const teams = shared(false)
     const picks = shared(true)
@@ -349,7 +353,8 @@
   const whyNot = () => (team.oldServer ? '서버 PC의 프로그램이 예전 버전이라 이 대장을 고칠 수 없습니다. 서버 PC를 먼저 업데이트하세요.' : !team.canEdit ? '보기 전용 대장입니다. 만든 사람과 관리자만 고칠 수 있습니다.' : '서버에 연결되지 않아 이 대장을 고칠 수 없습니다(보기만 가능).')
   /** 지정자용: shared with named people only. 팀용: the whole team or a group. */
   const isPicked = (t) => t.scope.type === 'members'
-  const kindName = (t) => (isPicked(t) ? '👤 지정자용' : '👥 팀용')
+  /** HTML: icon + name of the kind of a shared ledger */
+  const kindName = (t) => (isPicked(t) ? `${icon('user')} 지정자용` : `${icon('users')} 팀용`)
   const scopeText = (sc) => (sc.type === 'team' ? '팀 전체' : sc.type === 'group' ? `${sc.groups.map((g) => g.name).join(', ')} 그룹` : `지정한 사람 ${sc.members.length}명(${sc.members.map((m) => m.name).join(', ')})`)
 
   async function loadTeamList() {
@@ -426,18 +431,18 @@
     if (!src) return
     if (!team) {
       bar.className = 'teambar local'
-      bar.innerHTML = '<b>🔒 개인용</b><span>이 PC의 로컬 DB에 저장 · 나만 봅니다</span><span class="st">고치는 대로 자동 저장</span>'
+      bar.innerHTML = '<b>' + icon('lock') + ' 개인용</b><span>이 PC의 로컬 DB에 저장 · 나만 봅니다</span><span class="st">고치는 대로 자동 저장</span>'
       return
     }
-    const [state, cls] = team.oldServer
-      ? ['⚠ 서버 PC를 업데이트해야 고칠 수 있습니다 · 보기만 가능', 'ro']
+    const [state, cls, pic] = team.oldServer
+      ? ['서버 PC를 업데이트해야 고칠 수 있습니다 · 보기만 가능', 'ro', 'triangle-alert']
       : !team.canEdit
-        ? ['👀 보기 전용 · 만든 사람과 관리자만 고칩니다', 'ro']
+        ? ['보기 전용 · 만든 사람과 관리자만 고칩니다', 'ro', 'eye']
       : !online
-        ? ['⚠ 서버에 연결되지 않음 · 보기만 가능', 'ro']
+        ? ['서버에 연결되지 않음 · 보기만 가능', 'ro', 'triangle-alert']
         : [lastBy || '함께 편집 · 고치는 대로 저장되고 다른 사람 화면에 바로 보입니다', lastBy ? 'me' : '']
     bar.className = `teambar ${cls}`
-    bar.innerHTML = `<b>${kindName(team)}</b><span>${esc(scopeText(team.scope))}</span><span>만든 사람 ${esc(team.ownerName)}</span><span class="st" id="teamState2">${esc(state)}</span>`
+    bar.innerHTML = `<b>${kindName(team)}</b><span>${esc(scopeText(team.scope))}</span><span>만든 사람 ${esc(team.ownerName)}</span><span class="st" id="teamState2">${pic ? icon(pic) + ' ' : ''}${esc(state)}</span>`
   }
   function syncTeamUi() {
     teamBar()
@@ -1653,7 +1658,7 @@
         .sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0))
         .map(
           (x) =>
-            `<li><span class="grow"><b>${esc(x.icon || '📄')} ${esc(x.name)}</b><br /><span class="muted small">${x.kind === 'local' ? '🔒 개인용' : kindName(x)} · ${num(x.rows)}행 · ${fmtDate(x.deletedAt)}에 삭제${x.kind === 'team' ? ` · 만든 사람 ${esc(x.ownerName)}` : ''}</span></span><button type="button" data-kind="${x.kind}" data-restore="${esc(x.id)}">되살리기</button><button type="button" class="danger ghost" data-kind="${x.kind}" data-purge="${esc(x.id)}" data-name="${esc(x.name)}">완전히 삭제</button></li>`
+            `<li><span class="grow"><b>${bookIcon(x.icon)} ${esc(x.name)}</b><br /><span class="muted small">${x.kind === 'local' ? `${icon('lock')} 개인용` : kindName(x)} · ${num(x.rows)}행 · ${fmtDate(x.deletedAt)}에 삭제${x.kind === 'team' ? ` · 만든 사람 ${esc(x.ownerName)}` : ''}</span></span><button type="button" data-kind="${x.kind}" data-restore="${esc(x.id)}">되살리기</button><button type="button" class="danger ghost" data-kind="${x.kind}" data-purge="${esc(x.id)}" data-name="${esc(x.name)}">완전히 삭제</button></li>`
         )
         .join('') || '<li class="muted">휴지통이 비어 있습니다.</li>'
   }
@@ -1749,7 +1754,7 @@
   })
 
   // ---------- new / import ----------
-  $('templates').innerHTML = S.TEMPLATES.map((t) => `<button type="button" data-t="${t.key}"><span class="ic">${t.icon}</span><span><b>${esc(t.name)}</b><small>${esc(t.desc)}</small></span></button>`).join('')
+  $('templates').innerHTML = S.TEMPLATES.map((t) => `<button type="button" data-t="${t.key}"><span class="ic">${icon(t.icon)}</span><span><b>${esc(t.name)}</b><small>${esc(t.desc)}</small></span></button>`).join('')
   function openNew(where) {
     $('newName').value = ''
     for (const v of ['team', 'members']) document.querySelector(`input[name="newWhere"][value="${v}"]`).disabled = !online
@@ -1892,7 +1897,7 @@
       $('empty').hidden = true
       $('sheet').hidden = true
       $('viewer').hidden = false
-      $('viewTitle').textContent = `👀 ${s.name}`
+      $('viewTitle').innerHTML = `${icon('eye')} ${esc(s.name)}`
       $('viewMeta').textContent = `${room.createdByName}님이 공유 · ${fmtDate(s.at)} 기준 · 보기 전용`
       let h = '<colgroup><col style="width:52px">' + s.cols.map((c) => `<col style="width:${c.width}px">`).join('') + '</colgroup><thead><tr><th class="rn">No.</th>'
       h += s.cols.map((c) => `<th><div class="hc"><span class="t">${esc(c.name)}</span></div></th>`).join('') + '</tr></thead><tbody>'

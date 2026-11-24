@@ -19,7 +19,8 @@ plugins/<id>/
   "version": "1.0.0",             // 바꾸면 설치한 PC에 '업데이트'가 표시됨
   "description": "…",
   "author": "TeamHub",
-  "icon": "🪜",                   // 이모지
+  "icon": "사",                   // 예전 TeamHub용 글자 한 자(이모지 금지). 지금 버전은 표시하지 않음
+  "iconName": "ladder",          // 메뉴·카드에 그릴 선 아이콘 이름(아래 "아이콘" 목록). 없거나 목록에 없으면 기본 아이콘(퍼즐)
   "entry": "index.html",
   "permissions": ["members", "storage", "rooms", "notify", "clipboard", "files", "ocr", "copilot"],
   "minAppVersion": "0.1.0",
@@ -36,6 +37,17 @@ plugins/<id>/
 - CSP: 외부 연결 금지(`connect-src 'none'`), 자기 파일만 불러옴. 외부 CDN·글꼴을 쓰지 말고 파일을 함께 넣으세요.
 - `<script src="__sdk.js"></script>`를 넣으면 `window.TeamHub`를 씁니다.
 - `TeamHub.theme`(`light`/`dark`), `TeamHub.room`(초대 알림으로 열렸을 때의 방 ID).
+
+## 아이콘 (이모지 금지)
+TeamHub는 화면에 이모지를 쓰지 않습니다. 확장 기능도 프로그램이 주는 선 아이콘만 씁니다(lucide 모양, 글자색을 따라감).
+- 메뉴·카드 아이콘: manifest의 `iconName`. `icon`에 이모지만 있는 확장 기능은 기본 아이콘으로 표시됩니다.
+- 화면 안: `TeamHub.icon(이름, { size?, fill?, label?, cls?, fallback? })`가 SVG 글자열을 돌려줍니다. 크기를 주지 않으면 글자 크기(1.15em)를 따릅니다. `fill`은 속을 채움(별점·좋아요), `label`은 뜻이 있는 아이콘의 읽기용 이름(없으면 장식으로 처리).
+- HTML에는 `<i data-icon="search"></i>`처럼 쓰면 화면이 열릴 때 아이콘으로 바뀝니다(`data-size`, `data-fill` 가능). 나중에 넣은 HTML은 `TeamHub.hydrateIcons(요소)`.
+- 목록에 없는 이름은 `fallback`(없으면 퍼즐) 아이콘이 됩니다. 쓸 수 있는 이름은 `TeamHub.icons`.
+- `TeamHub.icon`은 이 기능이 들어간 TeamHub부터 있습니다. 예전 TeamHub에서도 열리게 하려면 `const icon = (n, o) => (TeamHub.icon ? TeamHub.icon(n, o) : '')`처럼 감싸 쓰세요.
+- 사용자가 직접 입력한 글(가게 이름, 메시지 등)의 이모지는 사용자 자료이므로 그대로 둡니다.
+
+이름 목록: `annoyed` `archive` `arrow-down` `arrow-up` `bell` `bird` `bookmark` `briefcase` `bug` `building-2` `cake` `cake-slice` `calculator` `calendar-days` `candy` `car` `cat` `chart-column` `check` `cherry` `chevron-down` `chevron-left` `chevron-right` `circle-check` `circle-help` `clipboard-list` `clock` `clover` `coins` `compass` `copy` `database` `dices` `dog` `donut` `download` `drama` `external-link` `eye` `file-text` `flower` `flower-2` `folder` `folder-archive` `footprints` `gamepad-2` `ghost` `gift` `graduation-cap` `headphones` `heart` `history` `image` `import` `inbox` `info` `joystick` `key-round` `ladder` `languages` `laugh` `leaf` `library` `lightbulb` `lock` `luggage` `mail` `medal` `message-circle` `mic` `moon` `music` `notebook-pen` `notebook-tabs` `nut` `orbit` `package` `panda` `paperclip` `party-popper` `pen-line` `pencil` `phone` `pin` `pizza` `plus` `popcorn` `puzzle` `rabbit` `receipt` `redo-2` `refresh-cw` `rocket` `satellite` `save` `scan-text` `search` `settings` `skull` `smile` `smile-plus` `snowflake` `soup` `sparkles` `sprout` `square-check` `squirrel` `star` `sun` `table` `target` `trash-2` `tree-deciduous` `tree-palm` `tree-pine` `triangle-alert` `trophy` `umbrella` `undo-2` `upload` `user` `users` `utensils` `wallet` `waves` `wheat` `wifi-off` `wrench` `x`
 
 ## API (`await TeamHub.call(이름, 값)`)
 | 이름 | 권한 | 설명 |

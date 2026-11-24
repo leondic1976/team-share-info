@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll, beforeAll } from 'vitest'
 import { launch, runWizard, type Launched } from './helpers'
 
-const MENUS = ['홈', '공지', '일정', '자료실', '회의', '메신저', '할 일', '게시판', '근무현황', '주소록', '기록', '다이어리', '메모', '알람', '지식 노트', '내 파일', '런처', '유틸리티', '설정', '도움말', '관리']
+const MENUS = ['홈', '공지', '일정', '자료실', '회의', '메신저', '게시판', '근무현황', '주소록', '기록', '다이어리', '메모', '알람', '지식 노트', '내 파일', '런처', '유틸리티', '설정', '도움말', '관리']
 
 describe('M0 app shell', () => {
   let l: Launched

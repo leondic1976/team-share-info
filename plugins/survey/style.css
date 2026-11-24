@@ -212,7 +212,8 @@ button.card {
   line-height: 1.2;
   color: var(--line);
 }
-.stars button.on {
+.stars button.on,
+.star-on {
   color: var(--accent);
 }
 .bar-row {

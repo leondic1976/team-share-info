@@ -34,6 +34,8 @@ export function registerDirectoryRoutes(app: FastifyInstance, ctx: ServerContext
   const auth = { preHandler: guards.requireAuth }
   // the organisation (departments) is the 최종관리자's (server PC); a 서무 gets 403 OWNER_ONLY
   const owner = { preHandler: [guards.requireAuth, guards.requireAdmin, guards.requireOwner] }
+  /** the order of people within a department is everyday upkeep: the 서무 may set it too */
+  const adminPre = { preHandler: [guards.requireAuth, guards.requireAdmin] }
   const db = ctx.db
   const SELECT = `SELECT c.*, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS created_by_name FROM contacts c JOIN members m ON m.id = c.created_by`
 
@@ -247,7 +249,7 @@ export function registerDirectoryRoutes(app: FastifyInstance, ctx: ServerContext
   })
 
   /** The members of one department in a new order (the chart lists the head first, then this order). */
-  app.put('/api/admin/org/members/order', owner, async (req) => {
+  app.put('/api/admin/org/members/order', adminPre, async (req) => {
     const o = parse(orgMemberOrderSchema, req.body)
     const inDept = new Set(db.all<{ id: string }>('SELECT id FROM members WHERE dept_id IS ?', [o.deptId]).map((r) => r.id))
     if (new Set(o.ids).size !== o.ids.length || o.ids.some((id) => !inDept.has(id))) throw badRequest('그 부서에 속한 구성원만 순서를 바꿀 수 있습니다.')

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { DEFAULT_NOTICE_TEXT, DEFAULT_PORT, FEATURES, LIMITS } from '../constants'
+import { DEFAULT_NOTICE_TEXT, DEFAULT_PORT, FEATURES, LIMITS, type FeatureKey } from '../constants'
 
 export const orgSettingsSchema = z.object({
   orgName: z.string().trim().min(1, '기관/회사명을 입력하세요').max(60),
@@ -42,8 +42,15 @@ export type BackupSettings = z.infer<typeof backupSettingsSchema>
 
 export const featureKeySchema = z.enum(FEATURES)
 
+const isFeatureKey = (k: string): k is FeatureKey => (FEATURES as readonly string[]).includes(k)
+
 export const opsSettingsSchema = z.object({
-  disabledFeatures: z.array(featureKeySchema).default([]),
+  // Keys this version does not know (a removed feature such as 'tasks' in stored settings, or
+  // sent by a PC on another version) are dropped instead of failing the whole settings object.
+  disabledFeatures: z
+    .array(z.string())
+    .transform((a) => a.filter(isFeatureKey))
+    .default([]),
   preventSleep: z.boolean().default(true),
   urgentSenders: z.enum(['admins', 'everyone']).default('admins'),
   groupCreators: z.enum(['admins', 'everyone']).default('everyone'),

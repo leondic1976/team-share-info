@@ -106,7 +106,7 @@
         return Array.from({ length: n }, (_, i) => names[i % t])
       }
       case 'coffee':
-        return fill([o.prize || '☕ 커피 쏘기'])
+        return fill([o.prize || '커피 쏘기'])
       case 'penalty': {
         const list = (o.penalties && o.penalties.length ? o.penalties : ['노래 한 곡', '간식 사기', '회의록 쓰기', '청소 당번']).slice(0, n)
         return fill(list)

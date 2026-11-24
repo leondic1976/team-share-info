@@ -6,6 +6,8 @@
   'use strict'
   const $ = (id) => document.getElementById(id)
   const M = window.Meal
+  // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
+  const icon = (n, o) => (window.TeamHub.icon ? window.TeamHub.icon(n, o) : '')
   const call = (m, p) => window.TeamHub.call(m, p)
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 
@@ -73,7 +75,7 @@
     const open = st === 'open'
     return `<div class="tile ${on ? 'on' : ''} ${open ? '' : 'locked'}" data-tile="${date}:${meal}">
       <div class="tile-top"><b>${M.MEALS[meal]}</b><span class="count">${count}명 신청</span></div>
-      <div class="state">${on ? '✅ 신청함' : open ? '신청 안 함' : '신청하지 않음'}${at ? ` <span class="muted small">${hm(at)} ${on ? '신청' : '취소'}${who}</span>` : ''}</div>
+      <div class="state">${on ? `${icon('circle-check')} 신청함` : open ? '신청 안 함' : '신청하지 않음'}${at ? ` <span class="muted small">${hm(at)} ${on ? '신청' : '취소'}${who}</span>` : ''}</div>
       <div class="deadline ${open ? '' : 'over'}">${open ? `${c.meals[meal].cutoff} 마감 · ${M.remaining(cut - now())}` : `${c.meals[meal].cutoff} 마감됨`}</div>
       ${open ? `<button class="${on ? 'danger' : 'primary'}" data-act="${on ? 'cancel' : 'apply'}" data-date="${date}" data-meal="${meal}" ${busy ? 'disabled' : ''}>${on ? '취소' : at ? '다시 신청' : '신청'}</button>` : ''}
     </div>`
@@ -82,7 +84,7 @@
     const c = config()
     const today = M.ymd(now())
     const days = M.upcoming(c, now())
-    if (!days.length) return empty('🍱', '신청을 받는 날이 없습니다', M.skipped(c, now()).length ? '공휴일에는 신청을 받지 않습니다.' : '관리자가 설정에서 받는 식사와 요일을 정합니다.')
+    if (!days.length) return empty(icon('utensils'), '신청을 받는 날이 없습니다', M.skipped(c, now()).length ? '공휴일에는 신청을 받지 않습니다.' : '관리자가 설정에서 받는 식사와 요일을 정합니다.')
     return `<div class="wrap">
       ${c.notice ? `<div class="notice">${esc(c.notice)}</div>` : ''}
       <p class="muted small">마감 시각 전에는 신청·취소·다시 신청을 마음대로 할 수 있습니다. 마감 뒤에는 바꿀 수 없습니다.</p>
@@ -127,13 +129,13 @@
         const depts = new Map()
         for (const p of list) depts.set(p.deptName || '부서 미지정', [...(depts.get(p.deptName || '부서 미지정') || []), p])
         return `<section class="card" data-status="${k}"><div class="card-top"><b>${M.MEALS[k]} <span class="total">${list.length}명</span></b>${badge}</div>
-          ${list.length ? [...depts].map(([d, ps]) => `<div class="dept"><span class="muted small">${esc(d)} ${ps.length}</span><div class="who">${ps.map((p) => `<span data-who="${esc(p.id)}" title="${hm(p.at)} ${p.by ? `${esc(p.byName)} 님이 대신 신청` : '신청'}">${esc(p.name)}${p.by ? ' <small>대신</small>' : ''}${proxy && p.id !== me.id ? `<button class="x" data-unproxy="${esc(p.id)}" data-meal="${k}" aria-label="${esc(p.name)} 신청 대신 취소" title="대신 취소" ${busy ? 'disabled' : ''}>✕</button>` : ''}</span>`).join('')}</div></div>`).join('') : '<p class="muted small">신청한 사람이 없습니다.</p>'}
+          ${list.length ? [...depts].map(([d, ps]) => `<div class="dept"><span class="muted small">${esc(d)} ${ps.length}</span><div class="who">${ps.map((p) => `<span data-who="${esc(p.id)}" title="${hm(p.at)} ${p.by ? `${esc(p.byName)} 님이 대신 신청` : '신청'}">${esc(p.name)}${p.by ? ' <small>대신</small>' : ''}${proxy && p.id !== me.id ? `<button class="x" data-unproxy="${esc(p.id)}" data-meal="${k}" aria-label="${esc(p.name)} 신청 대신 취소" title="대신 취소" ${busy ? 'disabled' : ''}>${icon('x') || '×'}</button>` : ''}</span>`).join('')}</div></div>`).join('') : '<p class="muted small">신청한 사람이 없습니다.</p>'}
           ${proxy ? `<div class="proxy"><label for="proxy-${k}" class="muted small">대신 신청</label><select id="proxy-${k}" data-proxy-sel="${k}"><option value="">사람 고르기</option>${rest.map((m) => `<option value="${esc(m.id)}" ${proxySel[k] === m.id ? 'selected' : ''}>${esc(m.deptName ? `${m.deptName} · ${m.name}` : m.name)}</option>`).join('')}</select><button data-proxy="${k}" ${busy ? 'disabled' : ''}>대신 신청</button></div>` : ''}
         </section>`
       })
       .join('')
     return `<div class="wrap">
-      <div class="bar-nav"><button data-move="-1" aria-label="전날">◀</button><b id="statusDate">${M.dateLabel(statusDate, today)}</b><button data-move="1" aria-label="다음 날">▶</button><button data-move="0" ${statusDate === today ? 'disabled' : ''}>오늘</button><span class="grow"></span><button id="copyDay">주문용 글 복사</button></div>
+      <div class="bar-nav"><button data-move="-1" aria-label="전날">${icon('chevron-left') || '&lt;'}</button><b id="statusDate">${M.dateLabel(statusDate, today)}</b><button data-move="1" aria-label="다음 날">${icon('chevron-right') || '&gt;'}</button><button data-move="0" ${statusDate === today ? 'disabled' : ''}>오늘</button><span class="grow"></span><button id="copyDay">주문용 글 복사</button></div>
       ${blocks}
     </div>`
   }
@@ -144,14 +146,14 @@
     const t = M.monthTally(room, month, members, now(), false)
     const [y, m] = month.split('-').map(Number)
     return `<div class="wrap">
-      <div class="bar-nav"><button data-month="-1" aria-label="지난달">◀</button><b>${y}년 ${m}월</b><button data-month="1" aria-label="다음 달">▶</button><span class="grow"></span><button id="csvMonth" ${t.rows.length ? '' : 'disabled'}>CSV로 저장</button></div>
+      <div class="bar-nav"><button data-month="-1" aria-label="지난달">${icon('chevron-left') || '&lt;'}</button><b>${y}년 ${m}월</b><button data-month="1" aria-label="다음 달">${icon('chevron-right') || '&gt;'}</button><span class="grow"></span><button id="csvMonth" ${t.rows.length ? '' : 'disabled'}>CSV로 저장</button></div>
       <p class="muted small">마감이 지나 확정된 신청만 셉니다. 신청 기록은 ${M.LIMITS.keepDays}일 동안 보관됩니다.</p>
       ${
         t.rows.length
           ? `<table class="tally"><thead><tr><th>부서</th><th>이름</th><th>점심</th><th>저녁</th><th>합계</th></tr></thead><tbody>
             ${t.rows.map((r) => `<tr><td class="muted">${esc(r.deptName)}</td><td>${esc(r.name)}</td><td>${r.lunch}</td><td>${r.dinner}</td><td><b>${r.lunch + r.dinner}</b></td></tr>`).join('')}
             </tbody><tfoot><tr><td></td><td>합계</td><td>${t.lunch}</td><td>${t.dinner}</td><td><b>${t.lunch + t.dinner}</b></td></tr></tfoot></table>`
-          : empty('🧾', '이 달에 확정된 신청이 없습니다', '마감이 지난 신청이 여기에 사람별로 모입니다.')
+          : empty(icon('receipt'), '이 달에 확정된 신청이 없습니다', '마감이 지난 신청이 여기에 사람별로 모입니다.')
       }
     </div>`
   }
@@ -209,8 +211,8 @@
     $('clock').textContent = `서버 시각 ${hm(now())}`
     if (!room && !(me.isAdmin && tab === 'settings')) {
       $('main').innerHTML = me.isAdmin
-        ? empty('🍱', '식사 신청을 시작하세요', '[설정]에서 점심·저녁의 신청 마감 시각을 정하면 팀원이 신청할 수 있습니다.')
-        : empty('🍱', '아직 식사 신청을 받지 않습니다', '관리자(서버 PC)가 신청 마감 시각을 정하면 여기서 신청할 수 있습니다.')
+        ? empty(icon('utensils'), '식사 신청을 시작하세요', '[설정]에서 점심·저녁의 신청 마감 시각을 정하면 팀원이 신청할 수 있습니다.')
+        : empty(icon('utensils'), '아직 식사 신청을 받지 않습니다', '관리자(서버 PC)가 신청 마감 시각을 정하면 여기서 신청할 수 있습니다.')
       return
     }
     $('main').innerHTML = tab === 'apply' ? renderApply() : tab === 'status' ? renderStatus() : tab === 'month' ? renderMonth() : renderSettings()
@@ -287,7 +289,7 @@
       await load()
       render()
     } catch (e) {
-      $('main').innerHTML = empty('⚠️', '불러오지 못했습니다', e.message || '서버 연결을 확인하세요.')
+      $('main').innerHTML = empty(icon('triangle-alert'), '불러오지 못했습니다', e.message || '서버 연결을 확인하세요.')
     }
   })()
 })()

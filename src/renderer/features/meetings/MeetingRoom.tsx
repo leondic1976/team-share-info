@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { format } from 'date-fns'
-import { Hand, Loader2, MessageSquare, Mic, MicOff, MonitorUp, MonitorX, NotebookText, PhoneOff, Send, Users, Video, VideoOff, Power } from 'lucide-react'
+import { AppWindow, Hand, Loader2, Monitor, MessageSquare, Mic, MicOff, MonitorUp, MonitorX, NotebookText, PhoneOff, Send, Users, Video, VideoOff, Power } from 'lucide-react'
 import { RECOMMENDED_VIDEO_PEERS, type MeetingDto } from '@shared/schemas/meetings'
 import { Button } from '@renderer/components/ui/button'
 import { Select } from '@renderer/components/ui/input'
@@ -31,7 +31,7 @@ function Tile({ name, stream, cam, mic, hand, level, local, conn }: { name: stri
         {mic ? <Mic className="size-3" /> : <MicOff className="size-3 text-red-400" />} {name}
         {local && ' (나)'}
       </div>
-      {hand && <div className="absolute right-1.5 top-1.5 rounded bg-amber-400 px-1.5 py-0.5 text-xs font-semibold text-slate-900">✋ 손들기</div>}
+      {hand && <div className="absolute right-1.5 top-1.5 rounded bg-amber-400 px-1.5 py-0.5 text-xs font-semibold text-slate-900"><Hand className="mr-0.5 inline size-3.5 align-[-0.15em]" aria-hidden />손들기</div>}
       {conn && conn !== 'connected' && <div className="absolute left-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">{conn === 'failed' ? '연결 실패 · 다시 시도 중' : '연결 중…'}</div>}
     </div>
   )
@@ -49,7 +49,10 @@ function ScreenPicker({ open, onClose, onPick }: { open: boolean; onClose: () =>
         {list.map((s) => (
           <button key={s.id} className="cursor-pointer rounded-md border border-border p-2 text-left hover:border-primary hover:bg-muted" onClick={() => onPick(s.id, s.kind, s.displayId, audio)}>
             <img src={s.thumbnail} alt="" className="aspect-video w-full rounded bg-slate-900 object-contain" />
-            <span className="mt-1 block truncate text-xs">{s.kind === 'screen' ? '🖥 ' : '🗔 '}{s.name}</span>
+            <span className="mt-1 flex items-center gap-1 text-xs">
+              {s.kind === 'screen' ? <Monitor className="size-3.5 shrink-0" aria-label="화면" /> : <AppWindow className="size-3.5 shrink-0" aria-label="창" />}
+              <span className="truncate">{s.name}</span>
+            </span>
           </button>
         ))}
       </div>
@@ -332,7 +335,7 @@ export function MeetingRoom({ id }: { id: string }): React.JSX.Element {
                         {p.name}
                         {p.memberId === meeting.hostId && ' · 연 사람'}
                       </span>
-                      {(p.memberId === me ? r.hand : v?.state.hand) && '✋'}
+                      {(p.memberId === me ? r.hand : v?.state.hand) && <Hand className="size-3.5 text-amber-400" aria-label="손들기" />}
                       {(p.memberId === me ? r.mic : v?.state.mic) ? <Mic className="size-3.5" /> : <MicOff className="size-3.5 text-red-400" />}
                     </div>
                   )

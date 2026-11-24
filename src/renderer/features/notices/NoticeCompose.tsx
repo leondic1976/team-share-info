@@ -1,7 +1,7 @@
 import { sendOrQueue } from '@renderer/lib/outbox'
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Send } from 'lucide-react'
+import { Send, TriangleAlert } from 'lucide-react'
 import { Dialog } from '@renderer/components/Dialog'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -164,7 +164,7 @@ export function NoticeCompose({ open, onClose, onCreated }: { open: boolean; onC
             </Field>
           )}
         </div>
-        <p className="text-xs text-[var(--notice-fg)]">⚠ 중요 보안 내용, 개인정보, 비공개 정보는 공유할 수 없습니다.</p>
+        <p className="text-xs text-[var(--notice-fg)]"><TriangleAlert className="mr-1 inline size-3.5 align-[-0.15em]" aria-hidden />중요 보안 내용, 개인정보, 비공개 정보는 공유할 수 없습니다.</p>
         {err && <p className="text-sm text-urgent">{err}</p>}
       </div>
     </Dialog>

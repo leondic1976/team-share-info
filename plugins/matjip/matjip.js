@@ -179,7 +179,8 @@
     return d.getFullYear() + '.' + (d.getMonth() + 1) + '.' + d.getDate()
   }
 
-  const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n)
+  /** Rating as text (copied to the clipboard for the messenger). */
+  const stars = (n) => `별점 ${n}/5`
 
   function shareText(p) {
     return ['[맛집 추천] ' + p.name + ' (' + p.cat + ') ' + stars(p.rating), [p.menu && '대표 메뉴: ' + p.menu, p.price, p.walk !== null && '걸어서 ' + p.walk + '분'].filter(Boolean).join(' · '), p.text, '- ' + p.authorName]

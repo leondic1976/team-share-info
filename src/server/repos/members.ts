@@ -68,7 +68,8 @@ export function getMember(db: Db, id: string): MemberRow | undefined {
 
 export function listMembers(db: Db, opts: { includeSuspended?: boolean } = {}): MemberRow[] {
   const where = opts.includeSuspended ? '' : `WHERE m.status = 'active'`
-  return db.all<MemberRow>(`${SELECT} ${where} ORDER BY d.sort, d.name, m.name`)
+  // within a department: the order an admin set (org_sort, 관리 → 구성원 순서), then by name
+  return db.all<MemberRow>(`${SELECT} ${where} ORDER BY d.sort, d.name, CASE WHEN m.org_sort > 0 THEN m.org_sort ELSE 2147483647 END, m.name`)
 }
 
 export function ensureDepartment(db: Db, name: string): string | null {

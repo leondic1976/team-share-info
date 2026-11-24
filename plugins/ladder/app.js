@@ -45,7 +45,7 @@
         : kind === 'teams'
           ? '<label class="inline"><input id="optTeams" type="number" min="2" max="6" value="2" style="width:64px"> 팀으로</label>'
           : kind === 'coffee'
-            ? '<label class="inline">문구 <input id="optPrize" placeholder="☕ 커피 쏘기" style="width:160px"></label>'
+            ? '<label class="inline">문구 <input id="optPrize" placeholder="커피 쏘기" style="width:160px"></label>'
             : ''
     o.querySelectorAll('input').forEach((i) => i.addEventListener('input', fillPreset))
     fillPreset()
@@ -101,7 +101,7 @@
       // result j is shown when its owner path was revealed, or always if not hidden
       const owner = m ? m.indexOf(j) : -1
       const show = !game.hide || (owner >= 0 && game.revealed.has(owner))
-      s += `<text class="prize${show ? '' : ' hidden-prize'}" x="${g.x(j)}" y="${g.h - 16}" text-anchor="middle">${show ? esc(game.results[j]) : '❓'}</text>`
+      s += `<text class="prize${show ? '' : ' hidden-prize'}" x="${g.x(j)}" y="${g.h - 16}" text-anchor="middle">${show ? esc(game.results[j]) : '?'}</text>`
     }
     s += '<g id="paths"></g>'
     svg.innerHTML = s

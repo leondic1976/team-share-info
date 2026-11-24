@@ -122,6 +122,13 @@
         margin-top: 40px;
         font-size: 13px;
       }
+      /* line icons (path data from lucide, ISC licence) */
+      svg.ic {
+        display: inline-block;
+        width: 1.15em;
+        height: 1.15em;
+        vertical-align: -0.2em;
+      }
     </style>
   </head>
   <body>
@@ -130,7 +137,7 @@
       <p class="muted">한 대의 PC가 서버가 되어 팀원끼리 공지·일정·자료·메신저·회의를 나누는 Windows 업무 프로그램입니다.</p>
 
       <div class="card dl">
-        <a id="dl" class="btn" href="#" aria-disabled="true">⬇ 내려받는 중…</a>
+        <a id="dl" class="btn" href="#" aria-disabled="true"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg> <span id="dlText">내려받는 중…</span></a>
         <div>
           <div id="ver"><b>최신 버전</b> 확인 중</div>
           <div class="muted" id="meta">Windows 10·11 (64비트) · 관리자 권한 없이 설치</div>
@@ -168,7 +175,7 @@
       <h2>버전 기록</h2>
       <div class="card" id="releases"><p class="muted">불러오는 중…</p></div>
 
-      <p class="notice">⚠ TeamHub는 가벼운 업무 정보 공유용입니다. 중요 보안 내용, 개인정보, 비공개 정보는 공유할 수 없습니다.</p>
+      <p class="notice"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg> TeamHub는 가벼운 업무 정보 공유용입니다. 중요 보안 내용, 개인정보, 비공개 정보는 공유할 수 없습니다.</p>
       <footer class="muted">TeamHub · 설치 파일 무결성: 받은 파일의 SHA-512가 <code>updates/latest.yml</code>의 값과 같아야 합니다.</footer>
     </main>
     <script>
@@ -208,7 +215,7 @@
           const cur = list[0]
           const a = document.getElementById('dl')
           a.href = 'updates/' + encodeURIComponent(cur.file)
-          a.textContent = '⬇ TeamHub ' + cur.version + ' 내려받기'
+          document.getElementById('dlText').textContent = 'TeamHub ' + cur.version + ' 내려받기'
           a.removeAttribute('aria-disabled')
           document.getElementById('ver').innerHTML = '<b>최신 버전 v' + esc(cur.version) + '</b> · ' + esc(cur.date)
           document.getElementById('meta').textContent = 'Windows 10·11 (64비트) · ' + mb(cur.size) + ' · 관리자 권한 없이 설치'

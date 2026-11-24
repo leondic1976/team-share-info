@@ -11,6 +11,10 @@ coverage/
 _site/
 # packed from plugins/ by scripts/build-plugins.mjs at build time
 resources/plugins/
+# packed from resources/forms by scripts/build-forms.mjs at build time
+resources/forms.pack
+# copied from the font packages by scripts/build-fonts.mjs at build time
+resources/fonts/
 # key of the feedback GitHub App: sealed into resources/feedback.bin at build time, never committed
 resources/feedback.bin
 feedback-key.local.json

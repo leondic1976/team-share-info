@@ -40,7 +40,7 @@ describe('ladder plugin logic', () => {
     expect(L.preset('winner', 5, { winners: 2 })).toEqual(['당첨', '당첨', '꽝', '꽝', '꽝'])
     expect(L.preset('order', 3)).toEqual(['1등', '2등', '3등'])
     expect(L.preset('teams', 5, { teams: 2 })).toEqual(['A팀', 'B팀', 'A팀', 'B팀', 'A팀'])
-    expect(L.preset('coffee', 3)).toEqual(['☕ 커피 쏘기', '꽝', '꽝'])
+    expect(L.preset('coffee', 3)).toEqual(['커피 쏘기', '꽝', '꽝'])
     expect(L.preset('custom', 3, { custom: ['1만원', '2만원'] })).toEqual(['1만원', '2만원', '꽝'])
     expect(L.parseList('김, 이\n박 ,,')).toEqual(['김', '이', '박'])
   })

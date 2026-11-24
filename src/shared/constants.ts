@@ -71,7 +71,6 @@ export const FEATURES = [
   'files',
   'meetings',
   'chat',
-  'tasks',
   'boards',
   'duty',
   'org',

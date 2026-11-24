@@ -97,7 +97,9 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
     c.kind === 'room' && (c.created_by === memberId || db.get<{ role: string }>('SELECT role FROM members WHERE id = ?', [memberId])?.role === 'admin')
 
   const toDto = (c: ConvRow, viewerId: string): ConversationDto => {
-    const ids = conversationMemberIds(db, c)
+    // A 1:1 is always the same two people: the one who left it (it is only hidden from their list
+    // until a new message) still names the conversation for the one who stayed.
+    const ids = c.kind === 'dm' ? db.all<{ member_id: string }>('SELECT member_id FROM conversation_members WHERE conversation_id = ?', [c.id]).map((r) => r.member_id) : conversationMemberIds(db, c)
     const rs = readState(db, c.id, viewerId)
     const last = db.get<{ body: string; kind: string; name: string | null }>(
       `SELECT x.body, x.kind, m.name FROM messages x LEFT JOIN members m ON m.id = x.sender_id WHERE x.conversation_id = ? AND x.deleted_at IS NULL ORDER BY x.seq DESC LIMIT 1`,

@@ -143,7 +143,7 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              개인 일정·할 일·다이어리·메모·알람 등은 이 PC에만 저장되며 서버로 보내지 않습니다. PC를 바꿀 때는 내보내기 후 새
+              개인 일정·다이어리·메모·알람 등은 이 PC에만 저장되며 서버로 보내지 않습니다. PC를 바꿀 때는 내보내기 후 새
               PC에서 가져오세요.
             </p>
             <div className="selectable rounded-md bg-muted px-3 py-2 font-mono text-xs break-all" data-testid="local-db-path">

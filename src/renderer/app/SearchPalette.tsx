@@ -18,7 +18,7 @@ interface Hit {
   go: () => void
 }
 
-const TYPE_LABEL: Record<string, string> = { notice: '공지', event: '일정', doc: '기록', post: '게시판', task: '할 일', file: '자료실', message: '메신저', contact: '주소록', member: '구성원', worklog: '업무일지' }
+const TYPE_LABEL: Record<string, string> = { notice: '공지', event: '일정', doc: '기록', post: '게시판', file: '자료실', message: '메신저', contact: '주소록', member: '구성원', worklog: '업무일지' }
 
 function useDebounced(v: string, ms = 200): string {
   const [d, setD] = useState(v)
@@ -70,7 +70,7 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
       return [
         ...memos.slice(0, 6).map((m) => ({ key: `memo${m.id}`, group: '메모', local: true, title: text(m.body).slice(0, 60) || '(빈 메모)', snippet: m.tags.map((t) => `#${t}`).join(' '), at: m.updatedAt, go: () => go('/memos') })),
         ...diary.slice(0, 6).map((d) => ({ key: `diary${d.date}`, group: '다이어리', local: true, title: d.date, snippet: d.snippet, go: () => go('/diary') })),
-        ...notes.slice(0, 6).map((n) => ({ key: `note${n.id}`, group: '지식 노트', local: true, title: `${n.icon} ${n.title || '제목 없음'}`.trim(), snippet: n.snippet, go: () => go(`/notes/${n.id}`) })),
+        ...notes.slice(0, 6).map((n) => ({ key: `note${n.id}`, group: '지식 노트', local: true, title: n.title || '제목 없음', snippet: n.snippet, go: () => go(`/notes/${n.id}`) })),
         ...files.map((f) => ({ key: `file${f.path}`, group: '내 파일', local: true, title: f.name, snippet: f.dir, at: f.mtime, go: () => void invoke('fm:open', { path: f.path }).then(onClose) })),
         ...sites
           .filter((b) => `${b.title} ${b.url} ${b.category}`.toLowerCase().includes(dq.toLowerCase()))
@@ -110,7 +110,7 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
         </div>
         <div className="max-h-[60vh] overflow-y-auto p-1.5" data-testid="search-results">
           {dq && !hits.length && !server.isFetching && !local.isFetching && <p className="p-6 text-center text-sm text-muted-foreground">찾는 내용이 없습니다.</p>}
-          {!dq && <p className="p-6 text-center text-sm text-muted-foreground">팀 자료는 내가 볼 수 있는 범위에서만, 개인 자료(🔒)는 이 PC에서만 찾습니다.{!online && ' 서버에 연결되지 않아 지금은 내 PC 자료만 찾습니다.'}</p>}
+          {!dq && <p className="p-6 text-center text-sm text-muted-foreground">팀 자료는 내가 볼 수 있는 범위에서만, 개인 자료(<Lock className="inline size-3.5 align-[-0.15em]" aria-label="자물쇠 표시" />)는 이 PC에서만 찾습니다.{!online && ' 서버에 연결되지 않아 지금은 내 PC 자료만 찾습니다.'}</p>}
           {hits.map((h, i) => {
             const header = h.group !== lastGroup
             lastGroup = h.group

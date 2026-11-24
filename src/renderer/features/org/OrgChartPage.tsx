@@ -98,7 +98,7 @@ function PersonCard({ m, head, s }: { m: MemberDto; head?: boolean; s: Shared })
         <PresenceDot presence={m.presence} />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={displayName(m)}>
           {m.name}
-          {m.nickname && <span className="font-normal text-muted-foreground"> ({m.nickname})</span>}
+          {m.nickname && <span className="font-normal text-muted-foreground">({m.nickname})</span>}
         </span>
       </span>
       {rankLine && <span className="truncate text-xs">{rankLine}</span>}
@@ -408,8 +408,10 @@ function ListView({ nodes, s }: { nodes: Node[]; s: Shared }): React.JSX.Element
                           <td className="px-3 py-1.5">
                             <span className="flex flex-wrap items-center gap-1.5">
                               <PresenceDot presence={m.presence} />
-                              <b>{m.name}</b>
-                              {m.nickname && <span className="text-muted-foreground">({m.nickname})</span>}
+                              <span>
+                                <b>{m.name}</b>
+                                {m.nickname && <span className="text-muted-foreground">({m.nickname})</span>}
+                              </span>
                               {n.head?.id === m.id && <Badge>부서장</Badge>}
                               <RoleBadge m={m} />
                             </span>

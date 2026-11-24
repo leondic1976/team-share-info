@@ -66,6 +66,42 @@ describe('messenger (M5)', () => {
     expect((await s.req(c, { method: 'GET', url: `/api/conversations/${room.id}`, ip: IP })).statusCode).toBe(404)
   })
 
+  it('leaving a 1:1 chat only hides it from my list; it comes back with its history when the other writes or I start it again', async () => {
+    s = await createTestServer()
+    const a = await s.join('A')
+    const b = await s.join('B')
+    const dm = (await s.req(a, { method: 'POST', url: '/api/conversations', ip: IP, payload: { memberIds: [b.memberId] } })).json().data
+    await s.req(a, { method: 'POST', url: `/api/conversations/${dm.id}/messages`, ip: IP, payload: { body: '첫 메시지' } })
+    const ids = async (who: typeof a): Promise<string[]> => (await s!.req(who, { method: 'GET', url: '/api/conversations', ip: IP })).json().data.map((c: { id: string }) => c.id)
+
+    expect((await s.req(b, { method: 'DELETE', url: `/api/conversations/${dm.id}/members/me`, ip: IP })).statusCode).toBe(200)
+    expect(await ids(b)).toEqual([])
+    expect((await s.req(b, { method: 'GET', url: `/api/conversations/${dm.id}/messages`, ip: IP })).statusCode).toBe(404)
+    // the other person is told nothing and keeps the conversation
+    expect(await ids(a)).toEqual([dm.id])
+    // ... still named after the one who left, and still the same pair
+    const kept = (await s.req(a, { method: 'GET', url: '/api/conversations', ip: IP })).json().data[0]
+    expect(kept).toMatchObject({ title: 'B', memberCount: 2 })
+    expect([...kept.memberIds].sort()).toEqual([a.memberId, b.memberId].sort())
+    const mine = (await s.req(a, { method: 'GET', url: `/api/conversations/${dm.id}/messages`, ip: IP })).json().data
+    expect(mine.map((m: { kind: string; body: string }) => [m.kind, m.body])).toEqual([['text', '첫 메시지']])
+
+    // the other person writes again: nothing is lost, the chat is back in my list as unread
+    expect((await s.req(a, { method: 'POST', url: `/api/conversations/${dm.id}/messages`, ip: IP, payload: { body: '다시 보냅니다' } })).statusCode).toBe(200)
+    const list = (await s.req(b, { method: 'GET', url: '/api/conversations', ip: IP })).json().data
+    expect(list).toHaveLength(1)
+    expect(list[0]).toMatchObject({ id: dm.id, lastPreview: '다시 보냅니다', title: 'A' })
+    expect(list[0].unread).toBeGreaterThanOrEqual(1)
+    const back = (await s.req(b, { method: 'GET', url: `/api/conversations/${dm.id}/messages`, ip: IP })).json().data
+    expect(back.map((m: { body: string }) => m.body)).toEqual(['첫 메시지', '다시 보냅니다'])
+
+    // leaving again and starting the chat myself gives the same conversation back
+    await s.req(b, { method: 'DELETE', url: `/api/conversations/${dm.id}/members/me`, ip: IP })
+    const again = (await s.req(b, { method: 'POST', url: '/api/conversations', ip: IP, payload: { memberIds: [a.memberId] } })).json().data
+    expect(again.id).toBe(dm.id)
+    expect(await ids(b)).toEqual([dm.id])
+  })
+
   it('rooms: the maker and admins remove a participant, others cannot; the removed one is shut out', async () => {
     s = await createTestServer()
     const a = await s.join('A')

@@ -8,7 +8,7 @@ import type { LedgerChange, LedgerChanges, LedgerDoc, LedgerExportCell, LedgerEx
 import type { ServerSetupInput } from './schemas/settings'
 import type { ServerStatus } from './server-host'
 import type { UrgentPayload } from './schemas/notices'
-import type { DiaryEntryDto, DiarySummaryDto, PersonalEventDto, PersonalEventInput, PersonalOccurrenceDto, PersonalTaskDto, PersonalTaskInput, ReminderItem } from './schemas/personal'
+import type { DiaryEntryDto, DiarySummaryDto, PersonalEventDto, PersonalEventInput, PersonalOccurrenceDto, ReminderItem } from './schemas/personal'
 import type { DetectedApp, LauncherInput, LauncherItemDto, RecentDocDto, TeamLauncherDto } from './schemas/launcher'
 import type { NetCheckStep, SecurityProgramDto, SecurityRunDto, SysInfo, SysResources, TempEntry } from './schemas/sysutil'
 import type { FmEntry, FmPlace, FmResult, IndexRoot, SearchHit, SearchQuery } from './fm'
@@ -319,10 +319,6 @@ export interface IpcMap {
   'local:diary.search': { req: { q: string }; res: DiarySummaryDto[] }
   'local:diary.range': { req: { from: string; to: string }; res: DiaryEntryDto[] }
   'scheduler:setServerReminders': { req: { source: string; items: ReminderItem[] }; res: void }
-  'local:tasks.list': { req: { includeDone: boolean }; res: PersonalTaskDto[] }
-  'local:tasks.save': { req: PersonalTaskInput; res: string }
-  'local:tasks.setDone': { req: { id: string; done: boolean }; res: void }
-  'local:tasks.delete': { req: { id: string }; res: void }
   'transfer:upload': { req: { paths: string[]; folderId: string; fileId?: string; note?: string }; res: number }
   'transfer:list': { req: void; res: TransferItem[] }
   'transfer:cancel': { req: { id: string }; res: void }
@@ -616,10 +612,6 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'local:diary.search',
   'local:diary.range',
   'scheduler:setServerReminders',
-  'local:tasks.list',
-  'local:tasks.save',
-  'local:tasks.setDone',
-  'local:tasks.delete',
   'transfer:upload',
   'transfer:list',
   'transfer:cancel',

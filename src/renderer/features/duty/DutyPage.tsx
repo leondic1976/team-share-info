@@ -18,7 +18,7 @@ import { Field } from '@renderer/features/setup/SetupFrame'
 import { api, errorMessage } from '@renderer/lib/api'
 import { DAY, fmtRange, fromInputValue, startOfDay, toInputValue } from '@renderer/lib/dates'
 import { confirmPii } from '@renderer/lib/pii'
-import { useMe } from '@renderer/lib/queries'
+import { useDisplayName, useMe } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { cn } from '@renderer/lib/utils'
 
@@ -60,6 +60,7 @@ function deptBlocks(board: DutyBoardDto, only: string): DeptBlock[] {
 }
 
 function DutyDialog({ board, meId, state, onClose }: { board: DutyBoardDto; meId: string; state: DialogState; onClose: () => void }): React.JSX.Element {
+  const dn = useDisplayName()
   const qc = useQueryClient()
   const edit = 'edit' in state ? state.edit : null
   const day0 = edit ? startOfDay(edit.start) : state && 'day' in state ? state.day : startOfDay(Date.now())
@@ -135,7 +136,7 @@ function DutyDialog({ board, meId, state, onClose }: { board: DutyBoardDto; meId
             <Select aria-label="대상" value={memberId} onChange={(e) => setMemberId(e.target.value)}>
               {board.members.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name}
+                  {dn(m)}
                   {m.title ? ` ${m.title}` : ''}
                   {m.id === meId ? ' (나)' : ''} · {board.departments.find((d) => d.id === m.deptId)?.name ?? '부서 미지정'}
                 </option>
@@ -250,6 +251,7 @@ function ClerksDialog({ board, onClose }: { board: DutyBoardDto; onClose: () => 
 }
 
 export function DutyPage(): React.JSX.Element {
+  const dn = useDisplayName()
   const qc = useQueryClient()
   const navigate = useNavigate()
   const online = useConn((s) => s.state === 'online')
@@ -440,7 +442,7 @@ export function DutyPage(): React.JSX.Element {
                       {list.map(({ m, e }) => (
                         <div key={`${e.id}:${e.key}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5" data-testid="duty-row">
                           <span className="w-28 shrink-0 truncate font-medium">
-                            <MemberLink memberId={m.id} name={m.name} /> <span className="text-xs font-normal text-muted-foreground">{m.title}</span>
+                            <MemberLink memberId={m.id} name={m.name}>{dn(m)}</MemberLink> <span className="text-xs font-normal text-muted-foreground">{m.title}</span>
                           </span>
                           <span className="sr-only">{e.type}</span>
                           <span className="w-24 shrink-0 text-xs text-muted-foreground">{dayPart(e, day, d1)}</span>
@@ -462,7 +464,7 @@ export function DutyPage(): React.JSX.Element {
                     canAddFor(m.id) ? (
                       <span key={m.id} className="inline-flex items-center gap-0.5">
                         <button className="cursor-pointer rounded bg-muted px-1.5 py-0.5 text-xs hover:bg-primary/15" title="눌러서 사고 신청" onClick={() => setDialog({ memberId: m.id, day })}>
-                          {m.name}
+                          {dn(m)}
                         </button>
                         {/* the name itself registers an absence here, so the messenger gets its own small button */}
                         {m.id !== meId && (
@@ -472,7 +474,9 @@ export function DutyPage(): React.JSX.Element {
                         )}
                       </span>
                     ) : (
-                      <MemberLink key={m.id} memberId={m.id} name={m.name} className="rounded bg-muted px-1.5 py-0.5 text-xs" />
+                      <MemberLink key={m.id} memberId={m.id} name={m.name} className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                        {dn(m)}
+                      </MemberLink>
                     )
                   )}
                   {!inOffice.length && <span className="text-xs text-muted-foreground">없음</span>}
@@ -510,7 +514,7 @@ export function DutyPage(): React.JSX.Element {
               ...b.members.map((m) => (
                 <tr key={m.id} className="border-b border-border last:border-0">
                   <td className="truncate px-3 py-1.5">
-                    <MemberLink memberId={m.id} name={m.name} /> <span className="text-xs text-muted-foreground">{m.title}</span>
+                    <MemberLink memberId={m.id} name={m.name}>{dn(m)}</MemberLink> <span className="text-xs text-muted-foreground">{m.title}</span>
                   </td>
                   {days.map((d, i) => {
                     const es = (byMember.get(m.id) ?? []).filter((e) => onDay(e, d, d + DAY))
@@ -546,7 +550,7 @@ export function DutyPage(): React.JSX.Element {
     const rows = board.entries
       .filter((e) => shown.has(e.memberId))
       .map((e) => ({ e, ...shown.get(e.memberId)! }))
-      .filter((r) => !q.trim() || `${r.m.name} ${r.dept} ${r.e.type} ${r.e.place} ${r.e.note}`.includes(q.trim()))
+      .filter((r) => !q.trim() || `${r.m.name} ${dn(r.m)} ${r.dept} ${r.e.type} ${r.e.place} ${r.e.note}`.includes(q.trim()))
     const days = (e: DutyEntryDto): string => (e.allDay ? `${Math.round((e.end - e.start) / DAY)}일` : `${Math.round(((e.end - e.start) / 3600000) * 10) / 10}시간`)
     const exportCsv = (): void => {
       const csv = toCsv([['시작', '끝', '기간', '부서', '이름', '직위', '종류', '행선지', '사유', '대신 올린 사람'], ...rows.map(({ e, m, dept: d }) => [format(e.start, e.allDay ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm'), format(e.allDay ? e.end - DAY : e.end, e.allDay ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm'), days(e), d, m.name, m.title ?? '', e.type, e.place, e.note, e.registeredByName ?? ''])])
@@ -588,7 +592,9 @@ export function DutyPage(): React.JSX.Element {
                       {fmtRange(e.start, e.end, e.allDay)} <span className="text-xs text-muted-foreground">{days(e)}</span>
                     </td>
                     <td className="px-2 py-1.5 text-muted-foreground">{d}</td>
-                    <td className="whitespace-nowrap px-2 py-1.5 font-medium">{m.name}</td>
+                    <td className="whitespace-nowrap px-2 py-1.5 font-medium">
+                      <MemberLink memberId={m.id} name={m.name}>{dn(m)}</MemberLink>
+                    </td>
                     <td className="px-2 py-1.5">
                       <TypeBadge type={e.type} />
                     </td>

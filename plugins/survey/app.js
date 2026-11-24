@@ -4,6 +4,8 @@
  * made it can change or close it) and every member's answers are that member's own entry. */
 ;(function () {
   'use strict'
+  // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
+  const icon = (n, o) => (window.TeamHub.icon ? window.TeamHub.icon(n, o) : '')
   const $ = (id) => document.getElementById(id)
   const S = window.Survey
   const call = (m, p) => window.TeamHub.call(m, p)
@@ -63,10 +65,10 @@
           })
           .join('')}</div>`
       : tab === 'open'
-        ? empty('📊', '진행 중인 설문이 없습니다', '[새 설문 만들기]로 팀원의 의견을 모아 보세요.')
+        ? empty(icon('chart-column'), '진행 중인 설문이 없습니다', '[새 설문 만들기]로 팀원의 의견을 모아 보세요.')
         : tab === 'closed'
-          ? empty('🗂️', '끝난 설문이 없습니다', '마감한 설문과 결과가 여기에 모입니다.')
-          : empty('✏️', '내가 만든 설문이 없습니다', '[새 설문 만들기]를 눌러 시작하세요.')
+          ? empty(icon('folder-archive'), '끝난 설문이 없습니다', '마감한 설문과 결과가 여기에 모입니다.')
+          : empty(icon('pencil'), '내가 만든 설문이 없습니다', '[새 설문 만들기]를 눌러 시작하세요.')
   }
 
   // ---------- one survey ----------
@@ -81,7 +83,7 @@
           return `<label class="choice"><input type="${q.type === 'single' ? 'radio' : 'checkbox'}" name="q-${esc(q.id)}" data-q="${esc(q.id)}" data-k="${k}"${on ? ' checked' : ''} /> ${esc(o)}</label>`
         })
         .join('')
-    else if (q.type === 'rating') body = `<div class="stars" role="radiogroup" aria-label="별점">${[1, 2, 3, 4, 5].map((n) => `<button type="button" role="radio" aria-checked="${v === n}" aria-label="${n}점" data-q="${esc(q.id)}" data-star="${n}" class="${v >= n ? 'on' : ''}">★</button>`).join('')}</div>`
+    else if (q.type === 'rating') body = `<div class="stars" role="radiogroup" aria-label="별점">${[1, 2, 3, 4, 5].map((n) => `<button type="button" role="radio" aria-checked="${v === n}" aria-label="${n}점" data-q="${esc(q.id)}" data-star="${n}" class="${v >= n ? 'on' : ''}">${icon('star', { fill: true }) || '*'}</button>`).join('')}</div>`
     else body = `<textarea rows="3" maxlength="${S.LIMITS.answer}" data-q="${esc(q.id)}" data-text="1" placeholder="답을 적어 주세요.">${esc(v || '')}</textarea>`
     return `<div class="card question">${head}${body}</div>`
   }
@@ -96,7 +98,7 @@
             .map((o) => `<div class="bar-row${o.count && o.count === t.top ? ' top' : ''}" title="${hide ? '' : esc(o.names.join(', '))}"><span>${esc(o.label)}</span><div class="bar"><i style="width:${o.percent}%"></i></div><span class="count">${o.count}명 · ${o.percent}%</span></div>`)
             .join('')
         else if (t.type === 'rating')
-          body = `<p><b style="font-size:20px">★ ${t.average.toFixed(1)}</b> <span class="muted">/ 5 · ${t.answered}명</span></p>${t.counts
+          body = `<p><b style="font-size:20px">${icon('star', { fill: true, cls: 'star-on' })} ${t.average.toFixed(1)}</b> <span class="muted">/ 5 · ${t.answered}명</span></p>${t.counts
             .map((c, k) => `<div class="bar-row"><span>${k + 1}점</span><div class="bar"><i style="width:${t.answered ? Math.round((c / t.answered) * 100) : 0}%"></i></div><span class="count">${c}명</span></div>`)
             .reverse()
             .join('')}`
@@ -139,7 +141,7 @@
           ? `<form id="answerForm" class="wrap">${r.shared.questions.map(questionHtml).join('')}
               <div class="btns"><button type="submit" class="primary">${done ? '응답 고치기' : '응답 보내기'}</button>${done ? '<button type="button" data-act="cancelEdit">취소</button>' : ''}<span class="muted small">* 표시는 꼭 답해야 하는 문항입니다. 마감 전까지 고칠 수 있습니다.</span></div>
             </form>`
-          : `<div class="card"><div class="btns" style="margin-top:0"><b>${done ? '✅ 응답했습니다.' : open ? '' : '마감된 설문입니다. 응답하지 않았습니다.'}</b>${done && open ? '<button data-act="edit">내 응답 고치기</button>' : ''}</div></div>`
+          : `<div class="card"><div class="btns" style="margin-top:0"><b>${done ? `${icon('circle-check')} 응답했습니다.` : open ? '' : '마감된 설문입니다. 응답하지 않았습니다.'}</b>${done && open ? '<button data-act="edit">내 응답 고치기</button>' : ''}</div></div>`
       }
       ${
         !filling || mine
@@ -227,9 +229,9 @@
         (q, i) => `<div class="bq" data-i="${i}">
         <div class="bq-head"><b>문항 ${i + 1}</b>
           <select data-f="type" aria-label="문항 종류">${Object.keys(S.TYPES).map((t) => `<option value="${t}"${q.type === t ? ' selected' : ''}>${esc(S.TYPES[t])}</option>`).join('')}</select>
-          <button type="button" data-b="up" aria-label="위로"${i === 0 ? ' disabled' : ''}>↑</button>
-          <button type="button" data-b="down" aria-label="아래로"${i === bq.length - 1 ? ' disabled' : ''}>↓</button>
-          <button type="button" data-b="del" aria-label="문항 지우기"${bq.length === 1 ? ' disabled' : ''}>✕</button>
+          <button type="button" data-b="up" aria-label="위로"${i === 0 ? ' disabled' : ''}>${icon('arrow-up') || '위'}</button>
+          <button type="button" data-b="down" aria-label="아래로"${i === bq.length - 1 ? ' disabled' : ''}>${icon('arrow-down') || '아래'}</button>
+          <button type="button" data-b="del" aria-label="문항 지우기"${bq.length === 1 ? ' disabled' : ''}>${icon('x') || '×'}</button>
         </div>
         <input type="text" data-f="text" maxlength="${S.LIMITS.question}" placeholder="질문을 적으세요" aria-label="질문" value="${esc(q.text)}" />
         ${q.type === 'single' || q.type === 'multi' ? `<textarea data-f="options" rows="3" aria-label="보기" placeholder="보기를 한 줄에 하나씩 적으세요&#10;예) 5월 10일(금)&#10;5월 17일(금)">${esc(q.options)}</textarea>` : ''}
@@ -366,7 +368,7 @@
       if (window.TeamHub.room && rooms.some((r) => r.id === window.TeamHub.room)) openSurvey(window.TeamHub.room)
       else render()
     } catch (e) {
-      $('main').innerHTML = empty('📡', '설문을 불러오지 못했습니다', e.message || '서버 연결을 확인하세요.') + '<p style="text-align:center"><button id="retry" class="primary">다시 시도</button></p>'
+      $('main').innerHTML = empty(icon('wifi-off'), '설문을 불러오지 못했습니다', e.message || '서버 연결을 확인하세요.') + '<p style="text-align:center"><button id="retry" class="primary">다시 시도</button></p>'
       $('retry').addEventListener('click', () => location.reload())
     }
 

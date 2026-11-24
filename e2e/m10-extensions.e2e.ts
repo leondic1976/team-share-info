@@ -52,7 +52,7 @@ describe('extensions shipped with the app, personal-information check, messenger
     await fa.locator('#fText').fill('국물이 진합니다')
     await fa.locator('#editorSave').click()
     await expect.poll(() => fa.locator('.post').count(), { timeout: 15000 }).toBe(1)
-    expect(await fa.locator('.post').textContent()).toContain('★★★★★')
+    expect(await fa.locator('.post .stars svg.th-fill').count()).toBe(5)
 
     await open(b.page, 'matjip', '.post')
     const fb = frame(b.page)

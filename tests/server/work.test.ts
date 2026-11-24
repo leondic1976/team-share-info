@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { createTestServer, type TestServer } from './helpers'
 import { canTransition, TASK_TRANSITIONS, type TaskState } from '../../src/shared/schemas/work'
+import { opsSettingsSchema, settingsPatchSchema } from '../../src/shared/schemas/settings'
 
 let s: TestServer | null = null
 afterEach(async () => {
@@ -8,6 +9,15 @@ afterEach(async () => {
   s = null
 })
 const IP = '192.168.10.20'
+
+describe('the removed 할 일 menu', () => {
+  it("a stored or received disabledFeatures entry 'tasks' is dropped, not an error", () => {
+    const ops = opsSettingsSchema.parse({ disabledFeatures: ['tasks', 'chat', 'no-such-menu'], messageRetentionDays: 400 })
+    expect(ops.disabledFeatures).toEqual(['chat'])
+    expect(ops.messageRetentionDays).toBe(400)
+    expect(settingsPatchSchema.parse({ ops: { disabledFeatures: ['tasks'] } }).ops?.disabledFeatures).toEqual([])
+  })
+})
 
 describe('task state rules (6.8)', () => {
   it('matches the transition table', () => {

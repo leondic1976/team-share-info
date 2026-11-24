@@ -12,6 +12,7 @@ import { useMembers } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { displayName } from '@shared/schemas/auth'
 import type { ConversationDto } from '@shared/schemas/chat'
+import { GROUP_LEAVE_HINT, leaveConversation } from './leave'
 
 export type ConversationDetail = ConversationDto & { members: { id: string; name: string }[] }
 
@@ -67,14 +68,12 @@ export function ParticipantsDialog({ conv, onClose, onSwitch, onLeft }: { conv: 
     void run(() => api.del(`/api/conversations/${conv.id}/members/${m.id}`))
   }
 
-  const leave = (): void => {
-    if (!window.confirm('대화방에서 나갈까요?')) return
+  const leave = (): void =>
     void run(async () => {
-      await api.del(`/api/conversations/${conv.id}/members/me`)
+      if (!(await leaveConversation(conv, conv.members.find((m) => m.id === meId)?.name ?? ''))) return
       onClose()
       onLeft()
     })
-  }
 
   return (
     <Dialog
@@ -84,7 +83,7 @@ export function ParticipantsDialog({ conv, onClose, onSwitch, onLeft }: { conv: 
       width="max-w-md"
       footer={
         <>
-          <Button variant="ghost" className="mr-auto text-urgent" disabled={isGroup || !online || busy} title={isGroup ? '그룹 대화방은 그룹에서 나가야 빠집니다.' : undefined} onClick={leave}>
+          <Button variant="ghost" className="mr-auto text-urgent" disabled={isGroup || !online || busy} title={isGroup ? GROUP_LEAVE_HINT : undefined} onClick={leave}>
             <LogOut /> 나가기
           </Button>
           <Button disabled={isGroup || !online || busy || !fresh.length} onClick={() => void add()}>

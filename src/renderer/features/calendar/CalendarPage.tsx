@@ -9,7 +9,8 @@ import interactionPlugin from '@fullcalendar/interaction'
 import koLocale from '@fullcalendar/core/locales/ko'
 import type { EventClickArg, EventDropArg, DatesSetArg, EventContentArg } from '@fullcalendar/core'
 import type { EventResizeDoneArg, DateClickArg } from '@fullcalendar/interaction'
-import { Plus, Printer, Upload, Download, Lock, Users } from 'lucide-react'
+import { displayName } from '@shared/schemas/auth'
+import { CalendarClock, Plus, Printer, Upload, Download, Lock, Users } from 'lucide-react'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Select } from '@renderer/components/ui/input'
@@ -21,9 +22,7 @@ import { useConn } from '@renderer/app/conn-store'
 import { DAY } from '@renderer/lib/dates'
 import { parseIcs, toIcs } from '@shared/ics'
 import { useHolidays, usePersonalEvents, useServerEvents, type Range } from './calendar-api'
-import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { isTaskAssignee, type TaskDto } from '@shared/schemas/work'
 import { useAnnualTasks } from '@renderer/features/docs/AnnualCalendar'
 import { annualDate } from '@renderer/features/docs/useDocAlerts'
 import { EventDialog, ModeDialog, type EditMode, type EventTarget } from './EventDialog'
@@ -59,14 +58,7 @@ export function CalendarPage(): React.JSX.Element {
   const personal = usePersonalEvents(show === 'all' || show === 'mine' || show === 'personal' ? range : null)
   const holidays = useHolidays(range)
   const navigate = useNavigate()
-  // Task due dates (6.8: 캘린더에 마감일 표시): tasks I received or requested, plus personal to-dos.
-  const tasks = useQuery({
-    queryKey: ['tasks', 'due', range?.from, range?.to],
-    queryFn: () => api.get<TaskDto[]>('/api/tasks', { filter: 'all', state: 'open', dueFrom: range!.from, dueTo: range!.to }),
-    enabled: online && !!range && show !== 'personal'
-  })
   const annual = useAnnualTasks()
-  const localTasks = useQuery({ queryKey: ['local', 'tasks'], queryFn: () => invoke('local:tasks.list', { includeDone: false }), networkMode: 'always' })
 
   const events = useMemo(() => {
     const out: Record<string, unknown>[] = []
@@ -102,16 +94,6 @@ export function CalendarPage(): React.JSX.Element {
         })
       }
     }
-    for (const t of tasks.data ?? []) {
-      if (!isTaskAssignee(t, me?.id) && t.requesterId !== me?.id) continue
-      out.push({ id: `task:${t.id}`, title: `📌 마감: ${t.title}`, start: t.dueAt!, allDay: false, backgroundColor: '#fef3c7', borderColor: '#d97706', textColor: '#92400e', editable: false, extendedProps: { origin: 'task' } })
-    }
-    if (show === 'all' || show === 'mine' || show === 'personal') {
-      for (const t of localTasks.data ?? []) {
-        if (!t.dueAt || !range || t.dueAt < range.from || t.dueAt >= range.to) continue
-        out.push({ id: `ltask:${t.id}`, title: `📌 마감: ${t.title}`, start: t.dueAt, allDay: false, backgroundColor: '#f1f5f9', borderColor: '#64748b', textColor: '#334155', editable: false, classNames: ['personal-event'], extendedProps: { origin: 'local-task' } })
-      }
-    }
     if (range && show !== 'personal') {
       const y0 = new Date(range.from).getFullYear()
       const y1 = new Date(range.to).getFullYear()
@@ -120,7 +102,7 @@ export function CalendarPage(): React.JSX.Element {
           const d = annualDate(t, y)
           const start = new Date(d.getFullYear(), d.getMonth(), d.getDate())
           if (start.getTime() >= range.to || start.getTime() + DAY <= range.from) continue
-          out.push({ id: `annual:${t.id}:${y}`, title: `📅 ${t.title}`, start, end: new Date(start.getTime() + DAY), allDay: true, backgroundColor: '#ede9fe', borderColor: '#7c3aed', textColor: '#5b21b6', editable: false, extendedProps: { origin: 'annual' } })
+          out.push({ id: `annual:${t.id}:${y}`, title: t.title, start, end: new Date(start.getTime() + DAY), allDay: true, backgroundColor: '#ede9fe', borderColor: '#7c3aed', textColor: '#5b21b6', editable: false, extendedProps: { origin: 'annual' } })
         }
       }
     }
@@ -129,7 +111,7 @@ export function CalendarPage(): React.JSX.Element {
       out.push({ id: `holiday-label:${h.date}`, title: h.name, start: h.date, allDay: true, backgroundColor: 'transparent', borderColor: 'transparent', textColor: '#dc2626', editable: false, extendedProps: { origin: 'holiday' } })
     }
     return out
-  }, [server.data, personal.data, holidays.data, tasks.data, localTasks.data, annual.data, show, me, range])
+  }, [server.data, personal.data, holidays.data, annual.data, show, me, range])
 
   const refresh = (): void => {
     void qc.invalidateQueries({ queryKey: ['events'] })
@@ -138,10 +120,6 @@ export function CalendarPage(): React.JSX.Element {
 
   const onClick = (arg: EventClickArg): void => {
     const p = arg.event.extendedProps as { origin: string; item?: { id: string; key: number; start: number; end: number; recurring: boolean } }
-    if (p.origin === 'task' || p.origin === 'local-task') {
-      navigate('/tasks')
-      return
-    }
     if (p.origin === 'annual') {
       navigate('/docs/annual')
       return
@@ -212,10 +190,12 @@ export function CalendarPage(): React.JSX.Element {
   }
 
   const renderContent = (arg: EventContentArg): React.JSX.Element => {
-    const local = (arg.event.extendedProps as { origin: string }).origin === 'local'
+    const origin = (arg.event.extendedProps as { origin: string }).origin
+    const local = origin === 'local'
     return (
       <div className="flex min-w-0 items-center gap-1 overflow-hidden px-0.5 text-[0.78rem]">
         {local && <Lock className="size-3 shrink-0" aria-label="개인 일정" />}
+        {origin === 'annual' && <CalendarClock className="size-3 shrink-0" aria-label="연간 업무" />}
         {arg.timeText && !arg.event.allDay && <span className="shrink-0 opacity-80">{arg.timeText}</span>}
         <span className="truncate">{arg.event.title}</span>
       </div>
@@ -226,7 +206,7 @@ export function CalendarPage(): React.JSX.Element {
     <div className="flex h-full flex-col">
       <PageHeader
         title="일정"
-        description="개인 일정(🔒 회색)은 내 PC에만 저장되고, 공유 일정(색깔)은 서버에 저장되어 팀·그룹·지정한 사람이 함께 봅니다."
+        description="개인 일정(자물쇠 표시, 회색)은 내 PC에만 저장되고, 공유 일정(색깔)은 서버에 저장되어 팀·그룹·지정한 사람이 함께 봅니다."
         actions={
           <>
             <Select aria-label="보기 대상" className="w-40" value={show} onChange={(e) => setShow(e.target.value)}>
@@ -238,7 +218,7 @@ export function CalendarPage(): React.JSX.Element {
                 .filter((m) => m.id !== me?.id)
                 .map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name}님 일정
+                    {displayName(m)}님 일정
                   </option>
                 ))}
             </Select>
@@ -277,7 +257,7 @@ export function CalendarPage(): React.JSX.Element {
           })}
         </div>
         <span className="text-xs text-muted-foreground">
-          {show === 'personal' ? '내 PC에만 저장된 일정입니다. 다른 사람에게 보이지 않고 서버가 꺼져 있어도 쓸 수 있습니다.' : show === 'shared' ? '서버에 저장되어 함께 보는 일정입니다(팀·부서·그룹·지정한 사람).' : '개인 일정(🔒 회색)과 공유 일정(색깔)을 함께 봅니다.'}
+          {show === 'personal' ? '내 PC에만 저장된 일정입니다. 다른 사람에게 보이지 않고 서버가 꺼져 있어도 쓸 수 있습니다.' : show === 'shared' ? '서버에 저장되어 함께 보는 일정입니다(팀·부서·그룹·지정한 사람).' : '개인 일정(자물쇠 표시, 회색)과 공유 일정(색깔)을 함께 봅니다.'}
         </span>
       </div>
       {msg && (

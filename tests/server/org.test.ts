@@ -134,8 +134,7 @@ describe('organisation management (조직 관리)', () => {
       { method: 'PATCH', url: `/api/admin/departments/${team}`, payload: { name: 'y', headId: member.memberId } },
       { method: 'PUT', url: '/api/admin/departments/order', payload: { parentId: null, ids: [other, team] } },
       { method: 'DELETE', url: `/api/admin/departments/${other}` },
-      { method: 'PATCH', url: `/api/admin/org/members/${member.memberId}`, payload: { deptId: team, rank: '7급' } },
-      { method: 'PUT', url: '/api/admin/org/members/order', payload: { deptId: null, ids: [member.memberId] } }
+      { method: 'PATCH', url: `/api/admin/org/members/${member.memberId}`, payload: { deptId: team, rank: '7급' } }
     ]
     for (const call of calls) {
       const bySec = await s.req(sec, { ...call, ip: IP })
@@ -143,7 +142,16 @@ describe('organisation management (조직 관리)', () => {
       expect(bySec.json().error.code).toBe('OWNER_ONLY')
       expect((await s.req(member, { ...call, ip: IP })).statusCode, `member ${call.method} ${call.url}`).toBe(403)
     }
-    // nothing changed
+    // the order of people within a department is not owner-only: the 서무 sets it, a member cannot
+    const dept = (await members()).find((m) => m.id === member.memberId)!.deptId ?? null
+    const inDept = async (): Promise<string[]> => (await members()).filter((m) => (m.deptId ?? null) === dept).map((m) => m.id)
+    const wanted = [...(await inDept())].reverse()
+    const order = { method: 'PUT' as const, url: '/api/admin/org/members/order', payload: { deptId: dept, ids: wanted } }
+    expect((await s.req(member, { ...order, ip: IP })).statusCode).toBe(403)
+    expect((await s.req(sec, { ...order, ip: IP })).statusCode).toBe(200)
+    // and every list of members follows it
+    expect(await inDept()).toEqual(wanted)
+    // nothing else changed
     expect((await depts()).map((d) => d.name).sort()).toEqual(['기획팀', '운영팀', '행정팀'].sort())
     expect((await members()).find((m) => m.id === member.memberId)!.rank).toBeNull()
     // everybody reads the organisation

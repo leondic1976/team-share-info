@@ -11,6 +11,8 @@ const src = join(root, 'plugins')
 mkdirSync(out, { recursive: true })
 
 const walk = (dir) => readdirSync(dir).flatMap((n) => (statSync(join(dir, n)).isDirectory() ? walk(join(dir, n)) : [join(dir, n)]))
+// one icon table for the app and the site (src/shared/icons.json): the site's cards draw "iconSvg"
+const icons = JSON.parse(readFileSync(join(root, 'src', 'shared', 'icons.json'), 'utf8'))
 const catalog = []
 for (const id of readdirSync(src)) {
   const dir = join(src, id)
@@ -30,7 +32,7 @@ for (const id of readdirSync(src)) {
   const bundle = Buffer.from(JSON.stringify({ format: 'teamhub-plugin@1', manifest: m, files }))
   const file = `${id}-${m.version}.thplugin`
   writeFileSync(join(out, file), bundle)
-  catalog.push({ id, name: m.name, version: m.version, description: m.description ?? '', author: m.author ?? '', icon: m.icon ?? '🧩', permissions: m.permissions ?? [], file, sha256: createHash('sha256').update(bundle).digest('hex'), size: bundle.length, features: features ?? [], updated: updated ?? '' })
+  catalog.push({ id, name: m.name, version: m.version, description: m.description ?? '', author: m.author ?? '', icon: m.icon ?? '', iconName: m.iconName ?? '', iconSvg: icons[m.iconName] ?? icons.puzzle, permissions: m.permissions ?? [], file, sha256: createHash('sha256').update(bundle).digest('hex'), size: bundle.length, features: features ?? [], updated: updated ?? '' })
   console.log(`packed ${file} (${bundle.length} bytes)`)
 }
 writeFileSync(join(out, 'catalog.json'), JSON.stringify(catalog, null, 2))

@@ -1,3 +1,5 @@
+import { MENU_PLUGINS } from '@renderer/app/menu'
+import { usePrefs } from '@renderer/app/prefs-store'
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -13,12 +15,13 @@ import { Switch } from '@renderer/components/ui/switch'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Dialog, confirmDialog } from '@renderer/components/Dialog'
 import { EmptyState } from '@renderer/components/EmptyState'
+import { NamedIcon, PluginIcon } from '@renderer/components/NamedIcon'
 import { invoke, onMain } from '@renderer/lib/bridge'
 
 const SORT_KEY = 'teamhub.plugins.sort'
 
 interface Pending {
-  manifest: Pick<PluginManifest, 'id' | 'name' | 'version' | 'description' | 'author' | 'icon' | 'permissions'>
+  manifest: Pick<PluginManifest, 'id' | 'name' | 'version' | 'description' | 'author' | 'iconName' | 'permissions'>
   from: { kind: 'catalog'; id: string } | { kind: 'file'; path: string }
 }
 
@@ -72,7 +75,12 @@ export function PluginsPage(): React.JSX.Element {
       // the choice just lasts until the window closes
     }
   }
-  const gallery = sortCatalog(catalog.data?.data ?? [], sort, counts.data ?? {})
+  // extensions that are a left-menu item of their own (식사 신청) are not offered or listed here
+  const gallery = sortCatalog(catalog.data?.data ?? [], sort, counts.data ?? {}).filter((c) => !MENU_PLUGINS[c.id])
+  const mine = (installed.data ?? []).filter((p) => !MENU_PLUGINS[p.manifest.id])
+  // 관리대장 is part of the program: it cannot be uninstalled, but it can be taken off this PC's menu (ledgers are kept)
+  const { hiddenMenus, update: updatePrefs } = usePrefs()
+  const ledgerOff = hiddenMenus.includes('ledger')
   useEffect(() => onMain('plugins:changed', () => void qc.invalidateQueries({ queryKey: ['local', 'plugins'] })), [qc])
   const have = new Map((installed.data ?? []).map((p) => [p.manifest.id, p]))
   const askCatalog = (c: CatalogPlugin): void => setPending({ manifest: c, from: { kind: 'catalog', id: c.id } })
@@ -157,16 +165,35 @@ export function PluginsPage(): React.JSX.Element {
           <div className="grid gap-3 lg:grid-cols-2">
             <Card data-testid="builtin-ledger">
               <CardContent className="flex gap-3 p-4">
-                <span className="text-3xl">📒</span>
+                <NamedIcon name="notebook-tabs" className="size-8 text-primary" />
                 <div className="min-w-0 flex-1 space-y-1">
                   <p className="font-semibold">
-                    관리대장 <span className="text-xs font-normal text-muted-foreground">설치 없이 바로 사용</span>
+                    관리대장 <span className="text-xs font-normal text-muted-foreground">{ledgerOff ? '삭제함 (왼쪽 메뉴에 없음)' : '설치 없이 바로 사용'}</span>
                   </p>
                   <p className="text-sm text-muted-foreground">엑셀처럼 쓰는 대장 관리. 개인용·팀용·지정자용 대장, 수식, 엑셀 가져오기·저장.</p>
-                  <div className="pt-1">
-                    <Button size="sm" onClick={() => navigate('/ledger')}>
-                      <Play /> 열기
-                    </Button>
+                  <div className="flex items-center gap-2 pt-1">
+                    {ledgerOff ? (
+                      <Button size="sm" onClick={() => void updatePrefs({ hiddenMenus: hiddenMenus.filter((k) => k !== 'ledger') })} data-testid="ledger-restore">
+                        <Download /> 다시 추가
+                      </Button>
+                    ) : (
+                      <>
+                        <Button size="sm" onClick={() => navigate('/ledger')}>
+                          <Play /> 열기
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="ml-auto border-urgent/50 text-urgent hover:bg-urgent/10"
+                          data-testid="ledger-remove"
+                          onClick={() => {
+                            if (confirmDialog('관리대장을 이 PC의 왼쪽 메뉴에서 삭제할까요? 만들어 둔 대장(개인용·팀용)은 지워지지 않으며, 여기서 [다시 추가]를 누르면 그대로 다시 쓸 수 있습니다.')) void updatePrefs({ hiddenMenus: [...hiddenMenus, 'ledger'] })
+                          }}
+                        >
+                          <Trash2 /> 삭제
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -175,15 +202,15 @@ export function PluginsPage(): React.JSX.Element {
         </section>
         <section>
           <h2 className="mb-2 text-sm font-semibold text-muted-foreground">설치된 확장 기능</h2>
-          {!installed.data?.length && <EmptyState icon={Puzzle} title="설치된 확장 기능이 없습니다" description="아래 목록에서 설치하세요." />}
+          {!mine.length && <EmptyState icon={Puzzle} title="설치된 확장 기능이 없습니다" description="아래 목록에서 설치하세요." />}
           <div className="grid gap-3 lg:grid-cols-2" data-testid="installed-plugins">
-            {installed.data?.map((p) => {
+            {mine.map((p) => {
               const latest = catalog.data?.data?.find((c) => c.id === p.manifest.id)
               const update = latest && compareVersions(latest.version, p.manifest.version) > 0
               return (
                 <Card key={p.manifest.id} data-testid="installed-plugin">
                   <CardContent className="flex gap-3 p-4">
-                    <span className="text-3xl">{p.manifest.icon}</span>
+                    <PluginIcon manifest={p.manifest} className="size-8 text-primary" />
                     <div className="min-w-0 flex-1 space-y-1">
                       <p className="font-semibold">
                         {p.manifest.name} <span className="text-xs font-normal text-muted-foreground">v{p.manifest.version} · {p.source === 'catalog' ? '사이트' : p.source === 'builtin' ? '기본 제공' : '파일'} · {format(p.installedAt, 'yyyy-MM-dd')}</span>
@@ -226,7 +253,7 @@ export function PluginsPage(): React.JSX.Element {
               </select>
             </label>
             {(() => {
-              const rest = (catalog.data?.data ?? []).filter((c) => c.builtin && !have.has(c.id))
+              const rest = (catalog.data?.data ?? []).filter((c) => c.builtin && !have.has(c.id) && !MENU_PLUGINS[c.id])
               return rest.length > 1 ? (
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => void installNow(rest)}>
                   <Download /> 기본 제공 모두 설치
@@ -243,7 +270,7 @@ export function PluginsPage(): React.JSX.Element {
               return (
                 <Card key={c.id} data-testid="catalog-plugin">
                   <CardContent className="flex gap-3 p-4">
-                    <span className="text-3xl">{c.icon}</span>
+                    <PluginIcon manifest={c} className="size-8 text-primary" />
                     <div className="min-w-0 flex-1 space-y-1">
                       <p className="font-semibold">
                         {c.name} <span className="text-xs font-normal text-muted-foreground">v{c.version} · {c.author} · {c.builtin ? '기본 제공' : '다운로드 사이트'}</span>
@@ -306,7 +333,7 @@ export function PluginsPage(): React.JSX.Element {
         {pending && (
           <div className="space-y-3" data-testid="plugin-confirm">
             <div className="flex items-center gap-3">
-              <span className="text-4xl">{pending.manifest.icon}</span>
+              <PluginIcon manifest={pending.manifest} className="size-10 text-primary" />
               <div>
                 <p className="font-semibold">
                   {pending.manifest.name} v{pending.manifest.version}

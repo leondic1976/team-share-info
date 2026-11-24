@@ -144,10 +144,10 @@ export function registerFilesIpc(): void {
   handle('notes:tree', null, () => notes().tree())
   handle('notes:trash', null, () => notes().trash())
   handle('notes:get', id, (r) => notes().get(r.id))
-  handle('notes:create', z.object({ parentId: z.string().nullable().optional(), kind: z.enum(['page', 'database']).optional(), title: z.string().max(200).optional(), icon: z.string().max(10).optional(), bodyHtml: z.string().max(10_000_000).optional() }), (i) => notes().create(i))
+  handle('notes:create', z.object({ parentId: z.string().nullable().optional(), kind: z.enum(['page', 'database']).optional(), title: z.string().max(200).optional(), icon: z.string().max(24).optional(), bodyHtml: z.string().max(10_000_000).optional() }), (i) => notes().create(i))
   handle(
     'notes:update',
-    z.object({ id: z.string(), title: z.string().max(200).optional(), icon: z.string().max(10).optional(), bodyHtml: z.string().max(10_000_000).optional(), props: propsSchema.optional(), rowValues: z.record(z.string(), cell).optional(), favorite: z.boolean().optional(), isTemplate: z.boolean().optional() }),
+    z.object({ id: z.string(), title: z.string().max(200).optional(), icon: z.string().max(24).optional(), bodyHtml: z.string().max(10_000_000).optional(), props: propsSchema.optional(), rowValues: z.record(z.string(), cell).optional(), favorite: z.boolean().optional(), isTemplate: z.boolean().optional() }),
     ({ id: nid, ...p }) => notes().update(nid, p)
   )
   handle('notes:move', z.object({ id: z.string(), parentId: z.string().nullable(), index: z.number().int().min(0) }), ({ id: nid, parentId, index }) => notes().move(nid, parentId, index))
@@ -166,8 +166,8 @@ export function registerFilesIpc(): void {
     if (r.canceled || !r.filePath) return { ok: false }
     const body =
       format === 'md'
-        ? `# ${n.icon ? `${n.icon} ` : ''}${n.title}\n\n${htmlToMarkdown(n.bodyHtml)}\n`
-        : `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${safe}</title></head><body><h1>${n.icon} ${n.title.replace(/</g, '&lt;')}</h1>${n.bodyHtml}</body></html>`
+        ? `# ${n.title}\n\n${htmlToMarkdown(n.bodyHtml)}\n`
+        : `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${safe}</title></head><body><h1>${n.title.replace(/</g, '&lt;')}</h1>${n.bodyHtml}</body></html>`
     writeFileSync(r.filePath, body, 'utf8')
     return { ok: true, path: r.filePath }
   })

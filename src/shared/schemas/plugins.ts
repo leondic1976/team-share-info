@@ -27,7 +27,10 @@ export const pluginManifestSchema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+$/),
   description: z.string().max(300).default(''),
   author: z.string().max(60).default(''),
-  icon: z.string().max(8).default('🧩'),
+  /** kept for older TeamHub versions only; this version never shows it (no emoji) */
+  icon: z.string().max(8).default(''),
+  /** name of a line icon from the program's whitelist (src/shared/icons.json); unknown names show the default icon */
+  iconName: z.string().regex(/^[a-z0-9-]{1,40}$/).optional(),
   entry: z.string().regex(/^[\w./-]+\.html$/).default('index.html'),
   permissions: z.array(z.enum(Object.keys(PLUGIN_PERMISSIONS) as [PluginPermission, ...PluginPermission[]])).max(10).default([]),
   minAppVersion: z.string().regex(/^\d+\.\d+\.\d+$/).default('0.1.0')
@@ -50,6 +53,7 @@ export interface CatalogPlugin {
   description: string
   author: string
   icon: string
+  iconName?: string
   permissions: PluginPermission[]
   file: string
   sha256: string

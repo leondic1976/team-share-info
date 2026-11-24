@@ -70,7 +70,7 @@ export function StorageCard({ kind }: { kind: 'local' | 'server' }): React.JSX.E
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">
           {kind === 'local'
-            ? '이 PC에만 저장되는 개인 자료(일정·할 일·다이어리·메모·노트·알람·확장 기능 자료 등)를 둘 폴더입니다. 새로 설치하면 D 드라이브(D:\\TeamHub\\Windows 계정)에 두고, D 드라이브가 없으면 프로그램 자료 폴더에 둡니다. 바꾸면 지금 자료를 모두 새 폴더로 옮기고 검사한 뒤 이전 폴더의 자료를 지우며, 프로그램을 다시 시작합니다.'
+            ? '이 PC에만 저장되는 개인 자료(일정·다이어리·메모·노트·알람·확장 기능 자료 등)를 둘 폴더입니다. 새로 설치하면 D 드라이브(D:\\TeamHub\\Windows 계정)에 두고, D 드라이브가 없으면 프로그램 자료 폴더에 둡니다. 바꾸면 지금 자료를 모두 새 폴더로 옮기고 검사한 뒤 이전 폴더의 자료를 지우며, 프로그램을 다시 시작합니다.'
             : '공지·자료실 파일·대화·백업 등 팀이 함께 쓰는 자료를 둘 폴더입니다. 옮기는 동안 서버가 잠시 멈추고 팀원 연결이 끊겼다가 자동으로 다시 연결됩니다.'}
         </p>
         <div className="selectable rounded-md bg-muted px-3 py-2 font-mono text-xs break-all" data-testid="storage-dir">

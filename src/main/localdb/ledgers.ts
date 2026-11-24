@@ -80,7 +80,7 @@ export class LedgersRepo {
     return { ...meta(r), doc: { ...parseJson<LedgerHead>(r.head, { name: r.name, cols: [] }), rows: page.rows }, more: page.more }
   }
 
-  create(doc: LedgerDoc, icon = '📄', t = Date.now()): LocalLedgerMeta {
+  create(doc: LedgerDoc, icon = 'file', t = Date.now()): LocalLedgerMeta {
     const id = newId()
     this.db.tx(() => {
       this.db.run('INSERT INTO ledgers (id, name, icon, head, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)', [id, doc.name, icon, JSON.stringify(headOf(doc)), t, t])
@@ -144,7 +144,7 @@ export class LedgersRepo {
       const e = Array.isArray(index) ? index.find((x) => x && x.id === raw?.id) : undefined
       const { updatedAt: _u, ...doc } = parsed.data as LedgerDoc & { updatedAt?: unknown }
       this.db.tx(() => {
-        const made = this.create(doc as LedgerDoc, typeof e?.icon === 'string' ? e.icon.slice(0, 8) : '📄', typeof raw?.updatedAt === 'number' ? raw.updatedAt : Date.now())
+        const made = this.create(doc as LedgerDoc, typeof e?.icon === 'string' ? e.icon.slice(0, 24) : 'file', typeof raw?.updatedAt === 'number' ? raw.updatedAt : Date.now())
         const last = kv.get<{ book?: string }>('plugin:ledger:last')
         if (last && last.book === raw?.id) kv.set('plugin:ledger:last', { book: made.id })
         kv.delete(key)

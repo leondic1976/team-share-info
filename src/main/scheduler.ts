@@ -27,7 +27,7 @@ export function addReminderSource(name: string, fn: Source): void {
   sources.set(name, fn)
 }
 
-/** Reminders computed by the renderer from server data, per source ('events', 'tasks'...). */
+/** Reminders computed by the renderer from server data, per source ('events', 'docs'...). */
 export function setServerReminders(source: string, items: ReminderItem[]): void {
   serverReminders.set(source, items)
 }
@@ -56,7 +56,7 @@ function personalEventSource(from: number, to: number): ReminderItem[] {
       const fireAt = o.start - m * 60000
       if (fireAt < from || fireAt > to) continue
       const when = m === 0 ? '지금' : m < 60 ? `${m}분 전` : m < 1440 ? `${Math.round(m / 60)}시간 전` : `${Math.round(m / 1440)}일 전`
-      out.push({ key: `pe:${o.id}:${o.key}:${m}`, fireAt, title: `🔒 일정 알림 · ${when}`, body: `${o.title} (${fmtTime(o.start)})`, route: '/calendar' })
+      out.push({ key: `pe:${o.id}:${o.key}:${m}`, fireAt, title: `개인 일정 알림 · ${when}`, body: `${o.title} (${fmtTime(o.start)})`, route: '/calendar' })
     }
   }
   return out
@@ -122,26 +122,8 @@ function alarmSource(from: number, to: number): ReminderItem[] {
   return out
 }
 
-/** Personal to-dos: remind 1 day before and at the due time. */
-function personalTaskSource(from: number, to: number): ReminderItem[] {
-  const out: ReminderItem[] = []
-  const leads: [number, string][] = [
-    [86400000, '내일 마감'],
-    [0, '지금 마감']
-  ]
-  for (const t of localDb().tasks.due(from, to + 86400000)) {
-    for (const [lead, label] of leads) {
-      const fireAt = (t.dueAt ?? 0) - lead
-      if (fireAt < from || fireAt > to) continue
-      out.push({ key: `pt:${t.id}:${t.dueAt}:${lead}`, fireAt, title: `🔒 할 일 · ${label}`, body: t.title, route: '/tasks' })
-    }
-  }
-  return out
-}
-
 export function startScheduler(): void {
   addReminderSource('personal-events', personalEventSource)
-  addReminderSource('personal-tasks', personalTaskSource)
   addReminderSource('alarms', alarmSource)
   // E2E can read fired reminders from the main process (Windows toasts are not observable).
   if (process.env.TEAMHUB_E2E) (globalThis as unknown as { __teamhubFired: ReminderItem[] }).__teamhubFired = []

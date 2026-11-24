@@ -1,3 +1,4 @@
+import { gunzipSync } from 'node:zlib'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
@@ -59,11 +60,47 @@ const readme = (ix: FormsIndex): string =>
     ''
   ].join('\r\n')
 
-/** `dir`: resources/forms of the program. Safe to call at every start. */
+/**
+ * Where the shipped forms are read from: the folder resources/forms (running from source,
+ * tests) or the single file resources/forms.pack next to it (installed program - see
+ * scripts/build-forms.mjs for why the documents are not installed as loose files).
+ */
+interface FormsSource {
+  index: unknown
+  read: (file: string) => Buffer
+}
+function openForms(dir: string): FormsSource | null {
+  if (existsSync(join(dir, 'index.json'))) {
+    const base = resolve(dir)
+    return {
+      index: JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8')),
+      read: (file) => {
+        const abs = resolve(base, file)
+        if (!abs.startsWith(base + sep)) throw new Error(`forms: bad path ${file}`)
+        return readFileSync(abs)
+      }
+    }
+  }
+  const pack = `${dir}.pack`
+  if (!existsSync(pack)) return null
+  const p = JSON.parse(gunzipSync(readFileSync(pack)).toString('utf8')) as { format: number; index: unknown; files: Record<string, string> }
+  if (p.format !== 1) throw new Error('forms: unknown pack format')
+  return {
+    index: p.index,
+    read: (file) => {
+      const b64 = Object.prototype.hasOwnProperty.call(p.files, file) ? p.files[file] : undefined
+      if (b64 === undefined) throw new Error(`forms: ${file} is not in the pack`)
+      return Buffer.from(b64, 'base64')
+    }
+  }
+}
+
+/** `dir`: resources/forms of the program (or resources/forms.pack beside it). Safe to call at every start. */
 export function seedForms(ctx: ServerContext, dir: string | undefined): FormsSeedResult {
   const none = (skipped: string): FormsSeedResult => ({ folderId: null, added: 0, updated: 0, skipped })
-  if (!dir || !existsSync(join(dir, 'index.json'))) return none('no forms shipped')
-  const ix = indexSchema.parse(JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8')))
+  const src = dir ? openForms(dir) : null
+  if (!src) return none('no forms shipped')
+  const ix = indexSchema.parse(src.index)
   const done = readSetting<{ version: number }>(ctx.db, SETTING)
   if (done && done.version >= ix.version) return none('already seeded')
   // the folder belongs to the first administrator (the server PC's own account)
@@ -104,13 +141,10 @@ export function seedForms(ctx: ServerContext, dir: string | undefined): FormsSee
   }
 
   // read everything first: a broken package must not leave half a folder behind
-  const base = resolve(dir)
   const sets = ix.sets.map((s) => ({
     set: s,
     files: s.files.map((f) => {
-      const abs = resolve(base, f.file)
-      if (!abs.startsWith(base + sep)) throw new Error(`forms: bad path ${f.file}`)
-      const data = readFileSync(abs)
+      const data = src.read(f.file)
       if (createHash('sha256').update(data).digest('hex') !== f.sha256) throw new Error(`forms: ${f.file} does not match its checksum`)
       return { name: f.name, data }
     })

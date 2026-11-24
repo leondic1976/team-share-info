@@ -17,9 +17,16 @@ import { api, errorMessage } from '@renderer/lib/api'
 import { useConn } from '@renderer/app/conn-store'
 import { cn } from '@renderer/lib/utils'
 import { NoteEditor } from './NoteEditor'
+import { NoteIcon } from './NoteIcon'
 import { DatabaseView } from './DatabaseView'
 
-const ICONS = ['📄', '📝', '📚', '📁', '🗓️', '✅', '💡', '📌', '⭐', '🔖', '📊', '🧭', '🛠️', '📞', '🏢', '🎯', '💼', '🔒', '📎', '🧾']
+// icons a page can carry: names of the shared line-icon table (older versions stored emoji; NoteIcon maps those)
+const ICONS: [name: string, label: string][] = [
+  ['file-text', '문서'], ['notebook-pen', '메모'], ['library', '책'], ['folder', '폴더'], ['calendar-days', '달력'],
+  ['circle-check', '완료'], ['lightbulb', '아이디어'], ['pin', '고정'], ['star', '별'], ['bookmark', '책갈피'],
+  ['chart-column', '통계'], ['compass', '나침반'], ['wrench', '도구'], ['phone', '전화'], ['building-2', '건물'],
+  ['target', '목표'], ['briefcase', '업무'], ['lock', '자물쇠'], ['paperclip', '첨부'], ['receipt', '영수증']
+]
 const useTree = () => useQuery({ queryKey: ['local', 'notes-tree'], queryFn: () => invoke('notes:tree'), networkMode: 'always' })
 
 function TreeNode({ item, all, depth, current, expanded, toggle, onDrop }: { item: NoteTreeItem; all: NoteTreeItem[]; depth: number; current: string | undefined; expanded: Set<string>; toggle: (id: string) => void; onDrop: (dragId: string, target: string) => void }): React.JSX.Element {
@@ -52,7 +59,7 @@ function TreeNode({ item, all, depth, current, expanded, toggle, onDrop }: { ite
           {open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
         </button>
         <button className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left" onClick={() => navigate(`/notes/${item.id}`)}>
-          <span className="w-4 shrink-0 text-center">{item.icon || (item.kind === 'database' ? <Database className="size-3.5" /> : <FileText className="size-3.5 text-muted-foreground" />)}</span>
+          <span className="w-4 shrink-0 text-center">{item.icon ? <NoteIcon value={item.icon} className="size-3.5" /> : (item.kind === 'database' ? <Database className="size-3.5" /> : <FileText className="size-3.5 text-muted-foreground" />)}</span>
           <span className="truncate">{item.title || '제목 없음'}</span>
         </button>
       </div>
@@ -176,14 +183,14 @@ function NoteView({ id, tree }: { id: string; tree: NoteTreeItem[] }): React.JSX
         {n.trashedAt && <span className="text-urgent">휴지통에 있는 페이지</span>}
       </div>
       <div className="relative mb-1 flex items-center gap-2">
-        <button className="cursor-pointer rounded px-1 text-3xl hover:bg-muted" aria-label="아이콘 고르기" onClick={() => setIcons(!icons)}>
-          {n.icon || (n.kind === 'database' ? '🗃️' : '📄')}
+        <button className="cursor-pointer rounded p-1 hover:bg-muted" aria-label="아이콘 고르기" onClick={() => setIcons(!icons)}>
+          <NoteIcon value={n.icon} fallback={n.kind === 'database' ? 'database' : 'file-text'} className="size-8" />
         </button>
         {icons && (
           <div className="absolute left-0 top-12 z-20 grid w-64 grid-cols-10 gap-0.5 rounded-lg border border-border bg-card p-2 shadow-xl">
-            {ICONS.map((i) => (
-              <button key={i} className="cursor-pointer rounded p-0.5 text-lg hover:bg-muted" onClick={() => (setIcons(false), update({ icon: i }))}>
-                {i}
+            {ICONS.map(([i, label]) => (
+              <button key={i} className="cursor-pointer rounded p-1 hover:bg-muted" aria-label={label} title={label} onClick={() => (setIcons(false), update({ icon: i }))}>
+                <NoteIcon value={i} className="size-5" />
               </button>
             ))}
             <button className="col-span-10 mt-1 cursor-pointer text-xs text-muted-foreground hover:underline" onClick={() => (setIcons(false), update({ icon: '' }))}>
@@ -268,7 +275,7 @@ function NoteView({ id, tree }: { id: string; tree: NoteTreeItem[] }): React.JSX
           <p className="mb-1 text-xs font-semibold text-muted-foreground">하위 페이지</p>
           {children.map((c) => (
             <button key={c.id} className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-muted" onClick={() => navigate(`/notes/${c.id}`)}>
-              {c.icon || <FileText className="size-4 text-muted-foreground" />} {c.title || '제목 없음'}
+              {c.icon ? <NoteIcon value={c.icon} /> : <FileText className="size-4 text-muted-foreground" />} {c.title || '제목 없음'}
             </button>
           ))}
         </div>
@@ -278,7 +285,7 @@ function NoteView({ id, tree }: { id: string; tree: NoteTreeItem[] }): React.JSX
           <p className="mb-1 text-xs font-semibold text-muted-foreground">이 페이지를 연결한 페이지 {n.backlinks.length}</p>
           {n.backlinks.map((b) => (
             <button key={b.id} className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-left text-sm hover:bg-muted" onClick={() => navigate(`/notes/${b.id}`)}>
-              {b.icon || <FileText className="size-4 text-muted-foreground" />} {b.title || '제목 없음'}
+              {b.icon ? <NoteIcon value={b.icon} /> : <FileText className="size-4 text-muted-foreground" />} {b.title || '제목 없음'}
             </button>
           ))}
         </div>
@@ -381,7 +388,7 @@ export function NotesPage(): React.JSX.Element {
               {(results.data ?? []).map((r) => (
                 <button key={r.id} className="block w-full cursor-pointer rounded px-2 py-1.5 text-left hover:bg-muted" onClick={() => navigate(`/notes/${r.id}`)} data-testid="note-search-hit">
                   <span className="block truncate text-sm font-medium">
-                    {r.icon} {r.title || '제목 없음'}
+                    <NoteIcon value={r.icon} /> {r.title || '제목 없음'}
                   </span>
                   <span className="block truncate text-xs text-muted-foreground">{r.snippet}</span>
                 </button>
@@ -428,14 +435,14 @@ export function NotesPage(): React.JSX.Element {
         <div className="space-y-1">
           {NOTE_TEMPLATES.map((t) => (
             <button key={t.key} className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-2 text-left text-sm hover:bg-muted" onClick={() => (setTplOpen(false), void create({ title: t.title, icon: t.icon, bodyHtml: t.html }))}>
-              <span className="text-lg">{t.icon}</span> {t.title}
+              <NoteIcon value={t.icon} className="size-5" /> {t.title}
             </button>
           ))}
           {templates.length > 0 && <p className="px-2 pt-2 text-xs font-semibold text-muted-foreground">내 템플릿</p>}
           {templates.map((t) => (
             <div key={t.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted">
               <button className="flex flex-1 cursor-pointer items-center gap-2 text-left" onClick={() => void invoke('notes:duplicate', { id: t.id, parentId: null }).then((nid) => (setTplOpen(false), refresh(), navigate(`/notes/${nid}`)))}>
-                <span className="text-lg">{t.icon || '📄'}</span> {t.title || '제목 없음'}
+                <NoteIcon value={t.icon} fallback="file-text" className="size-5" /> {t.title || '제목 없음'}
               </button>
               <button className="cursor-pointer p-1" aria-label={`${t.title} 템플릿 삭제`} onClick={() => confirmDialog('이 템플릿을 지울까요?') && void invoke('notes:purge', { id: t.id }).then(refresh)}>
                 <Trash2 className="size-3.5" />
@@ -449,7 +456,7 @@ export function NotesPage(): React.JSX.Element {
           {(trash.data ?? []).map((t) => (
             <div key={t.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted">
               <span className="flex-1 truncate">
-                {t.icon} {t.title || '제목 없음'}
+                <NoteIcon value={t.icon} /> {t.title || '제목 없음'}
               </span>
               <Button size="sm" variant="ghost" onClick={() => void invoke('notes:restore', { id: t.id }).then(() => (void trash.refetch(), refresh()))}>
                 <RotateCcw /> 되살리기

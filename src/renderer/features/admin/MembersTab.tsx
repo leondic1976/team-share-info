@@ -9,7 +9,7 @@ import { Card, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { PresenceDot } from '@renderer/components/PresenceDot'
 import { Loading } from '@renderer/components/EmptyState'
 import { useConn } from '@renderer/app/conn-store'
-import { DepartmentsCard } from './DepartmentsCard'
+import { DepartmentsCard, MemberOrderCard } from './DepartmentsCard'
 import { BanDialog, BlockedPcsCard, type BanTarget } from './PcBlock'
 import { MemberEditDialog } from './MemberEditDialog'
 import { displayName, roleLabel } from '@shared/schemas/auth'
@@ -95,6 +95,7 @@ export function MembersTab(): React.JSX.Element {
         </table>
       </Card>
 
+      <MemberOrderCard />
       <DepartmentsCard />
 
       <Card>

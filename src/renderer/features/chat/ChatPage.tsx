@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { format, isToday } from 'date-fns'
-import { AlarmClock, MessageSquarePlus, MessagesSquare, Mail, Search, Send, StickyNote, Trash2, Inbox, BellOff } from 'lucide-react'
+import { AlarmClock, MessageSquarePlus, MessagesSquare, Mail, Search, Send, StickyNote, Trash2, Inbox, BellOff, LogOut } from 'lucide-react'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Textarea } from '@renderer/components/ui/input'
@@ -12,10 +12,13 @@ import { EmptyState, Loading, OfflineState } from '@renderer/components/EmptySta
 import { Field } from '@renderer/features/setup/SetupFrame'
 import { sendOrQueue } from '@renderer/lib/outbox'
 import { api, errorMessage } from '@renderer/lib/api'
+import { useMe, useMembers } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
 import type { ConversationDto, NoteDto } from '@shared/schemas/chat'
 import { ConversationView } from './ConversationView'
+import { GROUP_LEAVE_HINT, leaveConversation } from './leave'
+import { convTitle } from './title'
 import { SharedMemosView } from './SharedMemos'
 import { TeamAlarmsView } from './TeamAlarms'
 import { cn } from '@renderer/lib/utils'
@@ -235,7 +238,21 @@ export function ChatPage(): React.JSX.Element {
   }, [id])
 
   const convs = (list.data ?? []).filter((c) => space === 'team' || c.groupId === space)
-  const filtered = q.trim() ? convs.filter((c) => c.title.includes(q.trim())) : convs
+  const { data: me } = useMe()
+  const [leaveErr, setLeaveErr] = useState('')
+  /** Leave straight from the list; the page of that conversation closes with it. */
+  const leave = async (c: ConversationDto): Promise<void> => {
+    setLeaveErr('')
+    try {
+      if ((await leaveConversation(c, me?.name ?? '')) && id === c.id) navigate('/chat')
+    } catch (e) {
+      setLeaveErr(errorMessage(e))
+    }
+  }
+  const { data: team } = useMembers()
+  const titleOf = (c: ConversationDto): string => convTitle(c, team, me?.id)
+  // matches the title as shown (a 1:1 shows "본명(필명)") and the plain one
+  const filtered = q.trim() ? convs.filter((c) => c.title.includes(q.trim()) || titleOf(c).includes(q.trim())) : convs
   return (
     <div className="flex h-full flex-col">
       <PageHeader
@@ -290,16 +307,17 @@ export function ChatPage(): React.JSX.Element {
               <Input aria-label="대화 검색" className="pl-8" value={q} onChange={(e) => setQ(e.target.value)} placeholder="대화방·메시지 검색" />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto" data-testid="conv-list">
+              {leaveErr && <p className="border-b border-border px-3 py-1.5 text-xs text-urgent">{leaveErr}</p>}
               {filtered.map((c) => (
+                <div key={c.id} className="group relative border-b border-border">
                 <button
-                  key={c.id}
                   onClick={() => navigate(`/chat/${c.id}`)}
-                  className={cn('block w-full cursor-pointer border-b border-border px-3 py-2.5 text-left hover:bg-muted', id === c.id && 'bg-primary/5')}
+                  className={cn('block w-full cursor-pointer px-3 py-2.5 text-left hover:bg-muted', id === c.id && 'bg-primary/5')}
                   data-testid={`conv-${c.title}`}
                 >
                   <div className="flex items-center gap-1.5">
                     {c.groupColor && <span className="size-2.5 shrink-0 rounded-full" style={{ background: c.groupColor }} />}
-                    <span className={cn('truncate text-sm', c.unread ? 'font-bold' : 'font-medium')}>{c.title}</span>
+                    <span className={cn('truncate text-sm', c.unread ? 'font-bold' : 'font-medium')}>{titleOf(c)}</span>
                     {c.kind !== 'dm' && <span className="text-xs text-muted-foreground">{c.memberCount}</span>}
                     {c.muted && <BellOff className="size-3 text-muted-foreground" />}
                     <span className="ml-auto shrink-0 text-xs text-muted-foreground">{when(c.lastMessageAt)}</span>
@@ -309,6 +327,13 @@ export function ChatPage(): React.JSX.Element {
                     {c.unread > 0 && <span className="ml-auto shrink-0 rounded-full bg-urgent px-1.5 text-[0.7rem] font-bold text-white">{c.unread}</span>}
                   </div>
                 </button>
+                {/* shown while the row is hovered or holds the keyboard focus; a group chat follows its group */}
+                <span className="absolute right-1.5 top-1 hidden rounded-md bg-card shadow-sm group-focus-within:block group-hover:block" title={c.kind === 'group' ? GROUP_LEAVE_HINT : !online ? '서버에 연결되어 있을 때 나갈 수 있습니다.' : '나가기'}>
+                  <Button size="icon-sm" variant="ghost" className="text-urgent" aria-label={`${titleOf(c)} 나가기`} disabled={c.kind === 'group' || !online} onClick={() => void leave(c)} data-testid={`conv-leave-${c.id}`}>
+                    <LogOut />
+                  </Button>
+                </span>
+                </div>
               ))}
               {q.trim().length > 1 && (search.data?.length ?? 0) > 0 && (
                 <div className="border-t border-border">

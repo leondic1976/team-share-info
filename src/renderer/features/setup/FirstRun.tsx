@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Server, MonitorSmartphone, Lock } from 'lucide-react'
+import { Server, MonitorSmartphone, Lock, TriangleAlert } from 'lucide-react'
 import { SetupFrame } from './SetupFrame'
 import { invoke } from '@renderer/lib/bridge'
 import { cn } from '@renderer/lib/utils'
@@ -55,7 +55,7 @@ export function FirstRun({ onChoose }: { onChoose: (m: 'server' | 'client' | 'im
         </p>
       )}
       <p className="mt-6 rounded-md bg-[var(--notice-bg)] px-3 py-2 text-sm text-[var(--notice-fg)]">
-        ⚠ TeamHub는 가벼운 업무 정보 공유용입니다. 중요 보안 내용, 개인정보, 비공개 정보는 공유할 수 없습니다.
+        <TriangleAlert className="mr-1 inline size-3.5 align-[-0.15em]" aria-hidden />TeamHub는 가벼운 업무 정보 공유용입니다. 중요 보안 내용, 개인정보, 비공개 정보는 공유할 수 없습니다.
       </p>
     </SetupFrame>
   )

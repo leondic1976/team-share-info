@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { MessageSquare, Mail, ListTodo } from 'lucide-react'
+import { MessageSquare, Mail } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
 import { Dialog } from '@renderer/components/Dialog'
@@ -8,16 +8,14 @@ import { PresenceDot, PRESENCE_LABEL } from '@renderer/components/PresenceDot'
 import { useMe } from '@renderer/lib/queries'
 import { openChatWith } from '@renderer/features/chat/dock-store'
 import { displayName, roleLabel, type MemberDto } from '@shared/schemas/auth'
-import { NewTaskDialog } from '@renderer/features/tasks/TaskDialogs'
 
 /**
- * A team member's details with the quick actions (메시지 / 쪽지 / 업무 요청); used by the
+ * A team member's details with the quick actions (메시지 / 쪽지); used by the
  * directory and the org chart. `today` is whatever the caller knows about today (e.g. 연가).
  */
 export function MemberCard({ m, onClose, today }: { m: MemberDto; onClose: () => void; today?: ReactNode }): React.JSX.Element {
   const navigate = useNavigate()
   const { data: me } = useMe()
-  const [task, setTask] = useState(false)
   // the conversation opens in a small messenger window over the page the card was opened from
   const openChat = (): void => {
     void openChatWith(m.id)
@@ -58,13 +56,9 @@ export function MemberCard({ m, onClose, today }: { m: MemberDto; onClose: () =>
             <Button size="sm" variant="outline" onClick={() => navigate('/chat/notes', { state: { noteTo: m.id } })}>
               <Mail /> 쪽지
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setTask(true)}>
-              <ListTodo /> 업무 요청
-            </Button>
           </div>
         )}
       </div>
-      {task && <NewTaskDialog onClose={() => setTask(false)} />}
     </Dialog>
   )
 }

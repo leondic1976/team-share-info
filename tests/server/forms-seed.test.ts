@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -103,5 +104,21 @@ describe('서식자료실: official forms shipped with the program are put into 
       const sig = data.subarray(0, 4).toString('hex')
       expect(f.name.endsWith('.pdf') ? sig === '25504446' : sig === 'd0cf11e0', f.name).toBe(true)
     }
+  })
+  it('installed program: the forms come from the single pack file (no loose documents are installed)', async () => {
+    s = await createTestServer()
+    const out = mkdtempSync(join(tmpdir(), 'teamhub-formspack-'))
+    dirs.push(out)
+    execFileSync(process.execPath, [resolve('scripts/build-forms.mjs'), join(out, 'forms.pack')])
+    expect(existsSync(join(out, 'forms'))).toBe(false)
+    const shipped = JSON.parse(readFileSync(resolve('resources/forms/index.json'), 'utf8')) as FormsIndex
+    const count = shipped.sets.reduce((n, x) => n + x.files.length, 0)
+    const r = seedForms(s.ctx, join(out, 'forms'))
+    // every form plus the note
+    expect(r).toMatchObject({ added: count + 1, updated: 0 })
+    // and without the pack nothing is seeded, nothing fails
+    const t = await createTestServer()
+    expect(seedForms(t.ctx, join(out, 'nothing-here'))).toMatchObject({ skipped: 'no forms shipped' })
+    await t.close()
   })
 })

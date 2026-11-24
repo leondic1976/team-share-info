@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Filter, Kanban, Plus, Table2, Trash2, X } from 'lucide-react'
+import { NoteIcon } from './NoteIcon'
+import { Filter, Kanban, Pencil, Plus, Table2, Trash2, X } from 'lucide-react'
 import { applyView, boardGroups, type CellValue, type DbFilter, type DbProps, type NoteRow, type PropDef, type PropType } from '@shared/notes'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Select } from '@renderer/components/ui/input'
@@ -60,7 +61,7 @@ function Cell({ col, value, onChange }: { col: PropDef; value: CellValue; onChan
           {shown}
         </a>
         <button className="text-xs text-muted-foreground" onClick={() => setDraft(shown)} aria-label="주소 고치기">
-          ✎
+          <Pencil className="size-3" />
         </button>
       </span>
     )
@@ -286,7 +287,7 @@ export function DatabaseView({ dbId, props, onProps, onOpen }: { dbId: string; p
                 <div className="space-y-1.5">
                   {g.rows.map((r) => (
                     <button key={r.id} draggable onDragStart={(e) => e.dataTransfer.setData('text/x-note-row', r.id)} className="block w-full cursor-pointer rounded-md border border-border bg-card p-2 text-left text-sm shadow-sm hover:bg-muted" onClick={() => onOpen(r.id)} data-testid="db-card">
-                      {r.icon} {r.title || '제목 없음'}
+                      <NoteIcon value={r.icon} /> {r.title || '제목 없음'}
                     </button>
                   ))}
                   <button className="w-full cursor-pointer rounded px-2 py-1 text-left text-xs text-muted-foreground hover:bg-background" onClick={() => addRow(g.key ? { [col.id]: g.key } : {})}>

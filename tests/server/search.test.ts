@@ -20,7 +20,8 @@ describe('unified search (M8-2)', () => {
     await s.req(s.admin, { method: 'POST', url: '/api/tasks', payload: { title: '예산서 검토', assigneeId: b.memberId, scope: team } })
     const find = async (cred: typeof b, q: string) => (await s!.req(cred, { method: 'GET', url: `/api/search?q=${encodeURIComponent(q)}`, ip: IP })).json().data as { type: string; title: string; snippet: string }[]
     const forB = await find(b, '예산')
-    expect(forB.map((r) => r.type).sort()).toEqual(['doc', 'notice', 'notice', 'task'])
+    // the task exists (older PCs still use /api/tasks) but is no longer a search result
+    expect(forB.map((r) => r.type).sort()).toEqual(['doc', 'notice', 'notice'])
     const forC = await find(c, '예산')
     expect(forC.map((r) => r.title)).not.toContain('B만 보는 예산 메모')
     expect(forC.find((r) => r.type === 'notice')!.snippet).toContain('2026 예산 제출')

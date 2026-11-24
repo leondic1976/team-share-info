@@ -8,7 +8,6 @@ import {
   Camera,
   ClipboardList,
   Copy,
-  ListTodo,
   Lock,
   NotebookPen,
   Pin,
@@ -139,10 +138,6 @@ function MemoEditor({ memo, notify, onDeleted, onAlarm }: { memo: MemoDto; notif
   }, [body, color, pinned, tags, memo.id, qc])
 
   const title = memoTitle(body) || '메모'
-  const toTask = async (): Promise<void> => {
-    await invoke('local:tasks.save', { title, note: body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 5000) })
-    notify('내 할 일에 추가했습니다.')
-  }
   const toEvent = async (): Promise<void> => {
     const s = startOfDay(Date.now())
     await invoke('local:events.save', { title, bodyHtml: body, startAt: s, endAt: s + DAY, allDay: true })
@@ -184,9 +179,6 @@ function MemoEditor({ memo, notify, onDeleted, onAlarm }: { memo: MemoDto; notif
       </div>
       <div className="flex flex-wrap gap-2 border-t border-border pt-3">
         <span className="self-center text-xs text-muted-foreground">이 메모를</span>
-        <Button size="sm" variant="outline" onClick={() => void toTask()}>
-          <ListTodo /> 할 일로
-        </Button>
         <Button size="sm" variant="outline" onClick={() => void toEvent()}>
           <CalendarPlus /> 일정으로
         </Button>

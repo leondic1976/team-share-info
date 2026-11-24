@@ -11,8 +11,8 @@ import { MemberLink } from './MemberLink'
 import { Textarea } from './ui/input'
 import { confirmPii } from '@renderer/lib/pii'
 
-/** Comment thread for tasks and posts (6.8, 6.9). */
-export function Comments({ type, id }: { type: 'task' | 'post'; id: string }): React.JSX.Element {
+/** Comment thread of a board post (6.9). */
+export function Comments({ type, id }: { type: 'post'; id: string }): React.JSX.Element {
   const qc = useQueryClient()
   const { data: me } = useMe()
   const [body, setBody] = useState('')
@@ -21,7 +21,7 @@ export function Comments({ type, id }: { type: 'task' | 'post'; id: string }): R
   const q = useQuery({ queryKey: key, queryFn: () => api.get<CommentDto[]>(`/api/comments/${type}/${id}`) })
   const done = () => {
     void qc.invalidateQueries({ queryKey: key })
-    void qc.invalidateQueries({ queryKey: [type === 'task' ? 'tasks' : 'boards'] })
+    void qc.invalidateQueries({ queryKey: ['boards'] })
   }
   const add = useMutation({
     mutationFn: () => sendOrQueue({ kind: 'comment', label: `댓글: ${body.trim().slice(0, 60)}`, path: `/api/comments/${type}/${id}`, body: { body } }),

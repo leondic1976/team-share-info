@@ -271,7 +271,7 @@ export function OrgManageCard(): React.JSX.Element | null {
                   })}
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">▲▼로 같은 상위 부서 안에서 순서를 바꿉니다. 부서장·대표 전화·위치·담당 업무·상위 부서는 ✏(수정)에서 정합니다.</p>
+              <p className="text-xs text-muted-foreground">▲▼로 같은 상위 부서 안에서 순서를 바꿉니다. 부서장·대표 전화·위치·담당 업무·상위 부서는 연필 모양의 수정 단추에서 정합니다.</p>
             </section>
 
             <section className="space-y-1.5">

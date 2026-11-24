@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/u
 import { Button } from '@renderer/components/ui/button'
 import { PresenceDot, PRESENCE_LABEL } from '@renderer/components/PresenceDot'
 import { MemberLink } from '@renderer/components/MemberLink'
+import { displayName } from '@shared/schemas/auth'
 import { Loading, OfflineState } from '@renderer/components/EmptyState'
 import { ScopeTags } from '@renderer/components/ScopePicker'
 import { useMembers, useMe } from '@renderer/lib/queries'
@@ -56,7 +57,9 @@ export function PresenceWidget(): React.JSX.Element {
           {list.map((m) => (
             <div key={m.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted" data-testid={`presence-${m.name}`} data-presence={m.presence}>
               <PresenceDot presence={m.presence} />
-              <MemberLink memberId={m.id} name={m.name} className="font-medium" />
+              <MemberLink memberId={m.id} name={m.name} className="font-medium">
+                {displayName(m)}
+              </MemberLink>
               <span className="truncate text-xs text-muted-foreground">{[m.deptName, m.title].filter(Boolean).join(' · ')}</span>
               <span className="ml-auto truncate text-xs text-muted-foreground">{m.statusMessage || PRESENCE_LABEL[m.presence]}</span>
             </div>

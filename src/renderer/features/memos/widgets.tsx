@@ -3,13 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { Globe, ListChecks, Star, Trash2 } from 'lucide-react'
-import type { TaskDto } from '@shared/schemas/work'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
-import { api } from '@renderer/lib/api'
 import { invoke } from '@renderer/lib/bridge'
 import { startOfDay, DAY } from '@renderer/lib/dates'
-import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
 import { cn } from '@renderer/lib/utils'
 import { usePersonalEvents, useServerEvents } from '@renderer/features/calendar/calendar-api'
@@ -26,10 +23,9 @@ interface Row {
   done?: boolean
 }
 
-/** Home widget "오늘의 업무" (6.12 ③): events, deadlines, to-dos and alarms in time order. */
+/** Home widget "오늘의 업무" (6.12 ③): events and alarms in time order. */
 export function TodayWorkWidget(): React.JSX.Element {
   const navigate = useNavigate()
-  const online = useConn((s) => s.state === 'online')
   const space = useSpace((s) => s.space)
   const range = useMemo(() => {
     const s = startOfDay(Date.now())
@@ -37,15 +33,11 @@ export function TodayWorkWidget(): React.JSX.Element {
   }, [])
   const server = useServerEvents(range, { groupId: space === 'team' ? undefined : space })
   const personal = usePersonalEvents(range)
-  const tasks = useQuery({ queryKey: ['tasks', 'today-work'], queryFn: () => api.get<TaskDto[]>('/api/tasks', { filter: 'received', state: 'open', dueTo: range.to }), enabled: online })
-  const ptasks = useQuery({ queryKey: ['local', 'tasks', 'today-work'], queryFn: () => invoke('local:tasks.list', { includeDone: false }), networkMode: 'always' })
   const reminders = useQuery({ queryKey: ['local', 'upcoming-today'], queryFn: todayReminders, networkMode: 'always', refetchInterval: 60_000 })
 
   const rows: Row[] = [
     ...(server.data ?? []).filter((e) => e.kind !== 'busy').map((e) => ({ key: `e${e.id}${e.key}`, at: e.allDay ? null : e.start, kind: e.kind === 'absence' ? '부재' : '일정', title: e.kind === 'absence' ? `[${e.absenceType}] ${e.authorName}` : e.title, route: '/calendar' })),
     ...(personal.data ?? []).map((e) => ({ key: `p${e.id}${e.key}`, at: e.allDay ? null : e.start, kind: '개인 일정', title: e.title, route: '/calendar' })),
-    ...(tasks.data ?? []).filter((t) => t.state !== 'done').map((t) => ({ key: `t${t.id}`, at: t.dueAt, kind: '할 일 마감', title: t.title, route: '/tasks', overdue: (t.dueAt ?? 0) < range.from })),
-    ...(ptasks.data ?? []).filter((t) => t.dueAt !== null && t.dueAt < range.to).map((t) => ({ key: `pt${t.id}`, at: t.dueAt, kind: '개인 할 일', title: t.title, route: '/tasks', overdue: (t.dueAt ?? 0) < range.from })),
     ...(reminders.data ?? []).filter((r) => r.source === 'alarms').map((r) => ({ key: r.key, at: r.fireAt, kind: SOURCE_LABEL.alarms, title: r.title, route: '/alarms', done: r.fired }))
   ]
   rows.sort((a, b) => Number(!!b.overdue) - Number(!!a.overdue) || (a.at ?? 0) - (b.at ?? 0))
@@ -67,7 +59,7 @@ export function TodayWorkWidget(): React.JSX.Element {
       </CardHeader>
       <CardContent className="max-h-80 space-y-0.5 overflow-y-auto p-2">
         {!rows.length ? (
-          <p className="px-2 py-4 text-center text-sm text-muted-foreground">오늘 할 일과 일정이 없습니다.</p>
+          <p className="px-2 py-4 text-center text-sm text-muted-foreground">오늘 일정과 알람이 없습니다.</p>
         ) : (
           rows.map((r) => (
             <button key={r.key} className={cn('flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted', r.done && 'opacity-50')} onClick={() => navigate(r.route)}>
@@ -103,7 +95,7 @@ export function FavoritesWidget(): React.JSX.Element {
       </CardHeader>
       <CardContent className="max-h-80 space-y-0.5 overflow-y-auto p-2">
         {!favs.data?.length ? (
-          <p className="px-2 py-4 text-center text-sm text-muted-foreground">기록·게시글·자료·공지의 ☆를 누르면 여기에 모입니다. 웹 사이트는 [사이트 모음]에 등록하세요.</p>
+          <p className="px-2 py-4 text-center text-sm text-muted-foreground">기록·게시글·자료·공지의 별 단추(즐겨찾기)를 누르면 여기에 모입니다. 웹 사이트는 [사이트 모음]에 등록하세요.</p>
         ) : (
           favs.data.map((f) => (
             <div key={f.id} className="group flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted">

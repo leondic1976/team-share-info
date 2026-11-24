@@ -192,12 +192,16 @@ main {
   border-radius: 4px;
 }
 #thumbs .done::after {
-  content: '✓';
+  /* a drawn check mark (no glyph) */
+  content: '';
   position: absolute;
-  right: 2px;
-  top: 0;
-  color: #16a34a;
-  font-weight: 800;
+  right: 5px;
+  top: 2px;
+  width: 5px;
+  height: 10px;
+  border: solid #16a34a;
+  border-width: 0 3px 3px 0;
+  transform: rotate(45deg);
 }
 .opts,
 .bar {

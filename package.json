@@ -8,7 +8,7 @@
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
-    "plugins:builtin": "node scripts/build-plugins.mjs resources/plugins && node scripts/build-feedback.mjs",
+    "plugins:builtin": "node scripts/build-plugins.mjs resources/plugins && node scripts/build-feedback.mjs && node scripts/build-forms.mjs && node scripts/build-fonts.mjs",
     "dev": "pnpm plugins:builtin && electron-vite dev",
     "dev:b": "pnpm plugins:builtin && cross-env TEAMHUB_PROFILE=b electron-vite dev",
     "build": "pnpm plugins:builtin && electron-vite build",
@@ -36,6 +36,7 @@
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@eslint/js": "^10.0.1",
+    "@fontsource/do-hyeon": "5.3.0",
     "@fullcalendar/core": "^6.1.22",
     "@fullcalendar/daygrid": "^6.1.22",
     "@fullcalendar/interaction": "^6.1.22",

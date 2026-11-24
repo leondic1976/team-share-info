@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { handle } from './registry'
 import { localDb } from '../localdb'
-import { personalEventInputSchema, personalTaskInputSchema } from '../../shared/schemas/personal'
+import { personalEventInputSchema } from '../../shared/schemas/personal'
 import { setServerReminders, tick } from '../scheduler'
 
 const DATE = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -29,14 +29,8 @@ export function registerPersonalIpc(): void {
   handle('local:diary.search', z.object({ q: z.string().min(1).max(100) }), ({ q }) => localDb().diary.search(q))
   handle('local:diary.range', z.object({ from: DATE, to: DATE }), ({ from, to }) => localDb().diary.range(from, to))
 
-  handle('local:tasks.list', z.object({ includeDone: z.boolean().default(true) }), ({ includeDone }) => localDb().tasks.list(includeDone))
-  handle('local:tasks.save', personalTaskInputSchema, (i) => {
-    const id = localDb().tasks.save(i)
-    tick()
-    return id
-  })
-  handle('local:tasks.setDone', z.object({ id: z.string(), done: z.boolean() }), ({ id, done }) => localDb().tasks.setDone(id, done))
-  handle('local:tasks.delete', z.object({ id: z.string() }), ({ id }) => localDb().tasks.delete(id))
+  // The personal to-do channels (local:tasks.*) were removed with the 할 일 screen; the
+  // personal_tasks table and its repo stay so what was written is not lost.
 
   handle(
     'scheduler:setServerReminders',

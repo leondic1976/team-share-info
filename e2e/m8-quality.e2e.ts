@@ -52,7 +52,6 @@ describe('M8 quality: start time, idle cost, search, offline cache, menus, priva
     await b.page.evaluate(async () => {
       await window.teamhub.invoke('local:memos.save', { body: '<p>개인비밀메모E2E</p>', color: 'pink', tags: ['개인'] })
       await window.teamhub.invoke('local:diary.save', { date: '2026-11-12', bodyHtml: '<p>개인비밀일기E2E</p>', tags: [] })
-      await window.teamhub.invoke('local:tasks.save', { title: '개인비밀할일E2E' })
       await window.teamhub.invoke('local:alarms.save', { title: '개인비밀알람E2E', kind: 'once', fireAt: Date.now() + 3600_000 })
       await window.teamhub.invoke('notes:create', { title: '개인비밀노트E2E' })
     })

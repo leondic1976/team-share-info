@@ -26,9 +26,7 @@ export function useTeamAlarms(): void {
 export const SOURCE_LABEL: Record<string, string> = {
   alarms: '알람',
   'personal-events': '개인 일정',
-  'personal-tasks': '개인 할 일',
   events: '일정',
-  tasks: '할 일',
   annual: '연간 업무'
 }
 
@@ -45,16 +43,11 @@ export function useMorningSummary(): void {
       if ((await localKv.get<string>('summaryDate')) === today) return
       await localKv.set('summaryDate', today)
       const s = startOfDay(Date.now())
-      const [events, tasks, items] = await Promise.all([
-        invoke('local:events.list', { from: s, to: s + DAY }),
-        invoke('local:tasks.list', { includeDone: false }),
-        todayReminders()
-      ])
-      const due = tasks.filter((t) => t.dueAt !== null && t.dueAt < s + DAY).length + items.filter((i) => i.source === 'tasks').length
+      const [events, items] = await Promise.all([invoke('local:events.list', { from: s, to: s + DAY }), todayReminders()])
       const alarms = items.filter((i) => i.source === 'alarms').length
       const ev = events.length + new Set(items.filter((i) => i.source === 'events').map((i) => i.body)).size
-      if (!ev && !due && !alarms) return
-      void invoke('notify:toast', { title: '오늘의 업무', body: `일정 ${ev}건 · 마감 ${due}건 · 알람 ${alarms}건`, route: '/home' })
+      if (!ev && !alarms) return
+      void invoke('notify:toast', { title: '오늘의 업무', body: `일정 ${ev}건 · 알람 ${alarms}건`, route: '/home' })
     }, 8000)
     return () => window.clearTimeout(t)
   }, [])

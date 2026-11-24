@@ -19,6 +19,7 @@ import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
 import type { WorklogDto } from '@shared/schemas/events'
 import type { ScopeInput } from '@shared/schemas/scope'
+import { displayName } from '@shared/schemas/auth'
 import { cn } from '@renderer/lib/utils'
 import { WeeklyReview } from './WeeklyReview'
 
@@ -63,7 +64,7 @@ function MonthPicker({ date, onPick, marked }: { date: string; onPick: (d: strin
   )
 }
 
-/** Personal diary: stored only on this PC (🔒). Saved automatically while typing. */
+/** Personal diary: stored only on this PC (lock mark). Saved automatically while typing. */
 function DiaryTab(): React.JSX.Element {
   const qc = useQueryClient()
   const [date, setDate] = useState(ymd())
@@ -343,7 +344,7 @@ function WorklogTab(): React.JSX.Element {
                 .filter((m) => m.id !== me?.id)
                 .map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name}
+                    {displayName(m)}
                   </option>
                 ))}
             </Select>

@@ -1,20 +1,17 @@
-import { MAX_TASK_ASSIGNEES } from '@shared/schemas/work'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { format } from 'date-fns'
-import { BookOpen, Plus, Search, Pencil, History, Trash2, Printer, BellRing, CheckCircle2, AlertTriangle, ListTodo, CalendarRange, ChevronRight } from 'lucide-react'
+import { BookOpen, Plus, Search, Pencil, History, Trash2, Printer, BellRing, CheckCircle2, AlertTriangle, CalendarRange, ChevronRight } from 'lucide-react'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
-import { Input, Select } from '@renderer/components/ui/input'
+import { Input } from '@renderer/components/ui/input'
 import { Badge } from '@renderer/components/ui/badge'
 import { RichView } from '@renderer/components/Editor'
 import { AttachmentList } from '@renderer/components/Attachments'
 import { ScopeTags } from '@renderer/components/ScopePicker'
 import { EmptyState, Loading, OfflineState } from '@renderer/components/EmptyState'
 import { api, errorMessage } from '@renderer/lib/api'
-import { fromInputValue } from '@renderer/lib/dates'
-import { useMembers, useMe } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
 import { DOC_KIND_LABEL, type DocDto, type DocKind, type DocRevisionDto, type DocSummaryDto } from '@shared/schemas/docs'
@@ -25,70 +22,6 @@ import { FavoriteStar } from '@renderer/features/memos/widgets'
 
 const SECTIONS: (DocKind | 'annual')[] = ['mustread', 'manual', 'handover', 'minutes', 'faq', 'annual']
 const SECTION_LABEL = { ...DOC_KIND_LABEL, annual: '연간 업무 달력' }
-
-function FollowUp({ doc }: { doc: DocDto }): React.JSX.Element {
-  const { data: members } = useMembers()
-  const { data: me } = useMe()
-  const [title, setTitle] = useState('')
-  const [assignees, setAssignees] = useState<string[]>([])
-  const [due, setDue] = useState('')
-  const [msg, setMsg] = useState('')
-  const nameOf = (id: string): string => (id === me?.id ? '나' : ((members ?? []).find((m) => m.id === id)?.name ?? ''))
-  const add = useMutation({
-    // assigneeId is what a server older than this client reads
-    mutationFn: () => api.post('/api/tasks', { title, assigneeId: assignees[0], assigneeIds: assignees, dueAt: due ? fromInputValue(due) : null, bodyHtml: `<p>회의록 「${doc.title}」의 후속 조치입니다.</p>` }),
-    onSuccess: () => {
-      setMsg(`'${title}'을(를) 할 일로 등록했습니다(담당: ${assignees.map(nameOf).join(', ')}).`)
-      setTitle('')
-    },
-    onError: (e) => setMsg(errorMessage(e))
-  })
-  return (
-    <div className="space-y-2 rounded-lg border border-border p-3" data-testid="followup">
-      <div className="flex items-center gap-1.5 text-sm font-semibold">
-        <ListTodo className="size-4" /> 후속 조치를 할 일로 등록
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Input aria-label="후속 조치" className="min-w-56 flex-1" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="할 일 내용" />
-        {/* picking a name adds it: a follow-up may go to several people */}
-        <Select
-          aria-label="후속 조치 담당자"
-          className="w-36"
-          value=""
-          onChange={(e) => {
-            const id = e.target.value
-            if (id && !assignees.includes(id) && assignees.length < MAX_TASK_ASSIGNEES) setAssignees([...assignees, id])
-          }}
-        >
-          <option value="">{assignees.length ? '담당자 추가' : '담당자'}</option>
-          {me && !assignees.includes(me.id) && <option value={me.id}>나</option>}
-          {(members ?? [])
-            .filter((m) => m.id !== me?.id && !assignees.includes(m.id))
-            .map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-        </Select>
-        <Input aria-label="후속 조치 기한" type="datetime-local" className="w-52" value={due} onChange={(e) => setDue(e.target.value)} />
-        <Button onClick={() => add.mutate()} disabled={!title.trim() || !assignees.length}>
-          등록
-        </Button>
-      </div>
-      {assignees.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs" data-testid="followup-assignees">
-          <span className="text-muted-foreground">담당 {assignees.length}명</span>
-          {assignees.map((id) => (
-            <button key={id} type="button" className="cursor-pointer rounded-full bg-muted px-2 py-0.5 hover:bg-muted/70" title="누르면 뺍니다" onClick={() => setAssignees(assignees.filter((x) => x !== id))}>
-              {nameOf(id)} ✕
-            </button>
-          ))}
-        </div>
-      )}
-      {msg && <p className="text-xs text-muted-foreground">{msg}</p>}
-    </div>
-  )
-}
 
 function DocView({ id, onEdit, onDeleted }: { id: string; onEdit: (d: DocDto) => void; onDeleted: () => void }): React.JSX.Element {
   const qc = useQueryClient()
@@ -201,7 +134,6 @@ function DocView({ id, onEdit, onDeleted }: { id: string; onEdit: (d: DocDto) =>
       )}
       <RichView html={d.bodyHtml || '<p>(내용 없음)</p>'} />
       <AttachmentList items={d.attachments} />
-      {d.kind === 'minutes' && <FollowUp doc={d} />}
     </div>
   )
 }

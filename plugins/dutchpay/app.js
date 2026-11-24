@@ -1,6 +1,8 @@
 /* Cost-splitting UI. Everything stays on this PC (TeamHub storage); nothing is sent to the server. */
 ;(function () {
   'use strict'
+  // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
+  const icon = (n, o) => (window.TeamHub.icon ? window.TeamHub.icon(n, o) : '')
   const $ = (id) => document.getElementById(id)
   const D = window.Dutch
   const call = (m, p) => window.TeamHub.call(m, p)
@@ -94,7 +96,7 @@
   }
   function renderPeople() {
     $('people').innerHTML = people.length
-      ? people.map((p) => `<span class="person" data-id="${p.id}">${esc(p.name)}<input type="number" min="0" max="10" step="0.5" value="${p.weight}" aria-label="${esc(p.name)} 비율" title="분담 비율" /><button type="button" aria-label="${esc(p.name)} 빼기">✕</button></span>`).join('')
+      ? people.map((p) => `<span class="person" data-id="${p.id}">${esc(p.name)}<input type="number" min="0" max="10" step="0.5" value="${p.weight}" aria-label="${esc(p.name)} 비율" title="분담 비율" /><button type="button" aria-label="${esc(p.name)} 빼기">${icon('x') || '×'}</button></span>`).join('')
       : '<span class="muted">[팀원 불러오기]를 누르거나 아래에 이름을 적어 추가하세요.</span>'
   }
   function renderExpenses() {
@@ -106,7 +108,7 @@
             <input data-f="title" maxlength="40" placeholder="항목 (예: 1차 고깃집)" aria-label="항목" value="${esc(e.title)}" />
             <input data-f="amount" inputmode="numeric" placeholder="금액" aria-label="금액" value="${esc(e.amount)}" />
             <select data-f="payer" aria-label="낸 사람"><option value="">낸 사람</option>${people.map((p) => `<option value="${p.id}"${e.payer === p.id ? ' selected' : ''}>${esc(p.name)} 결제</option>`).join('')}</select>
-            <button type="button" class="del" aria-label="항목 지우기">✕</button>
+            <button type="button" class="del" aria-label="항목 지우기">${icon('x') || '×'}</button>
           </div>
           <div class="sharers">
             ${people.map((p) => `<label><input type="checkbox" data-s="${p.id}"${e.sharers.includes(p.id) ? ' checked' : ''} />${esc(p.name)}</label>`).join('')}
@@ -245,7 +247,7 @@
     $('loadMembers').addEventListener('click', async () => {
       try {
         const n = addPeople((await call('members')).map((m) => m.name))
-        toast(n ? `팀원 ${n}명을 넣었습니다. 함께하지 않은 사람은 ✕로 빼세요.` : '더 넣을 팀원이 없습니다.')
+        toast(n ? `팀원 ${n}명을 넣었습니다. 함께하지 않은 사람은 이름 옆의 빼기 단추로 빼세요.` : '더 넣을 팀원이 없습니다.')
         renderItems()
         saveDraft()
       } catch (e) {

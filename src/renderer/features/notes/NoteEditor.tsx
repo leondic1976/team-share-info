@@ -7,6 +7,7 @@ import Image from '@tiptap/extension-image'
 import { Placeholder } from '@tiptap/extensions'
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details'
 import { FileText, Plus } from 'lucide-react'
+import { NoteIcon } from './NoteIcon'
 import type { NoteTreeItem } from '@shared/notes'
 import { cn } from '@renderer/lib/utils'
 
@@ -26,15 +27,12 @@ const NoteLink = Mark.create({
   }
 })
 
-/** Callout box with an emoji (Notion-style). */
+/** Callout box: a highlighted block with a light-bulb mark drawn by CSS (styles.css). */
 const Callout = Node.create({
   name: 'callout',
   group: 'block',
   content: 'block+',
   defining: true,
-  addAttributes() {
-    return { emoji: { default: '💡', parseHTML: (el) => el.getAttribute('data-emoji') ?? '💡', renderHTML: (a) => ({ 'data-emoji': a.emoji as string }) } }
-  },
   parseHTML() {
     return [{ tag: 'div[data-callout]' }]
   },
@@ -291,7 +289,7 @@ export function NoteEditor({
             : [
                 ...(items as NoteTreeItem[]).map((p, i) => (
                   <button key={p.id} role="option" aria-selected={i === idx} className={cn('flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-sm', i === idx ? 'bg-primary text-primary-foreground' : 'hover:bg-muted')} onMouseDown={(e) => (e.preventDefault(), choose(i))} onMouseEnter={() => setIdx(i)}>
-                    <span>{p.icon || <FileText className="size-4" />}</span> <span className="truncate">{p.title || '제목 없음'}</span>
+                    <span>{p.icon ? <NoteIcon value={p.icon} /> : <FileText className="size-4" />}</span> <span className="truncate">{p.title || '제목 없음'}</span>
                   </button>
                 )),
                 <button

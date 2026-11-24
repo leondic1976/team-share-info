@@ -77,7 +77,7 @@ describe('plugins: ladder game (install in app, play alone and together)', () =>
     await f.locator('#revealAll').click()
     await expect.poll(() => g.locator('#resultTable tbody tr').count(), { timeout: 20000 }).toBe(2)
     const text = await g.locator('#resultTable').textContent()
-    expect(text).toContain('☕ 커피 쏘기')
+    expect(text).toContain('커피 쏘기')
     expect(text).toContain('꽝')
     // same result on both sides
     await expect.poll(() => f.locator('#resultTable').textContent(), { timeout: 20000 }).toBe(text)

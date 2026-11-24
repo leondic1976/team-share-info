@@ -100,7 +100,7 @@ export interface LedgerVersion {
 
 export const ledgerEditModeSchema = z.enum(['all', 'owner'])
 export type LedgerEditMode = z.infer<typeof ledgerEditModeSchema>
-const icon = z.string().max(8).default('📄')
+const icon = z.string().max(24).default('file')
 
 export const ledgerCreateSchema = z.object({
   doc: ledgerDocSchema,
