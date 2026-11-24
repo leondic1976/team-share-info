@@ -9,7 +9,7 @@ const open = async (p: Page, ready: string): Promise<void> => {
   await frame(p).locator(ready).first().waitFor({ timeout: 20000 })
 }
 
-describe('식사 신청 extension: request, cancel, request again until the deadline the admin set', () => {
+describe('식사 신청 extension: request, cancel, request again until the deadline; menus and 식수서무', () => {
   let a: Launched
   let b: Launched
   afterAll(async () => {
@@ -33,6 +33,9 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     const fb = frame(b.page)
     expect(await fb.locator('.empty').textContent()).toContain('아직 식사 신청을 받지 않습니다')
     expect(await fb.locator('#settingsTab').isVisible()).toBe(false)
+    // the look of the program reaches the frame (__ui.css): the same header as the other pages
+    expect(await fb.locator('#oldApp').isVisible()).toBe(false)
+    expect(await fb.locator('.th-page-header').evaluate((el) => [getComputedStyle(el).borderBottomWidth, getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim()])).toEqual(['1px', '1'])
 
     await open(a.page, '.empty')
     const fa = frame(a.page)
@@ -109,6 +112,127 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     await dinner.getByRole('button', { name: '취소' }).click()
     await expect.poll(() => dinnerA.textContent(), { timeout: 15000 }).toContain('0명')
   }, 90000)
+
+  it('a 식수서무 named by the admin registers the menu and changes a deadline; everybody sees it at once', async () => {
+    const fa = frame(a.page)
+    const fb = frame(b.page)
+    const wait = { timeout: 15000 }
+    // not in charge yet: no settings tab, nothing to register a menu with
+    expect(await fb.locator('#settingsTab').isVisible()).toBe(false)
+    expect(await fb.locator('#editWeek, [data-menu-day]').count()).toBe(0)
+    expect(await fb.locator('[data-today-menu="dinner"]').textContent()).toContain('메뉴 미등록')
+
+    // the admin who made the settings names 팀원B (two at most)
+    await fa.locator('#settingsTab').click()
+    await fa.locator('#stewards label', { hasText: '팀원B' }).locator('input').check()
+    await fa.locator('#settings button[type=submit]').click()
+    await fa.locator('.day.today').waitFor(wait)
+    expect(await fa.locator('[data-charge]').first().textContent()).toContain('식수서무 팀원B')
+    await expect.poll(() => fb.locator('#settingsTab').isVisible(), wait).toBe(true)
+    expect(await fb.locator('[data-charge]').first().textContent()).toContain('식수서무 팀원B')
+
+    // 팀원B registers today's dinner and a note in the week table
+    await fb.locator('#editWeek').click()
+    const row = fb.locator('#menuForm tr.today')
+    await row.locator('textarea[data-slot="dinner"]').fill('김치찌개\n계란말이')
+    await row.locator('input[data-slot="note"]').fill('메모E2E')
+    await fb.locator('#saveWeek').click()
+    await fb.locator('section[data-week]').waitFor(wait)
+    expect(await fb.locator('#menuStamp').textContent()).toContain('마지막으로 고친 사람: 팀원B')
+    expect(await fb.locator('table.week tr.today').textContent()).toContain('계란말이')
+
+    // the admin's open screen shows it without reopening: today's menu, the day's row and the note
+    await expect.poll(() => fa.locator('[data-today-menu="dinner"]').textContent(), wait).toContain('김치찌개')
+    expect(await fa.locator('.day.today [data-tile$=":dinner"] .menu').textContent()).toBe('김치찌개, 계란말이')
+    expect(await fa.locator('.day.today .day-note').textContent()).toBe('메모E2E')
+    await fa.locator('nav [data-tab="menu"]').click()
+    expect(await fa.locator('table.week tr.today').textContent()).toContain('메모E2E')
+    await fa.locator('nav [data-tab="apply"]').click()
+
+    // 팀원B changes a deadline but cannot name a 식수서무
+    await fb.locator('#settingsTab').click()
+    expect(await fb.locator('#stewards input').count()).toBeGreaterThan(0)
+    expect(await fb.locator('#stewards input:not(:disabled)').count()).toBe(0)
+    await fb.locator('#cut-dinner').fill('23:58')
+    await fb.locator('#settings button[type=submit]').click()
+    await fb.locator('.day.today').waitFor(wait)
+    await expect.poll(() => fa.locator('.day.today [data-tile$=":dinner"]').textContent(), wait).toContain('23:58 마감')
+
+    // removed again: the tab goes at once, the menu and the deadline they saved stay
+    await fa.locator('#settingsTab').click()
+    expect(await fa.locator('#setStamp').textContent()).toContain('마지막 저장: 팀원B')
+    expect(await fa.locator('#cut-dinner').inputValue()).toBe('23:58')
+    await fa.locator('#stewards label', { hasText: '팀원B' }).locator('input').uncheck()
+    await fa.locator('#settings button[type=submit]').click()
+    await fa.locator('.day.today').waitFor(wait)
+    await expect.poll(() => fb.locator('#settingsTab').isVisible(), wait).toBe(false)
+    expect(await fb.locator('#editWeek, [data-menu-day]').count()).toBe(0)
+    expect(await fb.locator('[data-today-menu="dinner"]').textContent()).toContain('김치찌개')
+    expect(await fb.locator('.day.today [data-tile$=":dinner"]').textContent()).toContain('23:58 마감')
+    await fa.locator('nav [data-tab="status"]').click()
+  }, 120000)
+
+  it('requests for many at once by department, including somebody registered by hand (not a TeamHub member)', async () => {
+    const fa = frame(a.page)
+    const fb = frame(b.page)
+    const wait = { timeout: 15000 }
+    // a member who is not in charge has neither the button nor the list of people
+    expect(await fb.locator('#bulkOpen').count()).toBe(0)
+
+    // the admin registers a colleague who does not use TeamHub
+    await fa.locator('#settingsTab').click()
+    await fa.locator('#personAdd').click()
+    await fa.locator('#p-name').fill('팀원B')
+    expect(await fa.locator('#personWarn').textContent()).toContain('같은 이름의 구성원')
+    await fa.locator('#p-name').fill('미등록E2E')
+    await fa.locator('#p-dept').fill('현장E2E')
+    await fa.locator('#personSave').click()
+    await fa.locator('#peopleCard tr[data-person]').waitFor(wait)
+    expect(await fa.locator('#peopleCard tbody').textContent()).toContain('미등록E2E')
+    expect(await fa.locator('#peopleCard tbody .th-badge').first().textContent()).toBe('미등록')
+
+    // 여러 명 대신 신청: today's dinner is ticked (lunch is past its deadline and cannot be)
+    await fa.locator('nav [data-tab="apply"]').click()
+    await fa.locator('#bulkOpen').click()
+    await fa.locator('#bulkPeople .bulk-group').first().waitFor(wait)
+    expect(await fa.locator('[data-bslot$="|lunch"]').first().isDisabled()).toBe(true)
+    expect(await fa.locator('[data-bslot$="|dinner"]').first().isChecked()).toBe(true)
+    // the hand-registered person sits in their department group, marked
+    await fa.locator('[data-btoggle="현장E2E"]').click()
+    expect(await fa.locator('.bulk-group[data-bgroup="현장E2E"] .bulk-list').textContent()).toContain('미등록')
+    await fa.locator('[data-bdept="현장E2E"]').check()
+    expect(await fa.locator('#bulkCount').textContent()).toBe('1명 선택')
+    await fa.locator('#bulkAll').click()
+    expect(await fa.locator('#bulkCount').textContent()).toBe('3명 선택')
+    await fa.locator('#bulkGo').click()
+    await expect.poll(() => fa.locator('#bulkResult').textContent(), wait).toBe('3명 신청')
+    // again: everybody has it already, nobody can be picked
+    await fa.locator('#bulkAll').click()
+    expect(await fa.locator('#bulkCount').textContent()).toBe('0명 선택')
+    expect(await fa.locator('#bulkGo').isDisabled()).toBe(true)
+    await fa.locator('#bulkClose').click()
+
+    // the member sees the request made for them and can still change it
+    const dinner = fb.locator('.day.today [data-tile$=":dinner"]')
+    await expect.poll(() => dinner.textContent(), wait).toContain('신청함')
+    expect(await dinner.textContent()).toContain('대신')
+
+    // 현황: the count says how many are not members, the name carries the mark
+    await fa.locator('nav [data-tab="status"]').click()
+    const dinnerA = fa.locator('[data-status="dinner"]')
+    await expect.poll(() => dinnerA.locator('.th-card-header').textContent(), wait).toContain('3명 (미등록 1명 포함)')
+    expect(await dinnerA.locator('[data-who^="x:"]').textContent()).toContain('미등록E2E')
+    expect(await dinnerA.locator('[data-who^="x:"] .th-badge').textContent()).toBe('미등록')
+
+    // removed from the list: no longer offered, the request already made stays under the name
+    await fa.locator('#settingsTab').click()
+    await fa.locator('#peopleCard [data-person-del]').click()
+    expect(await fa.locator('#peopleCard [data-person-del]').textContent()).toBe('정말 삭제')
+    await fa.locator('#peopleCard [data-person-del]').click()
+    await expect.poll(() => fa.locator('#peopleCard tr[data-person]').count(), wait).toBe(0)
+    await fa.locator('nav [data-tab="status"]').click()
+    expect(await dinnerA.textContent()).toContain('미등록E2E')
+  }, 120000)
 
   it('a public holiday is not served', async () => {
     const fb = frame(b.page)

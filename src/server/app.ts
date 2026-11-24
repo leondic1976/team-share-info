@@ -29,6 +29,7 @@ import { leaveAllMeetings, registerMeetingRoutes } from './routes/meetings'
 import { registerBackupRoutes } from './routes/backup'
 import { registerPluginRoutes } from './routes/plugins'
 import { registerFeedbackRoutes } from './routes/feedback'
+import { runFeedbackJob } from './feedback'
 import type { FeedbackRelayConfig } from '../shared/server-host'
 import { registerLedgerRoutes } from './routes/ledgers'
 import { registerSearchRoutes } from './routes/search'
@@ -117,7 +118,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   registerMeetingRoutes(app, ctx, { requireAuth })
   registerBackupRoutes(app, ctx, { requireAuth, requireAdmin })
   registerPluginRoutes(app, ctx, { requireAuth })
-  registerFeedbackRoutes(app, ctx, { requireAuth })
+  registerFeedbackRoutes(app, ctx, { requireAuth, requireAdmin })
   registerLedgerRoutes(app, ctx, { requireAuth })
   registerSearchRoutes(app, ctx, { requireAuth })
   hub.onMemberOffline = (memberId) => leaveAllMeetings(ctx, memberId)
@@ -150,6 +151,10 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
         }
       }, 3600_000)
     )
+    // feedback posts: the weekly bundle, and bundles that still wait (also soon after a start,
+    // so a server PC that was off catches up)
+    const feedbackJob = (): void => void runFeedbackJob(ctx).catch((e: unknown) => recordError(ctx, `feedback: ${(e as Error).message}`))
+    timers.push(setTimeout(feedbackJob, 90_000), setInterval(feedbackJob, 3600_000))
   }
 
   app.addHook('onClose', async () => {

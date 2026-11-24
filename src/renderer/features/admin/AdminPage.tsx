@@ -18,6 +18,7 @@ import { HolidaysTab } from './HolidaysTab'
 import { TemplatesTab } from './TemplatesTab'
 import { LauncherAdminTab } from './LauncherAdminTab'
 import { BackupTab } from './BackupTab'
+import { FeedbackTab } from './FeedbackTab'
 import { OwnerOnlyNote, useIsOwner } from './owner'
 
 interface AdminStatus {
@@ -33,6 +34,7 @@ const TABS = [
   { path: 'launcher', label: '공용 런처·보안' },
   { path: 'backup', label: '백업·복구', ownerOnly: true },
   { path: 'releases', label: '업데이트 배포' },
+  { path: 'feedback', label: '기능요청·오류신고' },
   { path: 'status', label: '서버 상태' },
   { path: 'activity', label: '활동 기록' }
 ]
@@ -123,6 +125,7 @@ export function AdminPage(): React.JSX.Element {
           <Route path="launcher" element={<LauncherAdminTab />} />
           <Route path="backup" element={owner ? <BackupTab /> : <OwnerOnlyNote>백업·복구와 서버 자료 저장 위치는 최종관리자(서버 PC)만 다룰 수 있습니다.</OwnerOnlyNote>} />
           <Route path="releases" element={<ReleasesTab />} />
+          <Route path="feedback" element={<FeedbackTab />} />
           <Route path="status" element={<StatusTab />} />
           <Route path="activity" element={<ActivityTab />} />
         </Routes>

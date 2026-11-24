@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leondic1976.github.io/team-share-info/feedback-submission.schema.json",
+  "title": "TeamHub feedback bundle",
+  "description": "What a TeamHub server PC hands to the GitHub repository once a week: the feature requests and bug reports of its member PCs. Kept identical to src/shared/schemas/feedback.ts and scripts/lib/feedback-schema.mjs (tests/shared/feedback-schema.test.ts). Patterns are ECMAScript regular expressions with the u flag; lengths count Unicode code points. Rules a JSON Schema cannot say are listed in docs/feedback-submission.md (NFC text, real points in time, period.from <= period.to, compact JSON, size and time window).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "type",
+    "bundleId",
+    "serverId",
+    "period",
+    "createdAt",
+    "app",
+    "items"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1,
+      "description": "Version of this format."
+    },
+    "type": {
+      "const": "bundle"
+    },
+    "bundleId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "UUID v4 of the bundle; the same bundle is never taken twice."
+    },
+    "serverId": {
+      "type": "string",
+      "pattern": "^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$",
+      "description": "Unique value of the server PC (a salted hash, not an address): checked against the block list and the bundles-per-day limit."
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+          "description": "Start of the period the items were collected in (ISO 8601, UTC, milliseconds)."
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+          "description": "End of the period."
+        }
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+      "description": "When the bundle was made (ISO 8601, UTC, milliseconds)."
+    },
+    "app": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,3})\\.(0|[1-9][0-9]{0,3})\\.(0|[1-9][0-9]{0,3})(-[0-9A-Za-z.-]{1,20})?$",
+          "description": "TeamHub version of the server PC."
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    }
+  },
+  "$defs": {
+    "item": {
+      "title": "TeamHub feedback item",
+      "description": "One feature request or bug report, exactly as the member PC handed it to its server PC.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "title",
+        "body",
+        "author",
+        "installId",
+        "submissionId",
+        "createdAt"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "feature",
+            "bug"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "allOf": [
+            {
+              "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200B\\u200E\\u200F\\u2028-\\u202E\\u2060-\\u2069\\uFEFF\\uFFF9-\\uFFFB\\uFFFE\\uFFFF\\u{E0000}-\\u{E007F}\\p{Cs}]*$"
+            },
+            {
+              "pattern": "^(\\S([\\s\\S]*\\S)?)?$"
+            }
+          ],
+          "description": "One line."
+        },
+        "body": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 5000,
+          "allOf": [
+            {
+              "pattern": "^[^\\u0000-\\u0008\\u000B-\\u001F\\u007F-\\u009F\\u061C\\u200B\\u200E\\u200F\\u2028-\\u202E\\u2060-\\u2069\\uFEFF\\uFFF9-\\uFFFB\\uFFFE\\uFFFF\\u{E0000}-\\u{E007F}\\p{Cs}]*$"
+            },
+            {
+              "pattern": "^(\\S([\\s\\S]*\\S)?)?$"
+            }
+          ],
+          "description": "Plain text; line feed and tab are the only control characters."
+        },
+        "author": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 30,
+          "allOf": [
+            {
+              "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F\\u061C\\u200B\\u200E\\u200F\\u2028-\\u202E\\u2060-\\u2069\\uFEFF\\uFFF9-\\uFFFB\\uFFFE\\uFFFF\\u{E0000}-\\u{E007F}\\p{Cs}]*$"
+            },
+            {
+              "pattern": "^(\\S([\\s\\S]*\\S)?)?$"
+            }
+          ],
+          "description": "Name shown as the writer; empty = anonymous."
+        },
+        "installId": {
+          "type": "string",
+          "pattern": "^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$",
+          "description": "Unique value of the PC the item was written on (a salted hash, not an address). Never published on the board."
+        },
+        "submissionId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "description": "UUID v4 of the item; the same item is never posted twice."
+        },
+        "createdAt": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+          "description": "When the item was written (ISO 8601, UTC, milliseconds)."
+        },
+        "app": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "os"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,3})\\.(0|[1-9][0-9]{0,3})\\.(0|[1-9][0-9]{0,3})(-[0-9A-Za-z.-]{1,20})?$"
+            },
+            "os": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,59}$"
+            }
+          },
+          "description": "Only when the writer left \"버전 정보 함께 보내기\" on."
+        }
+      }
+    }
+  }
+}

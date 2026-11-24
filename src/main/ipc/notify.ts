@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { z } from 'zod'
 import { handle } from './registry'
-import { closeUrgentPopup, getPopupPayload, showToast, showUrgentPopup } from '../notifications'
+import { closeUrgentPopup, getPopupPayload, openUrgentIds, showToast, showUrgentPopup, syncUrgentPopups } from '../notifications'
 import { getMainWindow, showMainWindow } from '../windows/main-window'
 
 const urgentSchema = z.object({
@@ -21,6 +21,12 @@ export function registerNotifyIpc(): void {
     closeUrgentPopup(id)
     // Tell the main window so it can refresh notice state.
     getMainWindow()?.webContents.send('popup:closed', { id })
+  })
+  handle('notify:openUrgent', null, () => openUrgentIds())
+  handle('notify:syncUrgent', z.object({ ids: z.array(z.string().max(100)).max(500) }), ({ ids }) => {
+    const closed = syncUrgentPopups(ids)
+    if (closed.length) getMainWindow()?.webContents.send('popup:closed', { id: closed[0]! })
+    return closed
   })
   handle('notify:toast', z.object({ title: z.string().max(200), body: z.string().max(500), route: z.string().max(200).optional() }), (o) => showToast(o))
   handle('popup:get', z.object({ id: z.string() }), ({ id }) => getPopupPayload(id))

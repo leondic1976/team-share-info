@@ -1,42 +1,31 @@
 import { PC_UID_RE } from '../shared/constants'
+import { FEEDBACK_INTAKE_LABEL, intakeBody, intakeTitle, parseBundleText } from '../shared/schemas/feedback'
 import { createDecipheriv, createHash, createSign, randomBytes, scryptSync } from 'node:crypto'
 
 /**
- * Feature requests and bug reports go to the GitHub issue board of the app's repository
- * without a GitHub login on the user's PC. The app acts as a GitHub App that may only
- * read and write issues of that one repository:
- *   1. a one-time value is made and signed for every post (valid for a few minutes)
+ * Feature requests and bug reports are kept by the server PC of a team, which hands them to the
+ * issue board of the app's GitHub repository once a week as one bundle (src/server/feedback.ts)
+ * - without a GitHub login. The program acts as a GitHub App that may only read and write
+ * issues of that one repository:
+ *   1. a one-time value is made and signed for every hand-over (valid for a few minutes)
  *   2. GitHub checks it and hands out a temporary key (valid for an hour at most)
- *   3. the post is created with that key, and the key is revoked right away
+ *   3. the bundle is handed in with that key, and the key is revoked right away
  * Everything travels over HTTPS.
+ *
+ * What is handed in is a JSON document of a fixed shape (src/shared/schemas/feedback.ts) as an
+ * issue with the intake label. Whether it is taken is decided on GitHub by a workflow of the
+ * repository (scripts/feedback-intake.mjs), never by this program.
  *
  * The app's signing key is not in the repository: the build seals it into
  * resources/feedback.bin (scripts/build-feedback.mjs). Sealing keeps it out of plain sight,
  * it is not a vault - whoever takes the installer apart can get it, and then can do what
- * the app can do: write issues in this repository. Nothing else is reachable with it.
+ * the app can do: write issues in this repository. Nothing else is reachable with it
+ * (docs/feedback-submission.md lists what that means and how the key is replaced).
  */
 export interface FeedbackCreds {
   appId: string
   privateKey: string
   installationId?: string
-}
-
-export type FeedbackKind = 'feature' | 'bug'
-
-export interface FeedbackInput {
-  /** Receipt number of this post (TH-XXXXXXXX); a repeated send with the same one is not posted twice. */
-  id: string
-  kind: FeedbackKind
-  title: string
-  body: string
-  /** Shown as the writer; empty = 익명. */
-  author: string
-  /** "TeamHub 1.2.1 · Windows 10.0.26100" or '' when the writer chose not to send it. */
-  environment: string
-  /** The value that stands for the writer's PC (see installIdFrom); never an address. */
-  installId: string
-  /** A former try with this id may have reached GitHub: look for it before posting. */
-  retry?: boolean
 }
 
 export interface FeedbackResult {
@@ -45,8 +34,7 @@ export interface FeedbackResult {
 }
 
 export const FEEDBACK_REPO = { owner: 'leondic1976', repo: 'team-share-info' }
-export const FEEDBACK_LABELS: Record<FeedbackKind, string> = { feature: '기능요청', bug: '오류신고' }
-export const FEEDBACK_LIMITS = { titleMin: 2, titleMax: 100, bodyMin: 5, bodyMax: 5000, authorMax: 30 }
+export { FEEDBACK_LIMITS } from '../shared/schemas/feedback'
 
 const MAGIC = Buffer.from('THFB1')
 // scripts/build-feedback.mjs seals with the same words
@@ -68,12 +56,6 @@ export function openSealed(buf: Buffer | null | undefined): FeedbackCreds | null
   } catch {
     return null
   }
-}
-
-export function newFeedbackId(): string {
-  // no 0/O/1/I: the number is read out and typed by people
-  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  return `TH-${[...randomBytes(8)].map((b) => abc[b % abc.length]).join('')}`
 }
 
 export const INSTALL_ID_RE = PC_UID_RE
@@ -101,33 +83,12 @@ export function signedOnce(creds: FeedbackCreds, now = Date.now()): string {
   return `${head}.${b64u(createSign('RSA-SHA256').update(head).sign(creds.privateKey))}`
 }
 
-/** No notifications to people named in a post, and no control characters. */
-function clean(s: string): string {
-  // eslint-disable-next-line no-control-regex -- strip control characters from text typed by users
-  return s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').replace(/@(?=[A-Za-z0-9])/g, '@​')
-}
-
-export function marker(id: string): string {
-  return `<!-- teamhub-feedback:${id} -->`
-}
-
-export function issueOf(input: FeedbackInput): { title: string; body: string; labels: string[] } {
-  const label = FEEDBACK_LABELS[input.kind]
-  const author = clean(input.author).trim().slice(0, FEEDBACK_LIMITS.authorMax) || '익명'
-  const foot = [input.environment.trim(), `고유값 ${input.installId}`, `접수번호 ${input.id}`].filter(Boolean).join(' · ')
-  return {
-    title: `[${label}] ${clean(input.title).replace(/\s+/g, ' ').trim().slice(0, FEEDBACK_LIMITS.titleMax)}`,
-    body: `**분류**: ${label}\n**작성자**: ${author}\n\n${clean(input.body).trim().slice(0, FEEDBACK_LIMITS.bodyMax)}\n\n---\n${foot}\n${marker(input.id)}\n`,
-    labels: [label]
-  }
-}
-
 export class FeedbackError extends Error {
   constructor(
     message: string,
-    /** The post may have been created although we got no answer. */
+    /** The bundle may have been handed in although we got no answer (the next try looks for it first). */
     readonly unsure = false,
-    /** GitHub could not be reached at all from this PC (no internet): the team's server PC may still reach it. */
+    /** GitHub could not be reached at all from this PC (no internet). */
     readonly offline = false
   ) {
     super(message)
@@ -139,17 +100,21 @@ type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 interface Issue {
   number: number
   html_url: string
-  body?: string | null
+  title?: string
 }
 
 /**
- * Post to the issue board. `api` is https://api.github.com (tests pass their own).
- * Throws FeedbackError with a message for the user.
+ * Hand a bundle in to the issue board. `api` is https://api.github.com (tests pass their own).
+ * Nothing that is not a bundle of the defined shape is sent. A bundle that is there already
+ * (an earlier try whose answer was lost) is not handed in twice.
+ * Throws FeedbackError with a message for the administrator.
  */
-export async function submitFeedback(creds: FeedbackCreds, input: FeedbackInput, opts: { api?: string; fetch?: Fetch; timeoutMs?: number } = {}): Promise<FeedbackResult> {
+export async function submitBundle(creds: FeedbackCreds, text: string, opts: { api?: string; fetch?: Fetch; timeoutMs?: number } = {}): Promise<FeedbackResult> {
   const api = (opts.api ?? 'https://api.github.com').replace(/\/+$/, '')
   if (!/^https:\/\//.test(api) && !/^http:\/\/127\.0\.0\.1[:/]/.test(api)) throw new FeedbackError('보안 연결(HTTPS)이 아니어서 보내지 않았습니다.')
-  if (!INSTALL_ID_RE.test(input.installId)) throw new FeedbackError('이 PC의 고유값을 확인할 수 없어 보내지 않았습니다.')
+  const parsed = parseBundleText(text)
+  if (!parsed.ok || parsed.skipped > 0) throw new FeedbackError('묶음이 정해진 형식이 아니어서 보내지 않았습니다.')
+  const { bundleId } = parsed.value
   const doFetch = opts.fetch ?? fetch
   const repo = `${api}/repos/${FEEDBACK_REPO.owner}/${FEEDBACK_REPO.repo}`
   const call = async (auth: string, method: string, url: string, body?: unknown): Promise<Response> => {
@@ -167,16 +132,16 @@ export async function submitFeedback(creds: FeedbackCreds, input: FeedbackInput,
         signal: AbortSignal.timeout(opts.timeoutMs ?? 20000)
       })
     } catch {
-      throw new FeedbackError('GitHub에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 보내 주세요.', method === 'POST' && url.endsWith('/issues'), true)
+      throw new FeedbackError('GitHub에 연결할 수 없습니다(서버 PC의 인터넷 연결을 확인하세요).', method === 'POST' && url.endsWith('/issues'), true)
     }
   }
   const refused = (r: Response, what: string): FeedbackError =>
     new FeedbackError(
       r.status === 401 || r.status === 403 || r.status === 404
-        ? `${what}에 실패했습니다(${r.status}). 프로그램을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.`
+        ? `${what}에 실패했습니다(${r.status}). 보내기 설정이 바뀌었을 수 있습니다. 서버 PC의 프로그램을 최신 버전으로 업데이트해 보세요.`
         : r.status === 429
-          ? '요청이 많아 잠시 막혔습니다. 몇 분 뒤 다시 보내 주세요.'
-          : `${what}에 실패했습니다(${r.status}). 잠시 뒤 다시 보내 주세요.`
+          ? '요청이 많아 잠시 막혔습니다. 다음 시도에 다시 보냅니다.'
+          : `${what}에 실패했습니다(${r.status}).`
     )
 
   // 1. the one-time signed value -> 2. GitHub checks it and hands out a temporary key
@@ -191,17 +156,15 @@ export async function submitFeedback(creds: FeedbackCreds, input: FeedbackInput,
   if (!tr.ok) throw refused(tr, '인증')
   const key = ((await tr.json()) as { token: string }).token
   try {
-    if (input.retry) {
-      const r = await call(key, 'GET', `${repo}/issues?state=all&sort=created&direction=desc&per_page=50`)
-      const found = r.ok ? ((await r.json()) as Issue[]).find((i) => i.body?.includes(marker(input.id))) : undefined
-      if (found) return { number: found.number, url: found.html_url }
-    }
-    // 3. the post
-    const issue = issueOf(input)
-    let r = await call(key, 'POST', `${repo}/issues`, issue)
-    // a label that does not exist on the board must not lose the post
-    if (r.status === 422) r = await call(key, 'POST', `${repo}/issues`, { title: issue.title, body: issue.body })
-    if (!r.ok) throw refused(r, '등록')
+    // handed in before (the answer got lost, or it was taken in already)?
+    const title = intakeTitle(bundleId)
+    const r0 = await call(key, 'GET', `${repo}/issues?state=all&sort=created&direction=desc&per_page=100`)
+    const found = r0.ok ? ((await r0.json()) as Issue[]).find((i) => i.title === title || i.title === `[묶음] ${bundleId}`) : undefined
+    if (found) return { number: found.number, url: found.html_url }
+    // 3. the bundle: the JSON alone, with the intake label and nothing else
+    const r = await call(key, 'POST', `${repo}/issues`, { title, body: intakeBody(text), labels: [FEEDBACK_INTAKE_LABEL] })
+    if (r.status === 422) throw new FeedbackError('GitHub 쪽 접수 준비(라벨)가 끝나지 않았습니다. 프로그램 관리자(배포 담당)에게 알려 주세요.')
+    if (!r.ok) throw refused(r, '전달')
     const made = (await r.json()) as Issue
     return { number: made.number, url: made.html_url }
   } finally {

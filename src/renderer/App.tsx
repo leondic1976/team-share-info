@@ -20,6 +20,7 @@ import { MeetingRoom } from './features/meetings/MeetingRoom'
 import { InvitePopup } from './features/meetings/InvitePopup'
 import { FeedbackWindow } from './features/feedback/FeedbackWindow'
 import { LockedSmall, LockGate } from './features/lock/LockGate'
+import { LogoutWarning } from './features/seat/LogoutWarning'
 
 type Screen = 'loading' | 'first-run' | 'wizard' | 'join' | 'pending' | 'main' | 'import'
 
@@ -90,6 +91,8 @@ export function App(): React.JSX.Element {
   if (room) return loaded ? <MeetingRoom id={room[1]} /> : <Loading />
   const inv = /^#\/popup\/invite\/([\w-]+)/.exec(hash)
   if (inv) return loaded ? <InvitePopup id={inv[1]} /> : <Loading />
+  // shared PC: the notice before the automatic logout (nothing personal in it, so it shows while locked too)
+  if (hash.startsWith('#/popup/logout')) return loaded ? <LogoutWarning /> : <Loading />
   if (hash.startsWith('#/popup/feedback'))
     return loaded ? (
       <LockedSmall>

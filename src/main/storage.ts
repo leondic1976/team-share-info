@@ -25,8 +25,8 @@ interface StorageFile {
   last?: { ok: boolean; message: string; at: number }
 }
 
-/** Top-level entries of the personal data folder. */
-export const LOCAL_ENTRIES = ['local.db', 'plugins']
+/** Top-level entries of the personal data folder (backups: snapshots of the local DB, localbackup.ts). */
+export const LOCAL_ENTRIES = ['local.db', 'plugins', 'backups']
 
 const FILE = (): string => join(app.getPath('userData'), 'storage.json')
 function read(): StorageFile {
@@ -124,7 +124,8 @@ export function checkLocalTarget(to: string): TargetCheck {
   const c = back
     ? { ok: !samePath(from, to), error: samePath(from, to) ? '지금 쓰는 폴더와 같습니다.' : undefined, hasData: existsSync(join(to, 'local.db')), needBytes: need, freeBytes: null }
     : checkTarget({ from, to, marker: 'local.db', needBytes: need, isProtected })
-  if (c.ok && !c.hasData && existsSync(join(to, 'plugins'))) return { ...c, ok: false, error: '그 폴더에 이미 plugins 폴더가 있습니다. 빈 폴더를 고르세요.' }
+  const taken = c.ok && !c.hasData ? ['plugins', 'backups'].find((n) => existsSync(join(to, n))) : undefined
+  if (taken) return { ...c, ok: false, error: `그 폴더에 이미 ${taken} 폴더가 있습니다. 빈 폴더를 고르세요.` }
   if (c.ok && c.hasData) {
     const bad = verifySqlite(join(to, 'local.db'))
     if (bad) return { ...c, ok: false, error: `그 폴더의 자료를 열 수 없습니다(${bad}).` }

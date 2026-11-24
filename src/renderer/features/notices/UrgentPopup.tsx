@@ -36,6 +36,8 @@ export function UrgentPopup({ id }: { id: string }): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [shake, setShake] = useState(false)
+  /** why confirming did not work: the notice is over ('gone'), or the server cannot be reached ('offline') */
+  const [stuck, setStuck] = useState<'' | 'gone' | 'offline'>('')
 
   const load = useCallback(async () => {
     loadConn(await invoke('conn:get'))
@@ -87,10 +89,31 @@ export function UrgentPopup({ id }: { id: string }): React.JSX.Element {
       }
       await invoke('notify:closeUrgent', { id: p.id })
     } catch (e) {
-      setErr(errorMessage(e))
       setBusy(false)
+      const gone = e instanceof ApiError && (e.status === 404 || (e.status === 400 && e.message.includes('수신 대상')))
+      if (gone) {
+        // The server knows the notice but it no longer waits for this person: deleted or ended
+        // by the sender, expired, or not addressed to me any more. Nothing is left to confirm.
+        setStuck('gone')
+        setErr('이미 끝났거나 지워진 긴급공지입니다. 창을 닫습니다.')
+        window.setTimeout(() => void invoke('notify:closeUrgent', { id: p.id }), 2500)
+        return
+      }
+      // The server cannot be reached (or does not accept this PC right now): the window must
+      // not hold the screen for ever. It may be closed; it comes back once the server answers,
+      // because the notice is still unconfirmed there.
+      const unreachable = !(e instanceof ApiError) || e.status === 0 || e.status >= 500 || e.status === 401 || e.status === 403 || e.status === 426
+      if (unreachable) setStuck('offline')
+      setErr(e instanceof ApiError && (e.code === 'NETWORK' || e.code === 'NO_SERVER') ? '서버에 연결되지 않아 확인을 보내지 못했습니다.' : errorMessage(e))
     }
   }
+
+  // A window without its notice (the program was restarted underneath it) has nothing to show.
+  useEffect(() => {
+    if (p) return
+    const t = window.setTimeout(() => void invoke('notify:closeUrgent', { id }), 8000)
+    return () => window.clearTimeout(t)
+  }, [p, id])
 
   if (!p) return <div className="flex h-full items-center justify-center bg-urgent p-6 text-sm text-white">불러오는 중…</div>
   return (
@@ -110,7 +133,19 @@ export function UrgentPopup({ id }: { id: string }): React.JSX.Element {
           </div>
         )}
       </div>
-      {err && <p className="shrink-0 bg-black/30 px-5 py-1.5 text-sm font-semibold">{err} — 서버에 연결되면 다시 누르세요.</p>}
+      {err && (
+        <p className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 bg-black/30 px-5 py-1.5 text-sm font-semibold" role="alert" data-testid="urgent-error">
+          <span>{err}</span>
+          {stuck === 'offline' && (
+            <>
+              <span className="font-normal opacity-90">다시 눌러 보거나, 지금은 닫아 둘 수 있습니다(서버에 연결되면 다시 뜹니다).</span>
+              <button className="ml-auto cursor-pointer rounded-md border border-white/70 px-2.5 py-1 text-sm hover:bg-white/15" onClick={() => void invoke('notify:closeUrgent', { id: p.id })} data-testid="urgent-dismiss">
+                지금은 닫기
+              </button>
+            </>
+          )}
+        </p>
+      )}
       <div className="flex shrink-0 flex-wrap items-center gap-2 bg-black/25 px-5 py-3">
         <button className="flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-sm underline-offset-2 hover:underline" onClick={() => void invoke('window:showMain', { path: `/notices/${p.id}` })}>
           <ExternalLink className="size-4" /> 공지에서 보기
@@ -119,12 +154,12 @@ export function UrgentPopup({ id }: { id: string }): React.JSX.Element {
           {busy && <Loader2 className="size-5 animate-spin" />}
           {p.requireAck && p.replyOptions.length ? (
             p.replyOptions.map((o) => (
-              <Button key={o} size="lg" className="bg-white font-bold text-urgent hover:bg-white/90" onClick={() => void done(o)} disabled={busy}>
+              <Button key={o} size="lg" className="bg-white font-bold text-urgent hover:bg-white/90" onClick={() => void done(o)} disabled={busy || stuck === 'gone'}>
                 {o}
               </Button>
             ))
           ) : (
-            <Button size="lg" className="bg-white px-8 text-base font-extrabold text-urgent hover:bg-white/90" onClick={() => void done()} disabled={busy} autoFocus>
+            <Button size="lg" className="bg-white px-8 text-base font-extrabold text-urgent hover:bg-white/90" onClick={() => void done()} disabled={busy || stuck === 'gone'} autoFocus>
               <CheckCircle2 /> {p.requireAck ? '확인' : '읽음 · 닫기'}
             </Button>
           )}

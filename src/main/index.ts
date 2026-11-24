@@ -3,7 +3,8 @@ import log from 'electron-log/main'
 import { setupPaths, userDataPath } from './paths'
 import { createMainWindow, setQuitting } from './windows/main-window'
 import { createTray, getTray, refreshTrayMenu } from './tray'
-import { markSessionStarted, onSeatsChanged, openSeatPicker, sessionStarted, setSessionStarter, sharedEnabled, showFront } from './seats'
+import { markSessionStarted, onSeatsChanged, openSeatPicker, sessionStarted, setSessionStarter, sharedEnabled, showFront, startRemovedCleanup } from './seats'
+import { applyStagedRestore, startLocalBackups, stopLocalBackups } from './localbackup'
 import { registerSeatIpc } from './ipc/seats'
 import { startedHidden } from './autostart'
 import { openLocalDb, closeLocalDb, localDb } from './localdb'
@@ -15,6 +16,7 @@ import { registerNotifyIpc } from './ipc/notify'
 import { registerPersonalIpc } from './ipc/personal'
 import { startScheduler, stopScheduler } from './scheduler'
 import { registerTransferIpc } from './ipc/transfer'
+import { registerAttachIpc } from './ipc/attach'
 import { registerToolsIpc } from './ipc/tools'
 import { registerFeedbackIpc } from './ipc/feedback'
 import { registerLockIpc } from './ipc/lock'
@@ -73,6 +75,8 @@ if (!app.requestSingleInstanceLock()) {
     // a staged change of the personal data folder is carried out before the local DB opens (6.20)
     await applyPendingLocalChange()
     resolveLocalDir()
+    // a restore from a backup that was staged before the restart: swapped in before the DB opens
+    applyStagedRestore(localDataPath('local.db'))
     openLocalDb(localDataPath('local.db'))
     markSessionStarted()
     registerAppIpc()
@@ -83,6 +87,7 @@ if (!app.requestSingleInstanceLock()) {
     registerNotifyIpc()
     registerPersonalIpc()
     registerTransferIpc()
+    registerAttachIpc()
     registerToolsIpc()
     registerFeedbackIpc()
     registerLockIpc()
@@ -105,6 +110,7 @@ if (!app.requestSingleInstanceLock()) {
     startSysutil()
     startFileIndex()
     localDb().notes.purgeOld()
+    startLocalBackups()
     void autoStartServer()
     startUpdater({ serverUrl: () => readCredential()?.serverUrl ?? getPendingJoin()?.serverUrl ?? null, resumeServer: autoStartServer })
     getMainWindow()?.webContents.once('did-finish-load', () => setTimeout(() => openLink(process.argv), 1500))
@@ -115,6 +121,8 @@ if (!app.requestSingleInstanceLock()) {
     registerSeatIpc()
     setSessionStarter(startSession)
     onSeatsChanged(refreshTrayMenu)
+    // people removed from a shared PC are kept 30 days, then erased
+    startRemovedCleanup()
     if (!sharedEnabled()) return startSession(false)
     // Shared PC: nobody is signed in, so nothing of anybody is opened. Only the tray and the
     // sign-in window exist (started with Windows: the tray alone, until somebody opens TeamHub).
@@ -137,6 +145,7 @@ if (!app.requestSingleInstanceLock()) {
     // quit from the sign-in window: no session was started, nothing to stop
     if (!sessionStarted()) return
     stopScheduler()
+    stopLocalBackups()
     stopTools()
     stopWatches()
     closeLocalDb()

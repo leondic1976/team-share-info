@@ -132,63 +132,37 @@ export interface TransferItem {
   createdAt: number
 }
 
-/** A feature request or bug report this PC posted to the board (kept on this PC). */
-export interface FeedbackSent {
-  /** Receipt number (TH-XXXXXXXX). */
-  id: string
-  /** Number of the post on the board. */
-  number: number
-  kind: 'feature' | 'bug'
-  title: string
-  at: number
-}
-
+/** What the feedback window (기능요청 및 오류신고) adds to a post; the post itself goes to the server PC. */
 export interface FeedbackInfo {
-  /** false: this build cannot post by itself (no key was built in). */
-  configured: boolean
   /** The value that stands for this PC on the board (made from its addresses, not reversible). */
   installId: string
   /** What is added to a post when the writer allows it: app and Windows version. */
+  app: { version: string; os: string }
+  /** The same, as the line shown to the writer. */
   environment: string
   boardUrl: string
   limits: { titleMin: number; titleMax: number; bodyMin: number; bodyMax: number; authorMax: number }
-  sent: FeedbackSent[]
-}
-
-export interface FeedbackSubmit {
-  kind: 'feature' | 'bug'
-  title: string
-  body: string
-  author: string
-  includeEnv: boolean
-}
-
-export interface FeedbackSubmitResult {
-  ok: boolean
-  id?: string
-  number?: number
-  /** This PC had no internet: the server PC posted it. */
-  viaServer?: boolean
-  error?: string
 }
 
 /** Program lock (optional: a 4-digit PIN asked at start and after Windows was locked). */
 export interface LockState {
-  /** The user turned the lock on by making a PIN. */
+  /** The user turned the lock on by making a PIN. Shared PC: the signed-in person has a PIN. */
   hasPin: boolean
   locked: boolean
   /** Too many wrong tries: nothing is accepted for this long. */
   waitMs: number
-  /** Shared PC: the lock asks for the PIN of this signed-in person (the optional PIN is not used). */
+  /** Shared PC: the lock asks for the one PIN of this signed-in person (there is no separate lock PIN). */
   seat?: { name: string; owner: boolean }
 }
 
-/** Shared PC (공용 PC 사용): several people use one member PC, each with a name and a PIN. */
+/** Shared PC (공용 PC 사용): several people use one member PC, each with a name and, if they want one, a PIN. */
 export interface SeatInfo {
   id: string
   name: string
   /** PC 책임자: turned the mode on; adds and removes people. */
   owner: boolean
+  /** False: this person uses no PIN, the name alone signs them in. */
+  hasPin: boolean
   lastUsedAt: number
   /** Too many wrong tries for this person: nothing is accepted for this long. */
   waitMs: number
@@ -202,8 +176,8 @@ export interface SeatState {
   signedIn: boolean
   /** The mode may be turned on here: a member PC that is connected to a server. */
   allowed: boolean
-  active: { id: string; name: string; owner: boolean } | null
-  /** The program locks itself after this many minutes without input. */
+  active: { id: string; name: string; owner: boolean; hasPin: boolean } | null
+  /** The signed-in person is logged out after this many minutes without input (자동 로그아웃 시간). */
   idleMinutes: number
   seats: SeatInfo[]
 }
@@ -215,6 +189,54 @@ export interface SeatResult {
   /** Shown once: recovery code of the PC 책임자's PIN. */
   recovery?: string
   warning?: string
+  /** After a restore: the name the person has now (marked when somebody else took theirs). */
+  name?: string
+}
+
+/** Shared PC: the automatic logout that is about to happen (shown by the warning window). */
+export interface LogoutWarning {
+  /** Seconds until the person is logged out. */
+  seconds: number
+  name: string
+}
+
+/** A person removed from a shared PC whose data is still kept (30 days). */
+export interface RemovedSeatInfo {
+  id: string
+  name: string
+  removedAt: number
+  /** Whole days until the kept data is erased for good. */
+  daysLeft: number
+  bytes: number
+}
+
+/** 내 자료 백업 · 복구: one snapshot of the personal DB in the backups folder. */
+export interface LocalSnapshot {
+  /** File name inside the backups folder (the only thing the renderer ever names). */
+  id: string
+  /** auto: the daily one; manual: 지금 백업; safety: made right before a restore. */
+  kind: 'auto' | 'manual' | 'safety'
+  at: number
+  bytes: number
+}
+export interface LocalBackupInfo {
+  dir: string
+  /** How many daily snapshots are kept. */
+  keep: number
+  /** Newest snapshot of any kind; null when there is none. */
+  lastAt: number | null
+  totalBytes: number
+  /** Why the last automatic backup was skipped (not enough free space...). */
+  note: string | null
+  /** Result of the last restore, shown once after the restart. */
+  restore: { ok: boolean; message: string; at: number } | null
+  busy: boolean
+  snapshots: LocalSnapshot[]
+}
+export interface LocalBackupResult {
+  ok: boolean
+  error?: string
+  id?: string
 }
 
 export interface LockResult {
@@ -223,6 +245,19 @@ export interface LockResult {
   waitMs?: number
   /** Shown once after a PIN was made or replaced. */
   recovery?: string
+}
+
+/** token: stands for the saved file in later open/reveal calls (the renderer never handles its path). */
+export interface AttachSaveResult {
+  ok: boolean
+  canceled?: boolean
+  token?: string
+  name?: string
+  dir?: string
+  opened?: boolean
+  /** a file that runs code: saved, but not opened from here */
+  blocked?: boolean
+  error?: string
 }
 
 export interface ExportResult {
@@ -266,6 +301,14 @@ export interface IpcMap {
   'ledger:open': { req: void; res: { ok: boolean; name?: string; kind?: 'rows' | 'book' | 'text'; rows?: LedgerExportCell[][]; book?: unknown; text?: string; error?: string } }
   'local:export': { req: void; res: ExportResult }
   'local:import': { req: void; res: ExportResult }
+  'local:backup.info': { req: void; res: LocalBackupInfo }
+  'local:backup.now': { req: void; res: LocalBackupResult }
+  /** Restarts the program on success: the snapshot is swapped in before the local DB opens. */
+  'local:backup.restore': { req: { id: string }; res: LocalBackupResult }
+  'local:backup.delete': { req: { id: string }; res: LocalBackupResult }
+  'local:backup.setKeep': { req: { keep: number }; res: LocalBackupResult }
+  'local:backup.openFolder': { req: void; res: void }
+  'local:backup.dismiss': { req: void; res: void }
   'local:cache.save': { req: { entries: { key: string; value: string }[] }; res: void }
   'local:cache.load': { req: { prefix: string }; res: { key: string; value: string; updatedAt: number }[] }
   /** prefix '' clears every member's cache; otherwise only the keys of that member */
@@ -303,6 +346,10 @@ export interface IpcMap {
   'update:postpone': { req: void; res: UpdateState }
   'notify:urgent': { req: UrgentPayload; res: void }
   'notify:closeUrgent': { req: { id: string }; res: void }
+  /** ids of the urgent windows open on this PC */
+  'notify:openUrgent': { req: void; res: string[] }
+  /** close the urgent windows whose notice is not in `ids`; returns the ids closed */
+  'notify:syncUrgent': { req: { ids: string[] }; res: string[] }
   'notify:toast': { req: { title: string; body: string; route?: string }; res: void }
   'popup:get': { req: { id: string }; res: UrgentPayload | null }
   'window:showMain': { req: { path?: string }; res: void }
@@ -328,6 +375,10 @@ export interface IpcMap {
   'transfer:pick': { req: { folders: boolean }; res: string[] }
   'transfer:download': { req: { fileId: string; name: string; versionId?: string }; res: ExportResult }
   'transfer:open': { req: { fileId: string; name: string; folderId: string }; res: ExportResult }
+  /** An attachment (message, notice, post): save where the user picks, or (open) fetch into the folder used last and open it. */
+  'attach:save': { req: { id: string; name: string; open: boolean }; res: AttachSaveResult }
+  'attach:open': { req: { token: string }; res: { ok: boolean; error?: string } }
+  'attach:reveal': { req: { token: string }; res: void }
   'local:memos.list': { req: { q: string }; res: MemoDto[] }
   'local:memos.get': { req: { id: string }; res: MemoDto | null }
   'local:memos.save': { req: MemoInput; res: string }
@@ -483,15 +534,24 @@ export interface IpcMap {
   'seat:disable': { req: { ownerPin: string }; res: SeatResult }
   'seat:add': { req: { ownerPin: string; name: string; pin: string }; res: SeatResult }
   'seat:remove': { req: { id: string; pin: string; by: 'self' | 'owner' }; res: SeatResult }
+  'seat:removed': { req: void; res: RemovedSeatInfo[] }
+  'seat:restore': { req: { ownerPin: string; id: string }; res: SeatResult }
+  'seat:purge': { req: { ownerPin: string; id: string }; res: SeatResult }
   'seat:resetPin': { req: { ownerPin: string; id: string; newPin: string }; res: SeatResult }
+  /** The signed-in person makes (oldPin empty) or changes their own PIN. */
   'seat:changePin': { req: { oldPin: string; newPin: string }; res: SeatResult }
+  /** The signed-in person stops using a PIN. */
+  'seat:removePin': { req: { pin: string }; res: SeatResult }
   'seat:recover': { req: { code: string; newPin: string }; res: SeatResult }
   'seat:setIdle': { req: { ownerPin: string; minutes: number }; res: SeatResult }
   /** Ends the session and starts the program again at the sign-in window. */
   'seat:switch': { req: void; res: void }
+  /** The automatic logout that is coming; null when none is. */
+  'seat:logoutWarning': { req: void; res: LogoutWarning | null }
+  /** "계속 사용": cancels the automatic logout that was announced. */
+  'seat:stay': { req: void; res: void }
   'feedback:open': { req: void; res: void }
   'feedback:info': { req: void; res: FeedbackInfo }
-  'feedback:submit': { req: FeedbackSubmit; res: FeedbackSubmitResult }
 }
 
 /** Something written for the server while it was unreachable (sent in order when it is back). */
@@ -561,6 +621,13 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'ledger:open',
   'local:export',
   'local:import',
+  'local:backup.info',
+  'local:backup.now',
+  'local:backup.restore',
+  'local:backup.delete',
+  'local:backup.setKeep',
+  'local:backup.openFolder',
+  'local:backup.dismiss',
   'local:cache.save',
   'local:cache.load',
   'local:cache.clear',
@@ -596,6 +663,8 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'update:postpone',
   'notify:urgent',
   'notify:closeUrgent',
+  'notify:openUrgent',
+  'notify:syncUrgent',
   'notify:toast',
   'popup:get',
   'window:showMain',
@@ -621,6 +690,9 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'transfer:pick',
   'transfer:download',
   'transfer:open',
+  'attach:save',
+  'attach:open',
+  'attach:reveal',
   'local:memos.list',
   'local:memos.get',
   'local:memos.save',
@@ -775,14 +847,19 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'seat:disable',
   'seat:add',
   'seat:remove',
+  'seat:removed',
+  'seat:restore',
+  'seat:purge',
   'seat:resetPin',
   'seat:changePin',
+  'seat:removePin',
   'seat:recover',
   'seat:setIdle',
   'seat:switch',
+  'seat:logoutWarning',
+  'seat:stay',
   'feedback:open',
-  'feedback:info',
-  'feedback:submit'
+  'feedback:info'
 ]
 
 /** main -> renderer push events */

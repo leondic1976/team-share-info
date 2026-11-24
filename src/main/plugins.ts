@@ -105,6 +105,13 @@ export function servePlugins(): void {
     if (!builtin && (!p || !p.enabled || !PLUGIN_ID_RE.test(id))) return new Response('not installed', { status: 404 })
     const rel = decodeURIComponent(u.pathname).replace(/^\/+/, '') || (p ? p.manifest.entry : 'index.html')
     if (rel === '__sdk.js') return new Response(PLUGIN_SDK, { headers: { 'content-type': MIME['.js'], 'content-security-policy': CSP } })
+    // the program's look, the same for every frame (resources/ui/base.css): the colours of the
+    // main screen and the th-* component classes. A stylesheet needs no CORS header.
+    if (rel === '__ui.css') {
+      const f = join(resourcePath('ui'), 'base.css')
+      const css = existsSync(f) ? await (await net.fetch(pathToFileURL(f).toString())).text() : ''
+      return new Response(css, { headers: { 'content-type': MIME['.css'], 'content-security-policy': CSP, 'cache-control': 'no-cache' } })
+    }
     // the program's fonts, the same for every frame (resources/fonts, scripts/build-fonts.mjs)
     if (rel === '__fonts.css' || /^__font\/[\w.-]+\.woff2$/.test(rel)) {
       const f = join(resourcePath('fonts'), rel === '__fonts.css' ? 'fonts.css' : rel.slice('__font/'.length))

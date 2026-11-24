@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UrgentPayload } from '@shared/schemas/notices'
 import { realtime } from '@renderer/lib/realtime'
-import { api } from '@renderer/lib/api'
+import { api, ApiError } from '@renderer/lib/api'
 import { invoke, onMain } from '@renderer/lib/bridge'
 import { inDoNotDisturb } from '@renderer/app/prefs-store'
 import { useConn } from '@renderer/app/conn-store'
@@ -50,6 +50,36 @@ export function useNoticeAlerts(): void {
   useEffect(() => {
     void invoke('app:setBadge', { count: total })
   }, [total])
+
+  // An urgent window used to go away only through its own 확인 button. It must also go when the
+  // notice is over for this person: confirmed in the 공지 screen, deleted or ended by the sender,
+  // expired, or belonging to a server this PC no longer uses. The server says which still wait.
+  useEffect(() => {
+    let busy = false
+    const sync = async (): Promise<void> => {
+      if (busy) return
+      busy = true
+      try {
+        if (!(await invoke('notify:openUrgent')).length) return
+        const r = await api.get<{ ids: string[] }>('/api/notices/attention')
+        if (Array.isArray(r?.ids)) await invoke('notify:syncUrgent', { ids: r.ids })
+      } catch (e) {
+        // a server older than this PC has no such list (404), a server that is off cannot say:
+        // the windows stay as they are. Only "this PC is no longer let in" closes them all.
+        if (e instanceof ApiError && (e.code === 'DEVICE_REVOKED' || e.code === 'MEMBER_SUSPENDED')) await invoke('notify:syncUrgent', { ids: [] }).catch(() => undefined)
+      } finally {
+        busy = false
+      }
+    }
+    const later = (): void => void window.setTimeout(() => void sync(), 300)
+    const offs = [realtime.on('notice.receipt', later), realtime.on('notice.changed', later), realtime.onReconnect(later)]
+    const timer = window.setInterval(() => void sync(), 30_000)
+    later()
+    return () => {
+      for (const off of offs) off()
+      window.clearInterval(timer)
+    }
+  }, [memberId])
 
   useEffect(() => {
     const offUrgent = realtime.on('notice.urgent', (p) => void invoke('notify:urgent', p as UrgentPayload))

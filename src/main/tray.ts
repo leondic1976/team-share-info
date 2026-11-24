@@ -42,7 +42,8 @@ export function refreshTrayMenu(): void {
       ? ([
           { type: 'separator' },
           { label: `사용자: ${seat.name}`, enabled: false },
-          { label: '지금 잠그기', click: () => lockNow() },
+          // a person without a PIN has nothing to lock with: they leave with 사용자 바꾸기
+          ...(seat.hasPin ? [{ label: '지금 잠그기', click: () => lockNow() }] : []),
           { label: '사용자 바꾸기', click: () => void askSwitchUser() }
         ] satisfies Electron.MenuItemConstructorOptions[])
       : []),

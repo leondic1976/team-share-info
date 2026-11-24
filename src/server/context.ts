@@ -10,7 +10,7 @@ export interface ServerContext {
   startedAt: number
   hub: Hub
   recentErrors: { at: number; message: string }[]
-  /** Passing feedback posts of members on to the public board (routes/feedback.ts). */
+  /** Handing the weekly bundle of feedback posts to the developer (feedback.ts). */
   feedback?: FeedbackRelayConfig & { creds?: FeedbackCreds }
   /** Called when settings that affect the running process change (port, discovery...). */
   onSettingsChanged?: () => void

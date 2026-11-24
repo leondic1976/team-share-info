@@ -15,18 +15,31 @@ export const MIN_CLIENT_PROTOCOL = 1
 export const PC_UID_RE = /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/
 
 /**
- * 공용 PC 사용 (src/node/seats.ts): the PIN of a person on a shared PC keeps colleagues apart,
- * so it is longer than the optional 4-digit program lock.
+ * One PIN rule for the program lock and for the people of a shared PC (공용 PC 사용,
+ * src/node/seats.ts): every PIN that is made or changed has exactly this many digits.
  */
-export const SEAT_PIN_MIN = 6
+export const PIN_LEN = 4
+/**
+ * Longest PIN ever accepted. Shared-PC PINs made before the 4-digit rule had 6 to 12 digits and
+ * keep working until their owner changes them, so fields that check an existing PIN take this many.
+ */
 export const SEAT_PIN_MAX = 12
 export const SEAT_NAME_MAX = 20
 /** People on one PC. */
 export const SEAT_MAX = 10
-/** Minutes without input after which the program locks itself (set by the PC 책임자). */
+/** Minutes without input after which a person of a shared PC is logged out (set by the PC 책임자). */
 export const SEAT_IDLE_MIN = 3
 export const SEAT_IDLE_MAX = 60
 export const SEAT_IDLE_DEFAULT = 10
+/** Seconds of warning ("계속 사용") before that automatic logout. */
+export const SEAT_LOGOUT_WARN_SECONDS = 60
+/** A person removed from a shared PC is kept this long (restorable by the PC 책임자), then erased. */
+export const SEAT_REMOVED_KEEP_DAYS = 30
+
+/** 내 자료 백업 (src/node/localbackup.ts): how many daily snapshots of the personal DB are kept. */
+export const LOCAL_BACKUP_KEEP_MIN = 3
+export const LOCAL_BACKUP_KEEP_MAX = 30
+export const LOCAL_BACKUP_KEEP_DEFAULT = 7
 
 export const DEFAULT_NOTICE_TEXT = '중요 보안 내용, 개인정보, 비공개 정보는 공유할 수 없습니다.'
 

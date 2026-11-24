@@ -1,0 +1,48 @@
+# The gate of "기능요청 및 오류신고": a server PC hands in a weekly bundle as an issue with the label
+# 접수; this workflow checks it and either refuses it or turns its items into posts for the public
+# board (scripts/feedback-intake.mjs, docs/feedback-submission.md). Other issues are not touched.
+#
+# Security rules of this file - keep them:
+#   - no text of an issue in a `run:` line (no ${{ github.event.issue.* }}); the script reads the
+#     event file itself and asks GitHub for the issue
+#   - only GitHub's own actions, only the code of the default branch, never pull_request_target
+#   - the smallest permissions that do the job
+name: feedback-intake
+
+on:
+  issues:
+    types: [opened, edited, reopened, labeled]
+  # bundles that were left waiting (a run failed half way): once a day
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: 'Issue number to look at again (empty: every issue that waits)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: feedback-intake-${{ github.event.issue.number || 'all' }}
+  cancel-in-progress: false
+
+jobs:
+  intake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Check what was handed in
+        run: node scripts/feedback-intake.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FEEDBACK_SEAL_KEY: ${{ secrets.FEEDBACK_SEAL_KEY }}

@@ -206,6 +206,17 @@ function NoticeDetail({ id }: { id: string }): React.JSX.Element {
           <Button size="sm" variant="outline" onClick={() => patch.mutate({ pinned: !n.pinned })}>
             <Pin /> {n.pinned ? '고정 해제' : '맨 위에 고정'}
           </Button>
+          {n.level === 'urgent' && !!n.publishedAt && !(n.expiresAt && n.expiresAt <= Date.now()) && (
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="urgent-end"
+              title="상황이 끝났을 때 누릅니다. 아직 확인하지 않은 PC의 긴급공지 창이 모두 닫히고 다시 알리지 않습니다."
+              onClick={() => window.confirm('긴급 상황을 끝낼까요? 아직 확인하지 않은 사람의 화면에서 긴급공지 창이 닫히고, 더는 다시 알리지 않습니다. 공지와 확인 기록은 그대로 남습니다.') && patch.mutate({ expiresAt: Date.now() })}
+            >
+              <CheckCircle2 /> 긴급 상황 종료
+            </Button>
+          )}
           <Button size="sm" variant="outline" className="text-urgent" onClick={() => window.confirm('이 공지를 삭제할까요?') && del.mutate()}>
             <Trash2 /> 삭제
           </Button>

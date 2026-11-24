@@ -131,3 +131,41 @@ describe('worklogs (M3-5)', () => {
     expect((await s.req(a, { method: 'GET', url: '/api/worklogs/mine/2026-11-12', ip: IP })).json().data).toBeNull()
   })
 })
+
+describe('the server PC (최종관리자) sees and may change every shared event', () => {
+  let t: TestServer | null = null
+  afterEach(async () => {
+    await t?.close()
+    t = null
+  })
+  const IP2 = '192.168.10.20'
+  it('an event for chosen people only: the owner lists, opens, changes and deletes it; a 서무 and others do not see it', async () => {
+    t = await createTestServer()
+    const a = await t.join('A')
+    const b = await t.join('B')
+    const clerk = await t.join('서무')
+    expect((await t.req(t.admin, { method: 'PATCH', url: `/api/admin/members/${clerk.memberId}`, payload: { role: 'admin' } })).statusCode).toBe(200)
+    const day = new Date(2026, 10, 24, 10, 0).getTime()
+    const made = await t.req(a, {
+      method: 'POST',
+      url: '/api/events',
+      ip: IP2,
+      payload: { kind: 'team', title: 'A와 B의 회의', bodyHtml: '', startAt: day, endAt: day + 3600000, allDay: false, rrule: null, location: '', reminders: [], absenceType: null, scope: { type: 'members', groupIds: [], memberIds: [b.memberId] }, attendeeIds: [] }
+    })
+    expect(made.statusCode, made.body).toBe(200)
+    const id = (made.json() as { data: { id: string } }).data.id
+    const list = async (who: typeof a): Promise<string[]> =>
+      ((await t!.req(who, { method: 'GET', url: `/api/events?from=${day - 86400000}&to=${day + 86400000}`, ip: IP2 })).json() as { data: { title: string }[] }).data.map((e) => e.title)
+    expect(await list(b)).toContain('A와 B의 회의')
+    expect(await list(clerk)).not.toContain('A와 B의 회의')
+    expect((await t.req(clerk, { method: 'GET', url: `/api/events/${id}`, ip: IP2 })).statusCode).toBe(404)
+    // the server PC
+    expect(await list(t.admin)).toContain('A와 B의 회의')
+    expect((await t.req(t.admin, { method: 'GET', url: `/api/events/${id}` })).statusCode).toBe(200)
+    const patched = await t.req(t.admin, { method: 'PATCH', url: `/api/events/${id}`, payload: { title: '회의(시간 변경)', startAt: day + 3600000, endAt: day + 7200000, mode: 'all' } })
+    expect(patched.statusCode, patched.body).toBe(200)
+    expect(await list(b)).toContain('회의(시간 변경)')
+    expect((await t.req(t.admin, { method: 'DELETE', url: `/api/events/${id}?mode=all` })).statusCode).toBe(200)
+    expect(await list(a)).not.toContain('회의(시간 변경)')
+  })
+})

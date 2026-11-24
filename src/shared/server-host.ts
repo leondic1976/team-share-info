@@ -1,12 +1,12 @@
 /** Messages between the main process and the server utility process (13.3). */
-/** Where the server finds what it needs to pass members' feedback posts on to the board (PCs without internet). */
+/** What the server needs to hand the weekly bundle of feedback posts to the developer's GitHub repository. */
 export interface FeedbackRelayConfig {
   /** sealed key file of the app (resources/feedback.bin) */
   file?: string
   /** stand-in for api.github.com (E2E) */
   api?: string
-  /** download site with the list of shut-out PCs; null: do not look */
-  site?: string | null
+  /** the unique value of the server PC (XXXX-XXXX-XXXX): written into every bundle */
+  serverId?: string
 }
 
 export type HostToServer =

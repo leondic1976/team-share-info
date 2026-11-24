@@ -11,6 +11,8 @@ import { parse, ok } from '../validate'
 import { logActivity } from '../activity'
 import { audienceOf, canSee, inGroupWhere, scopeDto, setScope, visibleWhere } from '../scope'
 import { cleanHtml } from '../html'
+import { isOwnerRequest } from '../auth'
+import { ownerMemberId } from '../repos/devices'
 import holidayData from '../../../resources/data/holidays-kr.json'
 
 interface EventRow {
@@ -89,20 +91,27 @@ export function registerEventRoutes(app: FastifyInstance, ctx: ServerContext, gu
 
   const load = (req: FastifyRequest, id: string): EventRow => {
     const r = db.get<EventRow>(`${SELECT} WHERE e.id = ? AND e.deleted_at IS NULL`, [req.member.id, id])
-    if (!r || !canSee(db, 'events', 'event', id, req.member.id)) throw notFound('일정')
+    // The server PC (최종관리자) sees every shared event, also those addressed to a group or
+    // people it is not part of: it is the one that may put any of them right (user decision).
+    // Personal events never reach the server, so they stay with their owner whatever happens here.
+    if (!r || !(canSee(db, 'events', 'event', id, req.member.id) || isOwnerRequest(ctx, req))) throw notFound('일정')
     return r
   }
   const canEdit = (req: FastifyRequest, r: EventRow): void => {
-    if (r.created_by !== req.member.id && req.member.role !== 'admin') throw forbidden('작성자만 수정할 수 있습니다.')
+    const mine = r.created_by === req.member.id
+    // "바쁨" is the shadow of somebody's personal event (time only): only that person changes it
+    if (r.kind === 'busy' && !mine) throw forbidden('개인 일정의 바쁨 표시는 본인만 바꿀 수 있습니다.')
+    if (!mine && req.member.role !== 'admin') throw forbidden('작성자만 수정할 수 있습니다.')
   }
   const notify = (id: string, extra: Iterable<string> = []): void => {
-    ctx.hub.sendTo([...audienceOf(db, 'events', 'event', id), ...extra], 'event.changed', { id })
+    // the server PC's calendar shows every shared event, so it hears about every change
+    ctx.hub.sendTo([...audienceOf(db, 'events', 'event', id), ownerMemberId(db), ...extra], 'event.changed', { id })
   }
 
   app.get('/api/events', auth, async (req) => {
     const q = parse(z.object({ from: z.coerce.number(), to: z.coerce.number(), groupId: z.string().optional(), memberId: z.string().optional() }), req.query)
     if (q.to - q.from > 400 * 86400000) throw badRequest('조회 기간이 너무 깁니다.')
-    const w = visibleWhere('e', 'event', req.member.id)
+    const w = isOwnerRequest(ctx, req) ? { sql: '1 = 1', params: [] } : visibleWhere('e', 'event', req.member.id)
     const where = [`e.deleted_at IS NULL`, `e.start_at < ?`, `(e.rrule IS NOT NULL OR e.end_at > ?)`, w.sql]
     const params: (string | number)[] = [req.member.id, q.to, q.from, ...w.params]
     if (q.groupId) {

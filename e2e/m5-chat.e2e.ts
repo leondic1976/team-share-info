@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { writeFileSync, rmSync } from 'node:fs'
+import { readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Page } from 'playwright-core'
@@ -54,6 +54,18 @@ describe('M5 messenger and notes', () => {
     writeFileSync(attach, 'attachment body')
     await a.page.getByLabel('보낼 파일').setInputFiles(attach)
     await expect.poll(() => b.page.getByTestId('message-list').textContent(), { timeout: 15000 }).toContain('teamhub-e2e-chat-attach.txt')
+    // B fetches the file and opens it in one go; afterwards the line says where it went
+    const chip = b.page.getByTestId('file-chip').last()
+    await chip.getByRole('button', { name: '열기' }).click()
+    await expect.poll(() => chip.getByTestId('file-chip-done').textContent(), { timeout: 15000 }).toContain('저장하고 열었습니다')
+    const opened = await b.app.evaluate(() => (globalThis as unknown as { __teamhubOpened?: string[] }).__teamhubOpened ?? [])
+    const got = opened.find((x) => x.endsWith('teamhub-e2e-chat-attach.txt'))
+    expect(got, opened.join(', ')).toBeTruthy()
+    expect(readFileSync(got!, 'utf8')).toBe('attachment body')
+    // saving again does not overwrite: the copy gets a free name
+    await chip.getByRole('button', { name: '저장' }).click()
+    await expect.poll(() => chip.getByTestId('file-chip-done').textContent(), { timeout: 15000 }).toContain('저장했습니다')
+    expect(readFileSync(got!, 'utf8')).toBe('attachment body')
   })
 
   it('messages sent while B is offline appear after B connects', async () => {

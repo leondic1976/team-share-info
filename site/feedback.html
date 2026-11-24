@@ -221,10 +221,10 @@
         <b>글 쓰는 방법</b>
         <ol>
           <li>TeamHub 프로그램에서 <b>설정</b>을 열고 맨 아래 <b>기능요청 및 오류신고</b>를 누릅니다.</li>
-          <li>새 창에서 분류를 고르고 제목과 내용을 쓴 뒤 <b>보내기</b>를 누릅니다. 로그인이나 가입은 필요 없습니다.</li>
-          <li>등록된 글은 몇 분 뒤 이 게시판에 나타나고, 답변이 달리면 여기에서 볼 수 있습니다.</li>
+          <li>새 창에서 분류를 고르고 제목과 내용을 쓴 뒤 <b>보내기</b>를 누릅니다. 로그인이나 가입은 필요 없습니다. 글은 팀의 서버 PC에 접수됩니다.</li>
+          <li>서버 PC가 주 1회 모아 개발자에게 보내고, 형식 확인을 통과한 글이 이 게시판에 나타납니다. 답변이 달리면 여기에서 볼 수 있습니다.</li>
         </ol>
-        <p class="small">누구나 볼 수 있는 게시판입니다. 개인정보와 기관 내부 정보는 쓰지 마세요. 인터넷에 연결된 PC에서만 보낼 수 있습니다.</p>
+        <p class="small">누구나 볼 수 있는 게시판입니다. 개인정보와 기관 내부 정보는 쓰지 마세요. 글을 쓰는 PC는 인터넷에 연결되어 있지 않아도 됩니다.</p>
       </div>
 
       <div class="bar">
@@ -239,37 +239,78 @@
     <script>
       const STATE = { open: '접수', answered: '답변', done: '완료', declined: '보류' }
       const KIND = { feature: '기능요청', bug: '오류신고' }
-      const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
       const day = (t) => (t ? new Date(t).toLocaleDateString('ko-KR', { year: 'numeric', month: 'numeric', day: 'numeric' }) : '')
-      // text is shown as written (escaped); only plain web addresses become links
-      const text = (s) => esc(s).replace(/https?:\/\/[^\s<]+/g, (u) => `<a href="${u}" rel="noopener nofollow" target="_blank">${u}</a>`)
+      // Everything that comes from feedback.json is put on the page as text (textContent), never as
+      // HTML. Only plain web addresses become links, and only http(s) ones.
+      const el = (tag, cls, text) => {
+        const e = document.createElement(tag)
+        if (cls) e.className = cls
+        if (text !== undefined && text !== null) e.textContent = String(text)
+        return e
+      }
+      function fill(parent, s) {
+        const str = String(s ?? '')
+        const re = /https?:\/\/[^\s<>"']+/g
+        let at = 0
+        for (let m = re.exec(str); m; m = re.exec(str)) {
+          if (m.index > at) parent.append(document.createTextNode(str.slice(at, m.index)))
+          let ok = false
+          try {
+            const u = new URL(m[0])
+            ok = u.protocol === 'https:' || u.protocol === 'http:'
+          } catch {
+            ok = false
+          }
+          if (ok) {
+            const a = el('a', '', m[0])
+            a.href = m[0]
+            a.rel = 'noopener noreferrer nofollow'
+            a.target = '_blank'
+            parent.append(a)
+          } else parent.append(document.createTextNode(m[0]))
+          at = m.index + m[0].length
+        }
+        if (at < str.length) parent.append(document.createTextNode(str.slice(at)))
+        return parent
+      }
       let items = []
       let kind = ''
+
+      function post(i, open) {
+        const d = el('details', 'post')
+        d.id = 'p' + Number(i.number)
+        d.open = Number(i.number) === open
+        const k = i.kind === 'bug' ? 'bug' : 'feature'
+        const answers = Array.isArray(i.answers) ? i.answers : []
+        const state = Object.hasOwn(STATE, i.state) ? i.state : 'open'
+        const sum = el('summary')
+        sum.append(el('span', 'tag ' + k, KIND[k]), el('span', 'title', i.title), el('span', 'state s-' + state, STATE[state] + (answers.length ? ' · 답변 ' + answers.length : '')), el('span', 'meta', day(i.createdAt)))
+        const content = el('div', 'content')
+        content.append(fill(el('p', 'text'), i.body))
+        for (const a of answers) {
+          const box = el('div', 'answer')
+          box.append(el('b', '', '답변'), document.createTextNode(' '), el('span', 'meta', day(a.at)), fill(el('p', 'text'), a.body))
+          content.append(box)
+        }
+        content.append(el('p', 'small', [Number(i.number) + '번', i.author, i.receipt ? '접수번호 ' + i.receipt : '', i.version ?? '', i.closedAt ? day(i.closedAt) + ' ' + STATE[state] : ''].filter(Boolean).join(' · ')))
+        d.append(sum, content)
+        return d
+      }
 
       function render() {
         const q = document.getElementById('q').value.trim().toLowerCase()
         const open = Number(location.hash.slice(1)) || 0
-        const shown = items.filter((i) => (!kind || i.kind === kind) && (!q || `${i.title}\n${i.body}\n${i.receipt ?? ''}\n${i.number}`.toLowerCase().includes(q)))
-        document.getElementById('list').innerHTML = shown.length
-          ? shown
-              .map(
-                (i) => `<details class="post" id="p${i.number}" ${i.number === open ? 'open' : ''}>
-                  <summary>
-                    <span class="tag ${i.kind}">${KIND[i.kind]}</span>
-                    <span class="title">${esc(i.title)}</span>
-                    <span class="state s-${i.state}">${STATE[i.state] ?? ''}${i.answers.length ? ` · 답변 ${i.answers.length}` : ''}</span>
-                    <span class="meta">${day(i.createdAt)}</span>
-                  </summary>
-                  <div class="content">
-                    <p class="text">${text(i.body)}</p>
-                    ${i.answers.map((a) => `<div class="answer"><b>답변</b> <span class="meta">${day(a.at)}</span><p class="text">${text(a.body)}</p></div>`).join('')}
-                    <p class="small">${[`${i.number}번`, esc(i.author), i.receipt ? `접수번호 ${esc(i.receipt)}` : '', esc(i.version ?? ''), i.closedAt ? `${day(i.closedAt)} ${STATE[i.state]}` : ''].filter(Boolean).join(' · ')}</p>
-                  </div>
-                </details>`
-              )
-              .join('')
-          : `<p class="muted">${items.length ? '찾는 글이 없습니다.' : '아직 등록된 글이 없습니다.'}</p>`
-        if (open) document.getElementById(`p${open}`)?.scrollIntoView({ block: 'center' })
+        const shown = items.filter((i) => (!kind || i.kind === kind) && (!q || [i.title, i.body, i.receipt ?? '', i.number].join(' ').toLowerCase().includes(q)))
+        const list = document.getElementById('list')
+        list.replaceChildren(...(shown.length ? shown.map((i) => post(i, open)) : [el('p', 'muted', items.length ? '찾는 글이 없습니다.' : '아직 등록된 글이 없습니다.')]))
+        if (open) document.getElementById('p' + open)?.scrollIntoView({ block: 'center' })
+      }
+
+      // feedback.html#TH-1A2B3C4D (the link in the program): look for that receipt number
+      function fromHash() {
+        const m = /^#(TH-[0-9A-F]{8})$/.exec(location.hash)
+        if (m) document.getElementById('q').value = m[1]
+        render()
       }
 
       for (const b of document.querySelectorAll('.tab'))
@@ -279,18 +320,18 @@
           render()
         })
       document.getElementById('q').addEventListener('input', render)
-      addEventListener('hashchange', render)
+      addEventListener('hashchange', fromHash)
 
       fetch('feedback.json', { cache: 'no-store' })
         .then((r) => (r.ok ? r.json() : { items: [] }))
         .catch(() => ({ items: [] }))
         .then((board) => {
-          items = board.items ?? []
+          items = Array.isArray(board?.items) ? board.items.filter((i) => i && typeof i === 'object') : []
           document.getElementById('n-all').textContent = items.length
           document.getElementById('n-feature').textContent = items.filter((i) => i.kind === 'feature').length
           document.getElementById('n-bug').textContent = items.filter((i) => i.kind === 'bug').length
-          if (board.updatedAt) document.getElementById('updated').textContent = `마지막 갱신: ${new Date(board.updatedAt).toLocaleString('ko-KR')}`
-          render()
+          if (board?.updatedAt) document.getElementById('updated').textContent = '마지막 갱신: ' + new Date(board.updatedAt).toLocaleString('ko-KR')
+          fromHash()
         })
     </script>
   </body>

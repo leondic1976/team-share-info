@@ -215,6 +215,22 @@ export function registerNoticeRoutes(app: FastifyInstance, ctx: ServerContext, g
     return ok(all.map((r) => ({ ...urgentPayload(r), level: r.level })))
   })
 
+  /**
+   * Urgent notices that still wait for me (confirm, or read when no confirmation is asked).
+   * A PC with urgent windows open asks this to close the ones that are over: confirmed on
+   * another screen, deleted or ended by the sender, expired, or no longer addressed to me.
+   */
+  app.get('/api/notices/attention', auth, async (req) => {
+    const rows = db.all<{ id: string }>(
+      `SELECT n.id FROM notice_receipts r JOIN notices n ON n.id = r.notice_id
+       WHERE r.member_id = ? AND n.level = 'urgent' AND n.deleted_at IS NULL AND n.published_at IS NOT NULL
+         AND ((n.require_ack = 1 AND r.acked_at IS NULL) OR (n.require_ack = 0 AND r.read_at IS NULL))
+         AND (n.expires_at IS NULL OR n.expires_at > ?)`,
+      [req.member.id, Date.now()]
+    )
+    return ok({ ids: rows.map((r) => r.id) })
+  })
+
   app.get('/api/notices/:id', auth, async (req) => {
     const { id } = req.params as { id: string }
     const r = load(req, id)

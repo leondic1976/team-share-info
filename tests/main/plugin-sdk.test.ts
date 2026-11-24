@@ -10,8 +10,13 @@ interface Sdk {
 }
 
 /** Run the SDK script the way a frame does, with just enough of a page around it. */
-function loadSdk(): Sdk {
-  const el = (): Record<string, unknown> => ({ dataset: {}, appendChild: () => undefined })
+function loadSdk(links: Record<string, unknown>[] = []): Sdk {
+  const el = (): Record<string, unknown> => {
+    const node: Record<string, unknown> = { dataset: {}, attrs: {}, appendChild: (c: Record<string, unknown>) => links.push({ ...c, where: 'end' }), firstChild: null }
+    node.insertBefore = (c: Record<string, unknown>, before: unknown) => links.push({ ...c, where: before === node.firstChild ? 'start' : 'middle' })
+    node.setAttribute = (k: string, v: string) => ((node.attrs as Record<string, string>)[k] = v)
+    return node
+  }
   const window: Record<string, unknown> = { addEventListener: () => undefined, parent: { postMessage: () => undefined } }
   const document = { documentElement: el(), head: el(), readyState: 'complete', createElement: el, addEventListener: () => undefined, querySelectorAll: () => [] }
   runInNewContext(PLUGIN_SDK, { window, document, location: { search: '?theme=dark' }, URLSearchParams, console })
@@ -41,6 +46,16 @@ describe('plugin SDK icons (TeamHub.icon)', () => {
     expect(sdk.iconName('\u{1F4E6}')).toBe('package')
     expect(sdk.iconName('\u{1F5D3}\u{FE0F}')).toBe('calendar-days')
     expect(sdk.iconName(undefined, 'file-text')).toBe('file-text')
+  })
+})
+
+describe('plugin SDK: the look of the program in every frame', () => {
+  it('links __ui.css before anything of the extension, and the fonts after it', () => {
+    const links: Record<string, unknown>[] = []
+    loadSdk(links)
+    const sheets = links.filter((l) => l.rel === 'stylesheet').map((l) => [l.href, l.where])
+    expect(sheets).toEqual([['__ui.css', 'start'], ['__fonts.css', 'end']])
+    expect((links.find((l) => l.href === '__ui.css')?.attrs as Record<string, string>).blocking).toBe('render')
   })
 })
 

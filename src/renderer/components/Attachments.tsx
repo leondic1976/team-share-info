@@ -1,5 +1,8 @@
 import { useRef, useState } from 'react'
-import { Paperclip, X, Loader2, Download } from 'lucide-react'
+import { Paperclip, X, Loader2, Download, ExternalLink, FileText } from 'lucide-react'
+import type { AttachSaveResult } from '@shared/ipc'
+import { invoke } from '@renderer/lib/bridge'
+import { cn } from '@renderer/lib/utils'
 import { authHeaders, buildUrl, ApiError, errorMessage } from '@renderer/lib/api'
 import { Button } from './ui/button'
 
@@ -49,6 +52,70 @@ export async function downloadAuthed(path: string, name: string): Promise<void> 
   a.download = name
   a.click()
   setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
+
+/**
+ * One attached file: 저장 (pick where it goes) and 열기 (fetch and open at once). After
+ * either, the line says where it went and offers 열기 / 폴더 열기 for the saved copy.
+ */
+export function FileChip({ id, name, size, className }: { id: string; name: string; size: number; className?: string }): React.JSX.Element {
+  const [busy, setBusy] = useState<'' | 'save' | 'open'>('')
+  const [done, setDone] = useState<AttachSaveResult | null>(null)
+  const [err, setErr] = useState('')
+  const run = async (open: boolean): Promise<void> => {
+    if (busy) return
+    setBusy(open ? 'open' : 'save')
+    setErr('')
+    try {
+      const r = await invoke('attach:save', { id, name, open })
+      if (r.canceled) return
+      if (!r.ok) return setErr(r.error ?? '내려받지 못했습니다.')
+      setDone(r)
+      if (r.error) setErr(r.error)
+    } catch (e) {
+      setErr(errorMessage(e))
+    } finally {
+      setBusy('')
+    }
+  }
+  const openSaved = async (): Promise<void> => {
+    if (!done?.token) return
+    const r = await invoke('attach:open', { token: done.token })
+    setErr(r.ok ? '' : (r.error ?? '열지 못했습니다.'))
+  }
+  return (
+    <div className={cn('rounded-lg border border-border bg-card text-left text-sm', className)} data-testid="file-chip">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <FileText className="size-4 shrink-0 text-primary" aria-hidden />
+        <span className="min-w-0 flex-1 truncate" title={name}>
+          {name}
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">{formatSize(size)}</span>
+        <button className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50" disabled={!!busy} onClick={() => void run(false)} title="저장할 위치를 골라 내려받습니다">
+          {busy === 'save' ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />} 저장
+        </button>
+        <button className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50" disabled={!!busy} onClick={() => void run(true)} title="내려받아 바로 엽니다">
+          {busy === 'open' ? <Loader2 className="size-3.5 animate-spin" /> : <ExternalLink className="size-3.5" />} 열기
+        </button>
+      </div>
+      {done?.ok && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border px-3 py-1.5 text-xs text-muted-foreground" data-testid="file-chip-done">
+          <span className="min-w-0 flex-1 truncate" title={[done.dir, done.name].join('\\')}>
+            {done.blocked ? '저장함(실행 파일이라 바로 열지 않음)' : done.opened ? '저장하고 열었습니다' : '저장했습니다'} · {done.dir}
+          </span>
+          {!done.blocked && (
+            <button className="cursor-pointer font-medium text-primary hover:underline" onClick={() => void openSaved()}>
+              열기
+            </button>
+          )}
+          <button className="cursor-pointer font-medium text-primary hover:underline" onClick={() => done.token && void invoke('attach:reveal', { token: done.token })}>
+            폴더 열기
+          </button>
+        </div>
+      )}
+      {err && <p className="border-t border-border px-3 py-1 text-xs text-urgent">{err}</p>}
+    </div>
+  )
 }
 
 export function AttachmentInput({ value, onChange }: { value: Att[]; onChange: (a: Att[]) => void }): React.JSX.Element {
@@ -101,21 +168,12 @@ export function AttachmentInput({ value, onChange }: { value: Att[]; onChange: (
 }
 
 export function AttachmentList({ items }: { items: Att[] }): React.JSX.Element | null {
-  const [err, setErr] = useState('')
   if (!items.length) return null
   return (
     <div className="space-y-1">
       {items.map((a) => (
-        <button
-          key={a.id}
-          className="flex w-full cursor-pointer items-center gap-2 rounded border border-border px-2.5 py-1.5 text-left text-sm hover:bg-muted"
-          onClick={() => downloadAuthed(`/api/attachments/${a.id}`, a.name).catch((e) => setErr(errorMessage(e)))}
-        >
-          <Download className="size-4 text-primary" /> {a.name}
-          <span className="ml-auto text-xs text-muted-foreground">{formatSize(a.size)}</span>
-        </button>
+        <FileChip key={a.id} id={a.id} name={a.name} size={a.size} />
       ))}
-      {err && <p className="text-xs text-urgent">{err}</p>}
     </div>
   )
 }

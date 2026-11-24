@@ -1,4 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
+import { PIN_LEN } from '../shared/constants'
 
 /**
  * PIN and recovery-code hashing shared by the program lock (applock) and the people of a
@@ -28,6 +29,20 @@ export function newRecoveryCode(): string {
   const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
   const c = [...randomBytes(8)].map((b) => abc[b % abc.length]).join('')
   return `${c.slice(0, 4)}-${c.slice(4)}`
+}
+
+/**
+ * null when a PIN may be made; otherwise what is wrong with it. Asked for every new or changed
+ * PIN (never for checking an existing one). Four digits are 10,000 combinations, so the handful
+ * everybody tries first is refused: one digit repeated (10) and straight runs up or down (14).
+ * What really limits guessing is the wait after wrong tries (below).
+ */
+export function newPinProblem(pin: string): string | null {
+  if (!new RegExp(`^\\d{${PIN_LEN}}$`).test(pin)) return `PIN은 숫자 ${PIN_LEN}자리입니다.`
+  if (/^(\d)\1+$/.test(pin)) return '1111처럼 같은 숫자만 이어진 PIN은 쓸 수 없습니다.'
+  const steps = [...pin].slice(1).map((c, i) => Number(c) - Number(pin[i]))
+  if (steps.every((s) => s === 1) || steps.every((s) => s === -1)) return '1234처럼 이어지는 숫자는 PIN으로 쓸 수 없습니다.'
+  return null
 }
 
 export const FREE_TRIES = 5

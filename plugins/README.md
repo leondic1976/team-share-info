@@ -38,6 +38,15 @@ plugins/<id>/
 - `<script src="__sdk.js"></script>`를 넣으면 `window.TeamHub`를 씁니다.
 - `TeamHub.theme`(`light`/`dark`), `TeamHub.room`(초대 알림으로 열렸을 때의 방 ID).
 
+## 화면 모양 (TeamHub와 같은 모양)
+TeamHub가 모든 확장 기능 화면에 `__ui.css`(`resources/ui/base.css`)를 넣어 줍니다. `__sdk.js`가 확장 기능의 스타일보다 먼저 연결하므로, 확장 기능의 CSS로 덮어쓸 수 있습니다.
+- 색 변수: 본 화면(`src/renderer/styles.css`)과 같은 이름·값 — `--background` `--foreground` `--muted` `--muted-foreground` `--card` `--border` `--input` `--primary` `--primary-foreground` `--accent` `--notice-bg` `--notice-fg` `--urgent` `--important` `--success`. 밝은·어두운 테마 모두 정해져 있습니다(`tests/main/plugin-ui.test.ts`가 본 화면과 같은지 확인).
+- `<html class="th-ui">`로 쓰겠다고 하면 글자 크기(14px 기준 rem)·바탕·글자색·스크롤바가 본 화면과 같아집니다. 쓰지 않는 확장 기능에는 아무것도 바뀌지 않습니다(클래스는 모두 `th-`로 시작).
+- 틀: `.th-page` > `.th-page-header`(제목 `h1` + 한 줄 설명 `p`, 오른쪽 `.th-actions`) + `.th-toolbar`(`.th-tabs` 안에 `.th-btn.th-tab[aria-selected]`) + `.th-body`.
+- 부품: `.th-btn`(+ `-outline` `-secondary` `-ghost` `-destructive` `-sm` `-icon`), `.th-card`(`.th-card-header` `.th-card-title` `.th-card-body`), `.th-input`(input·select·textarea), `.th-field` `.th-label` `.th-hint` `.th-check` `.th-error`, `.th-badge`(+ `-success` `-important` `-muted` `-urgent`), `.th-table`(`.th-num`), `.th-empty`(`.th-empty-title`), `.th-notice`, `.th-toast`, `.th-dialog`, `.th-print-only` `.th-no-print`.
+- 예시: `plugins/meal`(이 모양만 쓰고 자기 CSS에는 배치만 둠). 다른 기본 확장 기능은 아직 각자의 CSS를 씁니다.
+- `__ui.css`는 이 기능이 들어간 TeamHub부터 있습니다. 예전 TeamHub에서는 꾸밈 없이 보이므로, 확인하려면 `getComputedStyle(document.documentElement).getPropertyValue('--th-ui')`가 비어 있는지 봅니다.
+
 ## 아이콘 (이모지 금지)
 TeamHub는 화면에 이모지를 쓰지 않습니다. 확장 기능도 프로그램이 주는 선 아이콘만 씁니다(lucide 모양, 글자색을 따라감).
 - 메뉴·카드 아이콘: manifest의 `iconName`. `icon`에 이모지만 있는 확장 기능은 기본 아이콘으로 표시됩니다.
@@ -80,5 +89,5 @@ TeamHub는 화면에 이모지를 쓰지 않습니다. 확장 기능도 프로�
 - 묶기: `pnpm plugins:pack` → `release/plugins/<id>-<버전>.thplugin`
 - TeamHub **확장 기능 → 파일에서 설치**로 넣어 봅니다.
 - 순수 로직은 `tests/plugins/`에 단위 테스트를 둡니다(예: `ladder.test.ts`).
-- 예시: `plugins/ladder`(함께하기 방), `plugins/matjip`(방 하나를 팀 게시판으로: 각자의 글·좋아요·댓글을 자기 참여 데이터에), `plugins/survey`(방 하나 = 설문 하나), `plugins/meal`(관리자가 만든 방 하나에 마감 시각, 각자의 날짜별 신청은 자기 참여 데이터에), `plugins/bipum`(64KB 한도를 넘는 목록을 만든 사람의 방 여러 개에 나누어 담기, 각자의 기록은 참여 데이터에, CSV 가져오기·인쇄), `plugins/dutchpay`(이 PC 저장만), `plugins/ocr`·`plugins/copilot`(본체 기능 호출). 표 편집·수식 엔진·파일 저장/열기는 같은 방식으로 만든 본 기능 `resources/ledger`(관리대장)를 참고하세요.
+- 예시: `plugins/ladder`(함께하기 방), `plugins/matjip`(방 하나를 팀 게시판으로: 각자의 글·좋아요·댓글을 자기 참여 데이터에), `plugins/survey`(방 하나 = 설문 하나), `plugins/meal`(관리자가 만든 방 하나에 마감 시각·메뉴, 각자의 날짜별 신청은 자기 참여 데이터에. 방을 만들지 않은 담당자의 설정·메뉴는 그 사람의 참여 데이터에 두고 화면에서 합침: 나중 것이 이김), `plugins/bipum`(64KB 한도를 넘는 목록을 만든 사람의 방 여러 개에 나누어 담기, 각자의 기록은 참여 데이터에, CSV 가져오기·인쇄), `plugins/dutchpay`(이 PC 저장만), `plugins/ocr`·`plugins/copilot`(본체 기능 호출). 표 편집·수식 엔진·파일 저장/열기는 같은 방식으로 만든 본 기능 `resources/ledger`(관리대장)를 참고하세요.
 - `sandbox`에서는 `prompt()`가 동작하지 않습니다(Electron). 입력은 `<dialog>`로 받으세요. 붙여넣기는 `paste` 이벤트의 `clipboardData`로 읽습니다(클립보드 읽기 권한 없음).

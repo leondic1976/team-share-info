@@ -115,6 +115,8 @@ jobs:
         run: node scripts/build-site.mjs
         env:
           GH_TOKEN: ${{ github.token }}
+          # the board shows only posts sealed by the intake workflow (docs/feedback-submission.md)
+          FEEDBACK_SEAL_KEY: ${{ secrets.FEEDBACK_SEAL_KEY }}
       - if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-pages-artifact@v5
         with:

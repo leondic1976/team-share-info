@@ -74,7 +74,8 @@ export function CalendarPage(): React.JSX.Element {
         allDay: e.allDay,
         backgroundColor: color,
         borderColor: color,
-        editable: e.authorId === me?.id && e.kind !== 'busy',
+        // the author moves it by dragging; so does the server PC (최종관리자), who may put any shared event right
+        editable: (e.authorId === me?.id || me?.isOwner === true) && e.kind !== 'busy',
         extendedProps: { origin: 'server', item: e }
       })
     }

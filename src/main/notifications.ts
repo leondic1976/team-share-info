@@ -81,6 +81,23 @@ export function showUrgentPopup(p: UrgentPayload): void {
   getMainWindow()?.flashFrame(true)
 }
 
+/** Ids of the urgent windows that are open. */
+export function openUrgentIds(): string[] {
+  return [...popups].filter(([, w]) => !w.isDestroyed()).map(([id]) => id)
+}
+
+/** Close every urgent window whose notice is not in `ids` (it no longer waits for this person). */
+export function syncUrgentPopups(ids: string[]): string[] {
+  const keep = new Set(ids)
+  const closed: string[] = []
+  for (const id of openUrgentIds()) {
+    if (keep.has(id)) continue
+    closeUrgentPopup(id)
+    closed.push(id)
+  }
+  return closed
+}
+
 export function closeUrgentPopup(id: string): void {
   const w = popups.get(id)
   if (w && !w.isDestroyed()) w.destroy()

@@ -44,6 +44,7 @@ beforeAll(async () => {
         revoked.push(auth)
         return send(204)
       }
+      if (req.method === 'GET' && req.url?.startsWith('/repos/leondic1976/team-share-info/issues?')) return send(200, [])
       if (req.method === 'POST' && req.url === '/repos/leondic1976/team-share-info/issues') {
         posted.push(JSON.parse(raw) as (typeof posted)[number])
         return send(201, { number: 12, html_url: 'https://github.com/leondic1976/team-share-info/issues/12' })
@@ -161,7 +162,7 @@ describe('PC identity, fixed role, blocks, program lock and feedback', () => {
     await expect.poll(() => a.page.getByTestId('blocked-pc').count(), { timeout: 15000 }).toBe(0)
   }, 90000)
 
-  it('feedback: the button at the bottom of the settings opens a window; the post reaches the board with the unique value', async () => {
+  it('feedback: the window hands the post to the server PC; the administrator sends the bundle, which reaches GitHub as JSON with the intake label', async () => {
     await settingsOf(a.page)
     const uid = UID.exec((await a.page.getByTestId('pc-identity').textContent()) ?? '')![0]
     const opened = a.app.waitForEvent('window')
@@ -173,18 +174,31 @@ describe('PC identity, fixed role, blocks, program lock and feedback', () => {
     await w.getByLabel('제목').fill('E2E 제목입니다')
     await w.getByLabel('내용').fill('E2E 내용입니다. 순서대로 적습니다.')
     await w.getByRole('button', { name: '보내기' }).click()
-    await w.getByText(/등록했습니다\. 접수번호 TH-/).waitFor({ timeout: 20000 })
+    // hop 1: kept by the server PC, nothing went to GitHub
+    await w.getByText(/서버 PC에 접수했습니다\. 접수번호 TH-/).waitFor({ timeout: 20000 })
+    await w.getByTestId('feedback-sent').getByText('접수됨').waitFor({ timeout: 10000 })
+    expect(posted).toHaveLength(0)
+    await w.close()
+
+    // hop 2: 관리 → 기능요청·오류신고 → 지금 묶어 보내기 (the weekly job does the same by itself)
+    await go(a.page, '/admin/feedback')
+    await a.page.getByTestId('admin-feedback-item').getByText('E2E 제목입니다').waitFor({ timeout: 15000 })
+    a.page.once('dialog', (d) => void d.accept())
+    await a.page.getByTestId('feedback-send-now').click()
+    await a.page.getByTestId('admin-feedback-bundle').getByText(/전달됨/).waitFor({ timeout: 20000 })
     expect(posted).toHaveLength(1)
-    expect(posted[0].title).toBe('[오류신고] E2E 제목입니다')
-    expect(posted[0].labels).toEqual(['오류신고'])
-    expect(posted[0].body).toContain(`고유값 ${uid}`)
-    expect(posted[0].body).toContain('E2E 내용입니다')
+    expect(posted[0].title).toMatch(/^\[접수\] [0-9a-f-]{36}$/)
+    expect(posted[0].labels).toEqual(['접수'])
+    // the body is the JSON alone, inside one fenced block
+    const sent = JSON.parse(posted[0].body.split('\n')[1]) as { type: string; serverId: string; items: { kind: string; title: string; body: string; installId: string }[] }
+    expect(sent.type).toBe('bundle')
+    expect(sent.serverId).toBe(uid) // this PC is the server PC
+    expect(sent.items).toHaveLength(1)
+    expect(sent.items[0]).toMatchObject({ kind: 'bug', title: 'E2E 제목입니다', body: 'E2E 내용입니다. 순서대로 적습니다.', installId: uid })
     expect(posted[0].body).not.toContain('서버관리자') // no names of people or of the organisation
     expect(posted[0].body).not.toContain('E2E기관')
     expect(revoked).toEqual(['tmp-key']) // the temporary key was given back
-    await w.getByTestId('feedback-sent').waitFor({ timeout: 10000 })
-    await w.close()
-  }, 90000)
+  }, 120000)
 
   it('program lock is optional: off by default, a PIN turns it on, asked at start, removable', async () => {
     await settingsOf(a.page)

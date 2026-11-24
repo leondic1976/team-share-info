@@ -1,15 +1,44 @@
 /* Meal request logic (no DOM). Exposed as globalThis.Meal; unit-tested in tests/plugins.
  *
- * One room for the whole team, made by an admin (the server PC): its shared data holds the
- * settings (which meals, until what time a request may be changed). Every member keeps their
- * own requests, by date, in their own entry of that room. */
+ * One room for the whole team, made by an admin (the owner): its shared data holds the
+ * settings (which meals, until what time a request may be changed), who is in charge
+ * (식수서무, at most two) and the menus. Every member keeps their own requests, by date, in
+ * their own entry of that room.
+ *
+ * The server lets only the owner write the shared data, so a 식수서무 writes settings and
+ * menus into their OWN entry ({ settings, settingsAt, menus }) and every screen merges them
+ * with the shared data: the newest wins (settings as a whole, menus per day and slot).
+ * Entries of people the owner did not name are ignored for this. See effective(). */
 ;(function (g) {
   'use strict'
 
   const MEALS = { lunch: '점심', dinner: '저녁' }
   const MEAL_KEYS = ['lunch', 'dinner']
   const DEFAULT_CUTOFF = { lunch: '10:30', dinner: '15:30' }
-  const LIMITS = { notice: 300, aheadMax: 14, keepDays: 100, proxyKeepDays: 62, clerksMax: 30 }
+  const MENU_SLOTS = ['lunch', 'dinner', 'note']
+  const LIMITS = {
+    notice: 300,
+    aheadMax: 14,
+    keepDays: 100,
+    proxyKeepDays: 62,
+    clerksMax: 30,
+    stewardsMax: 2,
+    // one menu cell: lines and characters; the note of a day is one line
+    menuLines: 8,
+    menuText: 200,
+    menuNote: 60,
+    // menus are kept from this many weeks before the current week to this many after it
+    menuWeeksBack: 8,
+    menuWeeksAhead: 8,
+    // people registered by hand (staff who do not use TeamHub): how many, and the length of each field
+    peopleMax: 100,
+    personName: 30,
+    personDept: 30,
+    personTitle: 20,
+    personMemo: 60,
+    // the server refuses shared data and an entry above 64 KB; stay below it
+    stateMax: 60000
+  }
   const DAY = 86400000
   const WEEK = ['일', '월', '화', '수', '목', '금', '토']
 
@@ -39,6 +68,8 @@
     return `${pad(Number(m[1]))}:${m[2]}`
   }
 
+  const isId = (x) => typeof x === 'string' && x.length > 0 && x.length <= 40
+
   /** Settings as stored in the room's shared data. */
   function cleanConfig(input) {
     const c = input && typeof input === 'object' ? input : {}
@@ -55,8 +86,11 @@
       weekend: !!c.weekend,
       // public holidays are not served (the list comes from TeamHub: 관리 → 공휴일)
       holidays: c.holidays === undefined ? true : !!c.holidays,
-      // members who may request for somebody else, besides the admin who made the settings
-      clerks: Array.from(new Set((Array.isArray(c.clerks) ? c.clerks : []).filter((x) => typeof x === 'string' && x.length > 0 && x.length <= 40))).slice(0, LIMITS.clerksMax),
+      // 식수서무: may change the settings, register menus and request for others (the owner names them)
+      stewards: Array.from(new Set((Array.isArray(c.stewards) ? c.stewards : []).filter(isId))).slice(0, LIMITS.stewardsMax),
+      // before 1.2.0: members who may request for somebody else. Kept (for that only) until the
+      // owner saves the settings again, which replaces them by the 식수서무.
+      clerks: Array.from(new Set((Array.isArray(c.clerks) ? c.clerks : []).filter(isId))).slice(0, LIMITS.clerksMax),
       // how many days ahead a request may be made (1 = today only)
       ahead: ahead >= 1 && ahead <= LIMITS.aheadMax ? ahead : 7,
       notice: String(c.notice == null ? '' : c.notice).trim().slice(0, LIMITS.notice)
@@ -142,6 +176,15 @@
       }
       if (Object.keys(others).length) out.for = others
     }
+    // what a 식수서무 decided (counts only while the owner names them, see effective())
+    if (v.settings && typeof v.settings === 'object' && Number(v.settingsAt) > 0) {
+      out.settings = pickSettings(cleanConfig(v.settings))
+      out.settingsAt = Number(v.settingsAt)
+    }
+    const menus = cleanMenus(v.menus, false)
+    if (Object.keys(menus).length) out.menus = menus
+    const people = cleanPeople(v.people, false)
+    if (Object.keys(people).length) out.people = people
     return out
   }
   const wants = (value, date, meal) => {
@@ -186,8 +229,10 @@
     return { entry }
   }
 
-  /** Who may request for somebody else: the admin who made the settings and the clerks they chose. */
-  const canProxy = (room, id) => !!room && !!id && (room.createdBy === id || cleanConfig(room.shared).clerks.includes(id))
+  /** In charge of meals: the admin who made the settings (the owner) and the 식수서무 they named. */
+  const canManage = (room, id) => !!room && !!id && (room.createdBy === id || cleanConfig(room.shared).stewards.includes(id))
+  /** Who may request for somebody else: those in charge, and the clerks named before 1.2.0. */
+  const canProxy = (room, id) => canManage(room, id) || (!!room && !!id && cleanConfig(room.shared).clerks.includes(id))
   /**
    * Request or cancel for another member (target = { id, name }), under the same deadline.
    * It is written into the entry of the one who does it (`value`); the newest of the member's
@@ -213,17 +258,28 @@
    */
   function resolve(room, members) {
     const entries = (room && room.entries) || {}
-    const info = new Map((members || []).map((m) => [m.id, m]))
+    const info = new Map((members || []).filter((m) => m && !m.manual).map((m) => [m.id, m]))
+    const hand = effective(room).people
     const out = new Map()
     const person = (id, name) => {
       let p = out.get(id)
       if (!p) {
         const m = info.get(id)
         p = { id, name: name || (m && m.name) || '(이름 없음)', deptName: (m && m.deptName) || '', days: {} }
+        if (isManualId(id)) {
+          // registered by hand; one no longer on the list keeps the name of the list or of the record
+          const h = hand[id]
+          p.manual = true
+          p.gone = !h || !!h.gone
+          p.name = (h && h.name) || name || '(이름 없음)'
+          p.deptName = (h && h.dept) || ''
+        }
         out.set(id, p)
       }
       return p
     }
+    // a person registered by hand who turned out to be a member: shown under that member
+    const alias = (id) => (isManualId(id) && hand[id] && hand[id].as ? hand[id].as : id)
     const put = (p, days, by, byName) => {
       for (const date of Object.keys(days)) {
         for (const k of Object.keys(days[date])) {
@@ -241,10 +297,11 @@
     }
     for (const id of Object.keys(entries)) {
       if (!clean[id].for || !canProxy(room, id)) continue
-      for (const tid of Object.keys(clean[id].for)) {
-        if (tid === id) continue
+      for (const raw of Object.keys(clean[id].for)) {
+        if (raw === id) continue
+        const tid = alias(raw)
         const m = info.get(tid)
-        put(person(tid, (m && m.name) || clean[id].for[tid].name), clean[id].for[tid].days, id, entries[id].name || '')
+        put(person(tid, (m && m.name) || (tid === raw ? clean[id].for[raw].name : '')), clean[id].for[raw].days, tid === id ? '' : id, tid === id ? '' : entries[id].name || '')
       }
     }
     return out
@@ -259,16 +316,16 @@
     const out = []
     for (const p of resolve(room, members).values()) {
       const r = p.days[date] && p.days[date][meal]
-      if (r && r.on) out.push({ id: p.id, name: p.name, deptName: p.deptName, at: r.at, by: r.by, byName: r.byName })
+      if (r && r.on) out.push({ id: p.id, name: p.name, deptName: p.deptName, at: r.at, by: r.by, byName: r.byName, manual: !!p.manual })
     }
     return out.sort(byDeptName)
   }
   /** Meals per person in a month ('YYYY-MM'). Only days whose deadline has passed count, unless `all`. */
   function monthTally(room, month, members, now, all) {
-    const config = cleanConfig(room && room.shared)
+    const config = effective(room).config
     const rows = []
     for (const p of resolve(room, members).values()) {
-      const row = { id: p.id, name: p.name, deptName: p.deptName, lunch: 0, dinner: 0 }
+      const row = { id: p.id, name: p.name, deptName: p.deptName, lunch: 0, dinner: 0, manual: !!p.manual, gone: !!p.gone }
       for (const date of Object.keys(p.days)) {
         if (!date.startsWith(month + '-')) continue
         for (const k of MEAL_KEYS) if (p.days[date][k] && p.days[date][k].on && (all || now >= cutoffAt(config, date, k))) row[k]++
@@ -279,9 +336,538 @@
     return { rows, lunch: rows.reduce((s, r) => s + r.lunch, 0), dinner: rows.reduce((s, r) => s + r.dinner, 0) }
   }
 
+  // ---------- people registered by hand (staff who do not use TeamHub) ----------
+  /** Ids of people registered by hand start with "x:", which no member id does. */
+  const isManualId = (x) => typeof x === 'string' && /^x:[a-z0-9]{6,24}$/.test(x)
+  /** A new id from a random number in [0, 1) and the time: "x:" + letters and digits. */
+  const newManualId = (rand, now) => `x:${Math.floor((Number(now) || 0) % 2176782336).toString(36)}${Math.floor((Number(rand) || 0) * 2176782336).toString(36)}`.slice(0, 26).padEnd(8, '0')
+  const line = (v, max) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max).trim()
+  /** One person as typed: { name, dept, title, memo } (name '' = not usable). */
+  const cleanPerson = (p) => ({ name: line(p && p.name, LIMITS.personName), dept: line(p && p.dept, LIMITS.personDept), title: line(p && p.title, LIMITS.personTitle), memo: line(p && p.memo, LIMITS.personMemo) })
+  /**
+   * { 'x:…': { name, dept, title, memo, at, by?, gone?, as? } }. `gone` = removed (kept so the
+   * past stays readable and an older copy cannot bring the person back); `as` = the member this
+   * person turned out to be: their records are shown under that member.
+   */
+  function cleanPeople(src, withBy) {
+    const out = {}
+    if (!src || typeof src !== 'object') return out
+    for (const id of Object.keys(src)) {
+      const r = src[id]
+      if (!isManualId(id) || !r || typeof r !== 'object' || !(Number(r.at) > 0)) continue
+      const p = cleanPerson(r)
+      if (!p.name) continue
+      p.at = Number(r.at)
+      if (r.gone) p.gone = true
+      if (isId(r.as) && !isManualId(r.as)) p.as = r.as
+      if (withBy && isId(r.by)) p.by = r.by
+      out[id] = p
+    }
+    return out
+  }
+  /** Those on the list now: [{ id, name, deptName, title, memo, manual: true }] in the order of name. */
+  function manualList(people) {
+    return Object.keys(people || {})
+      .filter((id) => !people[id].gone && !people[id].as)
+      .map((id) => ({ id, name: people[id].name, deptName: people[id].dept, title: people[id].title, memo: people[id].memo, manual: true }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ko') || (a.id < b.id ? -1 : 1))
+  }
+  /** Members followed by the people registered by hand: everybody a request can be made for. */
+  const roster = (room, members) => (members || []).concat(manualList(effective(room).people))
+  /** Is there somebody of that name already? 'member', 'manual' or '' (namesakes exist: a warning, not an error). */
+  function nameClash(name, members, people, selfId) {
+    const n = line(name, LIMITS.personName)
+    if (!n) return ''
+    if ((members || []).some((m) => m.name === n)) return 'member'
+    return manualList(people).some((p) => p.id !== selfId && p.name === n) ? 'manual' : ''
+  }
+  /** How many of a list (dayList, tally rows) are registered by hand: { total, manual }. */
+  const splitCount = (list) => ({ total: (list || []).length, manual: (list || []).filter((p) => p.manual).length })
+  /** "23명" or "23명 (미등록 3명 포함)". */
+  const countText = (list) => {
+    const c = splitCount(list)
+    return `${c.total}명${c.manual ? ` (미등록 ${c.manual}명 포함)` : ''}`
+  }
+
+  // ---------- menus and the people in charge ----------
+  const SETTING_KEYS = ['meals', 'weekend', 'holidays', 'ahead', 'notice']
+  /** The part of the settings a 식수서무 may change (not who is in charge). */
+  function pickSettings(config) {
+    const out = {}
+    for (const k of SETTING_KEYS) out[k] = k === 'meals' ? { lunch: Object.assign({}, config.meals.lunch), dinner: Object.assign({}, config.meals.dinner) } : config[k]
+    return out
+  }
+  /** One cell as typed: trimmed lines without blanks; the note of a day is a single line. */
+  function cleanMenuText(slot, v) {
+    const s = String(v == null ? '' : v).replace(/\r\n?/g, '\n')
+    if (slot === 'note') return s.replace(/\s+/g, ' ').trim().slice(0, LIMITS.menuNote).trim()
+    return s
+      .split('\n')
+      .map((x) => x.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, LIMITS.menuLines)
+      .join('\n')
+      .slice(0, LIMITS.menuText)
+      .trim()
+  }
+  /** { 'YYYY-MM-DD': { lunch: { t, at, by? }, dinner: …, note: … } }; an empty t is a cleared cell. */
+  function cleanMenus(src, withBy) {
+    const out = {}
+    if (!src || typeof src !== 'object') return out
+    for (const date of Object.keys(src)) {
+      if (!isYmd(date) || !src[date] || typeof src[date] !== 'object') continue
+      const day = {}
+      for (const slot of MENU_SLOTS) {
+        const r = src[date][slot]
+        if (!r || typeof r !== 'object' || !(Number(r.at) > 0)) continue
+        day[slot] = { t: cleanMenuText(slot, r.t), at: Number(r.at) }
+        if (withBy && isId(r.by)) day[slot].by = r.by
+      }
+      if (Object.keys(day).length) out[date] = day
+    }
+    return out
+  }
+  const cleanSince = (src) => {
+    const out = {}
+    if (src && typeof src === 'object') for (const id of Object.keys(src)) if (isId(id) && Number(src[id]) > 0) out[id] = Number(src[id])
+    return out
+  }
+  /** Monday of the week of a date. */
+  const weekStart = (date) => addDays(date, -((new Date(dayStart(date)).getDay() + 6) % 7))
+  /** The days whose menus are kept: the current week, 8 weeks before it and 8 after it. */
+  function menuWindow(now) {
+    const mon = weekStart(ymd(now))
+    return { from: addDays(mon, -7 * LIMITS.menuWeeksBack), to: addDays(mon, 7 * LIMITS.menuWeeksAhead + 6) }
+  }
+  function pruneMenus(menus, now) {
+    const w = menuWindow(now)
+    for (const d of Object.keys(menus)) if (d < w.from || d > w.to) delete menus[d]
+    return menus
+  }
+  /**
+   * Makes `obj` (shared data or an entry, with `obj.menus`) fit the size limit by dropping
+   * whole days of menus: the oldest past day first, then the farthest future day. Nothing
+   * else is touched (never somebody's requests). Returns how many days were dropped.
+   */
+  function fitMenus(obj, today, max) {
+    let n = 0
+    const limit = max || LIMITS.stateMax
+    while (obj.menus && JSON.stringify(obj).length > limit) {
+      const dates = Object.keys(obj.menus).sort()
+      if (!dates.length) break
+      delete obj.menus[dates[0] < today ? dates[0] : dates[dates.length - 1]]
+      n++
+    }
+    if (obj.menus && !Object.keys(obj.menus).length) delete obj.menus
+    return n
+  }
+
+  /**
+   * What counts right now: the owner's shared data merged with what the 식수서무 wrote into
+   * their own entries. Returns { config, stewards, settingsAt, settingsBy, menus, people }
+   * where menus[date][slot] = { t, at, by } and people[id] = { name, dept, …, at, by } (the
+   * people registered by hand, the newest record of each).
+   *  - Only entries of members named in the shared data count; anybody else is ignored.
+   *  - The newest wins: the settings as a whole, a menu per day and slot. At the same moment
+   *    the shared data wins, then the 식수서무 named first.
+   *  - A time written by a member is never taken as later than the moment the server stored
+   *    their entry (entries[id].at), so a wrong or forged clock cannot win.
+   *  - What a member wrote before the owner named them (shared.since[id]) does not count.
+   *    So once removed, their edits are gone unless the owner's save folded them in (saveAs).
+   */
+  function effective(room) {
+    const shared = (room && room.shared) || {}
+    const base = cleanConfig(shared)
+    const owner = (room && room.createdBy) || ''
+    const stewards = base.stewards.filter((id) => id !== owner)
+    const since = cleanSince(shared.since)
+    let settings = pickSettings(base)
+    let settingsAt = Number(shared.settingsAt) > 0 ? Number(shared.settingsAt) : 0
+    let settingsBy = isId(shared.settingsBy) ? shared.settingsBy : owner
+    const menus = cleanMenus(shared.menus, true)
+    for (const d of Object.keys(menus)) for (const slot of Object.keys(menus[d])) if (!menus[d][slot].by) menus[d][slot].by = owner
+    const people = cleanPeople(shared.people, true)
+    for (const pid of Object.keys(people)) if (!people[pid].by) people[pid].by = owner
+    const entries = (room && room.entries) || {}
+    for (const id of stewards) {
+      if (!entries[id]) continue
+      const v = cleanEntry(entries[id].value)
+      const cap = Number(entries[id].at) > 0 ? Number(entries[id].at) : Infinity
+      const from = since[id] || 0
+      if (v.settings) {
+        const at = Math.min(v.settingsAt, cap)
+        if (at >= from && at > settingsAt) {
+          settings = v.settings
+          settingsAt = at
+          settingsBy = id
+        }
+      }
+      for (const date of Object.keys(v.menus || {})) {
+        for (const slot of Object.keys(v.menus[date])) {
+          const at = Math.min(v.menus[date][slot].at, cap)
+          const cur = menus[date] && menus[date][slot]
+          if (at < from || (cur && cur.at >= at)) continue
+          menus[date] = Object.assign({}, menus[date], { [slot]: { t: v.menus[date][slot].t, at, by: id } })
+        }
+      }
+      // people registered by hand: the newest record of each person
+      for (const pid of Object.keys(v.people || {})) {
+        const at = Math.min(v.people[pid].at, cap)
+        if (at < from || (people[pid] && people[pid].at >= at)) continue
+        people[pid] = Object.assign({}, v.people[pid], { at, by: id })
+      }
+    }
+    return { config: Object.assign({}, base, settings, { stewards }), stewards, settingsAt, settingsBy, menus, people }
+  }
+  /** The text of one cell ('' = nothing registered). */
+  const menuOf = (menus, date, slot) => (menus && menus[date] && menus[date][slot] ? menus[date][slot].t : '')
+  /** The newest change among some days: { at, by } or null. */
+  function menuStamp(menus, dates) {
+    let out = null
+    for (const d of dates) for (const slot of MENU_SLOTS) if (menus && menus[d] && menus[d][slot] && (!out || menus[d][slot].at > out.at)) out = { at: menus[d][slot].at, by: menus[d][slot].by || '' }
+    return out
+  }
+  /** Mon–Fri (Mon–Sun when weekends are served) of a week: [{ date, served, why }] (why = holiday name). */
+  function weekDays(config, monday) {
+    const out = []
+    for (let i = 0; i < (config.weekend ? 7 : 5); i++) {
+      const date = addDays(monday, i)
+      out.push({ date, served: isServed(config, date), why: holidayName(config, date) })
+    }
+    return out
+  }
+  /** The meals of the menu table: those offered, in order. */
+  const menuMeals = (config) => MEAL_KEYS.filter((k) => config.meals[k].on)
+
+  /**
+   * Save by somebody in charge. patch = { settings?, stewards?, menus? } where menus is a list
+   * of { date, slot, t } (cells that were changed). `now` must be the server's clock.
+   *  - the owner → { shared }: the merged state folded into the shared data (so it stays the
+   *    base), plus the patch. Only the owner's `stewards` is taken; naming them again drops the
+   *    clerks of before 1.2.0.
+   *  - a 식수서무 → { entry }: their own entry with the patch; what the shared data already
+   *    holds is dropped from it. `stewards` in the patch is ignored.
+   * Too big: old menus are dropped first (`trimmed` days), never requests. Else { error }.
+   */
+  function saveAs(room, id, now, patch) {
+    const p = patch || {}
+    if (!room || !canManage(room, id)) return { error: '설정을 만든 관리자와 식수서무만 할 수 있습니다.' }
+    const eff = effective(room)
+    const today = ymd(now)
+    const owner = room.createdBy === id
+    let settings = null
+    if (p.settings) {
+      settings = pickSettings(cleanConfig(p.settings))
+      if (!settings.meals.lunch.on && !settings.meals.dinner.on) return { error: '점심과 저녁 가운데 하나는 받아야 합니다.' }
+    }
+    const win = menuWindow(now)
+    const edits = []
+    for (const e of Array.isArray(p.menus) ? p.menus : []) {
+      if (!e || !isYmd(e.date) || !MENU_SLOTS.includes(e.slot) || e.date < win.from || e.date > win.to) continue
+      const t = cleanMenuText(e.slot, e.t)
+      if (t !== menuOf(eff.menus, e.date, e.slot)) edits.push({ date: e.date, slot: e.slot, t })
+    }
+    // people registered by hand: [{ id, name, dept, title, memo, gone?, as? }]
+    const persons = []
+    for (const e of Array.isArray(p.people) ? p.people : []) {
+      if (!e || !isManualId(e.id)) continue
+      // what the patch does not mention stays as it is (removing or linking sends the id only)
+      const cur = eff.people[e.id] || {}
+      const pick = (k) => (e[k] === undefined ? cur[k] : e[k])
+      const rec = cleanPerson({ name: pick('name'), dept: pick('dept'), title: pick('title'), memo: pick('memo') })
+      if (!rec.name) return { error: '이름을 적으세요.' }
+      if (pick('gone')) rec.gone = true
+      if (isId(pick('as')) && !isManualId(pick('as'))) rec.as = pick('as')
+      rec.at = now
+      persons.push({ id: e.id, rec })
+    }
+    if (persons.length) {
+      const next = Object.assign({}, eff.people)
+      for (const x of persons) next[x.id] = x.rec
+      if (manualList(next).length > LIMITS.peopleMax && manualList(next).length > manualList(eff.people).length) return { error: `직접 등록은 ${LIMITS.peopleMax}명까지 할 수 있습니다.` }
+    }
+    if (owner) {
+      const shared = Object.assign({}, eff.config, settings || {})
+      shared.settingsAt = settings ? now : eff.settingsAt
+      shared.settingsBy = settings ? id : eff.settingsBy
+      const since = cleanSince(room.shared && room.shared.since)
+      if (Array.isArray(p.stewards)) {
+        shared.stewards = Array.from(new Set(p.stewards.filter((x) => isId(x) && x !== id))).slice(0, LIMITS.stewardsMax)
+        shared.clerks = []
+        shared.since = {}
+        for (const s of shared.stewards) {
+          const t = eff.stewards.includes(s) ? since[s] || 0 : now
+          if (t) shared.since[s] = t
+        }
+      } else {
+        shared.since = {}
+        for (const s of shared.stewards) if (since[s]) shared.since[s] = since[s]
+      }
+      const menus = eff.menus
+      for (const e of edits) menus[e.date] = Object.assign({}, menus[e.date], { [e.slot]: { t: e.t, at: now, by: id } })
+      shared.menus = pruneMenus(menus, now)
+      // the list of people is never cut to make room: only menus are (fitMenus)
+      shared.people = eff.people
+      for (const x of persons) shared.people[x.id] = Object.assign({ by: id }, x.rec)
+      const trimmed = fitMenus(shared, today)
+      return { shared, trimmed }
+    }
+    const base = cleanMenus(room.shared && room.shared.menus, true)
+    const baseAt = Number(room.shared && room.shared.settingsAt) || 0
+    const from = cleanSince(room.shared && room.shared.since)[id] || 0
+    const mine = room.entries && room.entries[id] ? room.entries[id].value : null
+    const entry = prune(cleanEntry(mine), now)
+    if (settings) {
+      entry.settings = settings
+      entry.settingsAt = now
+    } else if (entry.settings && (entry.settingsAt <= baseAt || entry.settingsAt < from)) {
+      delete entry.settings
+      delete entry.settingsAt
+    }
+    const menus = entry.menus || {}
+    for (const e of edits) menus[e.date] = Object.assign({}, menus[e.date], { [e.slot]: { t: e.t, at: now } })
+    // what the owner's shared data already holds (or what no longer counts) need not be kept twice
+    for (const d of Object.keys(menus)) {
+      for (const slot of Object.keys(menus[d])) {
+        const b = base[d] && base[d][slot]
+        if (menus[d][slot].at < from || (b && b.at >= menus[d][slot].at)) delete menus[d][slot]
+      }
+      if (!Object.keys(menus[d]).length) delete menus[d]
+    }
+    entry.menus = pruneMenus(menus, now)
+    const basePeople = cleanPeople(room.shared && room.shared.people, true)
+    const people = entry.people || {}
+    for (const x of persons) people[x.id] = x.rec
+    for (const pid of Object.keys(people)) if (people[pid].at < from || (basePeople[pid] && basePeople[pid].at >= people[pid].at)) delete people[pid]
+    if (Object.keys(people).length) entry.people = people
+    else delete entry.people
+    const trimmed = fitMenus(entry, today)
+    return { entry, trimmed }
+  }
+
+  /** The week as text: "주간 메뉴 11/23(월)~11/27(금)" and a block per day. */
+  function weekText(config, menus, monday) {
+    const days = weekDays(config, monday)
+    const meals = menuMeals(config)
+    const lines = [`주간 메뉴 ${dateLabel(days[0].date, '')}~${dateLabel(days[days.length - 1].date, '')}`]
+    for (const d of days) {
+      const note = menuOf(menus, d.date, 'note')
+      lines.push('', `${dateLabel(d.date, '')}${note ? ` (${note})` : ''}`)
+      if (!d.served) {
+        lines.push(`  ${d.why ? `공휴일(${d.why})` : '신청을 받지 않는 날'}`)
+        continue
+      }
+      for (const k of meals) lines.push(`  ${MEALS[k]}: ${menuOf(menus, d.date, k).split('\n').join(', ') || '메뉴 미등록'}`)
+    }
+    return lines.join('\n')
+  }
+  /** A block copied from a spreadsheet (tabs between cells, quotes around cells with line breaks) → rows of cells. */
+  function parseBlock(text) {
+    const s = String(text == null ? '' : text).replace(/\r\n?/g, '\n')
+    const rows = []
+    let row = []
+    let cell = ''
+    let quoted = false
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i]
+      if (quoted) {
+        if (ch !== '"') cell += ch
+        else if (s[i + 1] === '"') {
+          cell += '"'
+          i++
+        } else quoted = false
+      } else if (ch === '"' && cell === '') quoted = true
+      else if (ch === '\t') {
+        row.push(cell)
+        cell = ''
+      } else if (ch === '\n') {
+        row.push(cell)
+        rows.push(row)
+        row = []
+        cell = ''
+      } else cell += ch
+    }
+    if (cell !== '' || row.length) {
+      row.push(cell)
+      rows.push(row)
+    }
+    return rows
+  }
+  /**
+   * Where the cells of a pasted block go in a grid of nRows days by nCols slots, starting at
+   * (r0, c0): [{ r, c, t }]. A block that is wider than the grid but fits when turned (days
+   * across, meals down, as most menu sheets are) is turned.
+   */
+  function placeBlock(block, nRows, nCols, r0, c0) {
+    let rows = (block || []).filter((r) => Array.isArray(r))
+    const width = rows.reduce((m, r) => Math.max(m, r.length), 0)
+    if (width > nCols - c0 && rows.length <= nCols - c0) {
+      const turned = []
+      for (let c = 0; c < width; c++) turned.push(rows.map((r) => (r[c] == null ? '' : r[c])))
+      rows = turned
+    }
+    const out = []
+    rows.forEach((cells, i) => {
+      cells.forEach((t, j) => {
+        if (r0 + i < nRows && c0 + j < nCols) out.push({ r: r0 + i, c: c0 + j, t: String(t) })
+      })
+    })
+    return out
+  }
+
+  // ---------- requests for many people at once (those in charge) ----------
+  const NO_DEPT = '부서 미지정'
+  /**
+   * Members by department for the pick list: [{ dept, own, members }]. Departments and the
+   * people in them stay in the order the list arrives in (TeamHub already orders them the way
+   * the admins set it); the department of the one who acts comes first.
+   */
+  function deptGroups(members, ownDept) {
+    const groups = []
+    const at = new Map()
+    for (const m of members || []) {
+      if (!m || !isId(m.id)) continue
+      const dept = m.deptName || NO_DEPT
+      if (!at.has(dept)) {
+        at.set(dept, groups.length)
+        groups.push({ dept, own: dept === (ownDept || NO_DEPT), members: [] })
+      }
+      groups[at.get(dept)].members.push(m)
+    }
+    return groups.filter((g) => g.own).concat(groups.filter((g) => !g.own))
+  }
+  /** The header checkbox of a department: 'all', 'some' or 'none' of `ids` are in `selected` (a Set or an array). */
+  function groupState(ids, selected) {
+    const has = (id) => (selected && typeof selected.has === 'function' ? selected.has(id) : Array.from(selected || []).includes(id))
+    const n = (ids || []).filter(has).length
+    return !n ? 'none' : n === ids.length ? 'all' : 'some'
+  }
+  /** Every day and meal offered for a bulk request: [{ date, meal, open, why }] (why = the reason it cannot be changed). */
+  function bulkSlots(config, dates, now) {
+    const out = []
+    for (const date of dates || []) {
+      for (const meal of MEAL_KEYS) {
+        if (!config.meals[meal].on) continue
+        const st = stateOf(config, date, meal, now)
+        const why = st === 'closed' ? `${config.meals[meal].cutoff} 마감됨` : st === 'off' ? (holidayName(config, date) ? `공휴일(${holidayName(config, date)})` : '받지 않는 날') : upcoming(config, now).includes(date) ? '' : '아직 받지 않는 날짜'
+        out.push({ date, meal, open: !why, why })
+      }
+    }
+    return out
+  }
+  /** Does the record that counts for `id` already say `on` for every one of the slots? (people = resolve()) */
+  function alreadySet(people, id, slots, on) {
+    const p = people && people.get(id)
+    return (slots || []).length > 0 && slots.every((s) => !!(p && p.days[s.date] && p.days[s.date][s.meal] && p.days[s.date][s.meal].on) === !!on)
+  }
+  /**
+   * Request (on) or cancel for many members, days and meals in one save of the entry of the one
+   * who acts (`id`): targets = [{ id, name }], slots = [{ date, meal }]. `now` is the server's
+   * clock at the moment of saving; `config` the settings with the holidays of that moment.
+   * Returns { entry, result } or { error }; result counts requests (one per person, day and meal):
+   *  - applied: written
+   *  - already: skipped, the record that counts says so already (a cancel of nothing as well)
+   *  - closed:  skipped, the deadline has passed or the day takes no requests
+   *  - unfit:   not written because the entry would pass the size limit
+   *  - trimmed: days of old records made for others (and old menus) dropped to make room
+   * The acting person's own requests are never dropped. Their own name among the targets is
+   * written as their own request.
+   */
+  function applyBulk(room, id, config, targets, slots, on, now, members, max) {
+    if (!room || !canProxy(room, id)) return { error: '대신 신청할 권한이 없습니다.' }
+    const people = []
+    const seen = new Set()
+    for (const t of targets || []) {
+      if (!t || !isId(t.id) || seen.has(t.id)) continue
+      seen.add(t.id)
+      people.push({ id: t.id, name: String(t.name || '').slice(0, 60) })
+    }
+    const wanted = []
+    const seenSlot = new Set()
+    for (const s of slots || []) {
+      if (!s || !isYmd(s.date) || !MEALS[s.meal] || seenSlot.has(`${s.date}|${s.meal}`)) continue
+      seenSlot.add(`${s.date}|${s.meal}`)
+      wanted.push({ date: s.date, meal: s.meal })
+    }
+    if (!people.length) return { error: '대신 신청할 사람을 고르세요.' }
+    if (!wanted.length) return { error: '날짜와 식사를 고르세요.' }
+    const result = { applied: 0, already: 0, closed: 0, unfit: 0, trimmed: 0 }
+    const open = wanted.filter((s) => !refusal(config, s.date, s.meal, now))
+    result.closed = (wanted.length - open.length) * people.length
+    const mine = room.entries && room.entries[id] ? room.entries[id].value : null
+    const entry = prune(cleanEntry(mine), now)
+    const current = resolve(room, members)
+    const done = [] // what was written, in order, so the last can be taken back when it does not fit
+    for (const p of people) {
+      for (const s of open) {
+        if (alreadySet(current, p.id, [s], on)) {
+          result.already++
+          continue
+        }
+        let days
+        if (p.id === id) days = entry.days
+        else {
+          const others = entry.for || (entry.for = {})
+          const t = others[p.id] || (others[p.id] = { name: '', days: {} })
+          t.name = p.name || t.name
+          days = t.days
+        }
+        const before = days[s.date] && days[s.date][s.meal]
+        days[s.date] = Object.assign({}, days[s.date], { [s.meal]: { on: !!on, at: now } })
+        done.push({ p, s, before })
+      }
+    }
+    // too big for the server: old menus and the oldest days of records made for others go first
+    const limit = max || LIMITS.stateMax
+    const today = ymd(now)
+    const size = () => JSON.stringify(entry).length
+    while (entry.menus && size() > limit) {
+      const old = Object.keys(entry.menus).sort()[0]
+      if (!old || old >= today) break
+      delete entry.menus[old]
+      result.trimmed++
+    }
+    if (entry.menus && !Object.keys(entry.menus).length) delete entry.menus
+    while (entry.for && size() > limit) {
+      let oldest = ''
+      for (const pid of Object.keys(entry.for)) for (const d of Object.keys(entry.for[pid].days)) if (d < today && (!oldest || d < oldest)) oldest = d
+      if (!oldest) break
+      for (const pid of Object.keys(entry.for)) {
+        delete entry.for[pid].days[oldest]
+        if (!Object.keys(entry.for[pid].days).length) delete entry.for[pid]
+      }
+      result.trimmed++
+    }
+    // still too big: take back what was written last, one request at a time
+    while (done.length && size() > limit) {
+      const { p, s, before } = done.pop()
+      const days = p.id === id ? entry.days : entry.for[p.id].days
+      if (before) days[s.date][s.meal] = before
+      else {
+        delete days[s.date][s.meal]
+        if (!Object.keys(days[s.date]).length) delete days[s.date]
+      }
+      if (p.id !== id && !Object.keys(days).length) delete entry.for[p.id]
+      result.unfit++
+    }
+    if (entry.for && !Object.keys(entry.for).length) delete entry.for
+    result.applied = done.length
+    return { entry, result }
+  }
+  /** "9명 신청, 2명은 이미 신청함, 1명은 마감되어 제외" (건 instead of 명 when several days or meals were asked). */
+  function bulkSummary(result, on, many) {
+    const u = many ? '건' : '명'
+    const parts = [`${result.applied}${u} ${on ? '신청' : '취소'}`]
+    if (result.already) parts.push(`${result.already}${u}은 ${on ? '이미 신청함' : '신청하지 않아 그대로'}`)
+    if (result.closed) parts.push(`${result.closed}${u}은 마감되어 제외`)
+    if (result.unfit) parts.push(`${result.unfit}${u}은 저장 공간이 모자라 반영하지 못함`)
+    if (result.trimmed) parts.push(`지난 기록 ${result.trimmed}일치를 지움`)
+    return parts.join(', ')
+  }
+
   /** Text for ordering: "11/23(월) 점심 3명: 김○○, 이○○, 박○○". */
   function orderText(room, date, members, today) {
-    const config = cleanConfig(room && room.shared)
+    const config = effective(room).config
     const lines = []
     for (const k of MEAL_KEYS) {
       if (!config.meals[k].on) continue
@@ -293,9 +879,9 @@
   const csvCell = (v) => (/[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v))
   function monthCsv(room, month, members, now) {
     const t = monthTally(room, month, members, now, false)
-    const rows = [['부서', '이름', '점심', '저녁', '합계'], ...t.rows.map((r) => [r.deptName, r.name, r.lunch, r.dinner, r.lunch + r.dinner]), ['', '합계', t.lunch, t.dinner, t.lunch + t.dinner]]
+    const rows = [['부서', '이름', '점심', '저녁', '합계'], ...t.rows.map((r) => [r.deptName, r.manual ? `${r.name} (미등록)` : r.name, r.lunch, r.dinner, r.lunch + r.dinner]), ['', '합계', t.lunch, t.dinner, t.lunch + t.dinner]]
     return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n'
   }
 
-  g.Meal = { MEALS, MEAL_KEYS, LIMITS, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
+  g.Meal = { isManualId, newManualId, cleanPerson, cleanPeople, manualList, roster, nameClash, splitCount, countText, MEALS, MEAL_KEYS, MENU_SLOTS, LIMITS, deptGroups, groupState, bulkSlots, alreadySet, applyBulk, bulkSummary, weekStart, menuWindow, cleanMenuText, cleanMenus, pickSettings, effective, menuOf, menuStamp, weekDays, menuMeals, saveAs, fitMenus, weekText, parseBlock, placeBlock, canManage, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
 })(typeof window !== 'undefined' ? window : globalThis)

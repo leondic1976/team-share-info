@@ -25,7 +25,7 @@ export function LockCard(): React.JSX.Element | null {
   const [b, setB] = useState('')
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [recovery, setRecovery] = useState<string | null>(null)
-  // shared PC: the person's own PIN locks the program, so there is no second PIN to manage here
+  // shared PC: one PIN per person (signs in and opens the lock), made in the 공용 PC 사용 card - no second PIN here
   if (!st || st.seat) return null
   const reset = (): void => {
     setA('')
@@ -68,7 +68,8 @@ export function LockCard(): React.JSX.Element | null {
       </CardHeader>
       <CardContent className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          켜 두면 프로그램을 시작할 때와 Windows를 잠갔다가 돌아왔을 때 숫자 4자리 PIN을 묻습니다. 다른 사람이 이 PC에서 TeamHub를 열어 보지 못하게 하려면 사용하세요.
+          켜 두면 프로그램을 시작할 때와 Windows를 잠갔다가 돌아왔을 때 숫자 4자리 PIN을 묻습니다. 다른 사람이 이 PC에서 TeamHub를 열어 보지 못하게 하려면 사용하세요. 1111, 1234처럼 쉬운 번호는 쓸 수 없습니다. 평소 사용 중에 열어 보지 않게 하는 장치이며, PC의 파일을
+          일부러 뒤지는 사람까지 막지는 못합니다.
         </p>
         {st.hasPin ? (
           <div className="flex flex-wrap items-end gap-2">

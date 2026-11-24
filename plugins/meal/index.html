@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" class="th-ui">
   <head>
     <meta charset="utf-8" />
     <title>식사 신청</title>
@@ -7,21 +7,84 @@
     <script src="__sdk.js"></script>
   </head>
   <body>
-    <header>
-      <h1><i data-icon="utensils"></i> 식사 신청</h1>
-      <nav role="tablist">
-        <button role="tab" data-tab="apply" aria-selected="true">신청</button>
-        <button role="tab" data-tab="status">현황</button>
-        <button role="tab" data-tab="month">집계</button>
-        <button role="tab" data-tab="settings" id="settingsTab" class="hidden">설정</button>
-      </nav>
-      <span class="grow"></span>
-      <span id="clock" class="muted small"></span>
-    </header>
+    <div class="th-page">
+      <header class="th-page-header">
+        <div>
+          <h1>식사 신청</h1>
+          <p>사무실 점심·저녁을 날짜별로 신청하고 그날의 메뉴를 봅니다. 마감은 서버 PC의 시계를 따릅니다.</p>
+        </div>
+        <div class="th-actions">
+          <span id="clock" class="th-muted th-xs th-nums"></span>
+          <span id="actions" class="th-actions"></span>
+        </div>
+      </header>
+      <div class="th-toolbar">
+        <nav class="th-tabs" role="tablist" aria-label="보기">
+          <button class="th-btn th-tab" role="tab" data-tab="apply" aria-selected="true"><i data-icon="square-check"></i> 신청</button>
+          <button class="th-btn th-tab" role="tab" data-tab="menu" aria-selected="false"><i data-icon="soup"></i> 메뉴</button>
+          <button class="th-btn th-tab" role="tab" data-tab="status" aria-selected="false"><i data-icon="users"></i> 현황</button>
+          <button class="th-btn th-tab" role="tab" data-tab="month" aria-selected="false"><i data-icon="chart-column"></i> 집계</button>
+          <button class="th-btn th-tab hidden" role="tab" data-tab="settings" id="settingsTab" aria-selected="false"><i data-icon="settings"></i> 설정</button>
+        </nav>
+        <div id="nav" class="bar-nav"></div>
+        <div id="tools" class="bar-tools"></div>
+      </div>
+      <p id="oldApp" class="th-no-print" hidden>이 화면은 TeamHub를 최신 버전으로 업데이트해야 제대로 보입니다.</p>
+      <main class="th-body" id="main" aria-live="polite"></main>
+    </div>
 
-    <main id="main" aria-live="polite"></main>
+    <dialog id="dayDlg" class="th-dialog">
+      <form id="dayForm">
+        <h2 class="th-dialog-title" id="dayTitle"></h2>
+        <div id="dayBody" class="stack"></div>
+        <p id="dayError" class="th-error" role="alert"></p>
+        <div class="dlg-btns">
+          <span id="dayStamp" class="th-xs th-muted"></span>
+          <span class="th-grow"></span>
+          <button type="button" class="th-btn th-btn-outline" id="dayClose">닫기</button>
+          <button type="submit" class="th-btn">저장</button>
+        </div>
+      </form>
+    </dialog>
 
-    <div id="toast" role="status"></div>
+    <dialog id="bulkDlg" class="th-dialog bulk">
+      <form id="bulkForm">
+        <h2 class="th-dialog-title">여러 명 대신 신청</h2>
+        <div id="bulkBody"></div>
+        <div class="bulk-tools">
+          <input class="th-input" id="bulkFilter" type="search" placeholder="이름 찾기" aria-label="이름 찾기" />
+          <button type="button" class="th-btn th-btn-outline th-btn-sm" id="bulkAll">전체 선택</button>
+          <button type="button" class="th-btn th-btn-outline th-btn-sm" id="bulkNone">모두 해제</button>
+          <b id="bulkCount" class="th-nums"></b>
+          <span class="th-grow"></span>
+          <button type="button" class="th-btn th-btn-ghost th-btn-sm" id="bulkAddPerson"><i data-icon="plus"></i> 미등록 직원 추가</button>
+        </div>
+        <div id="bulkPeople" class="bulk-people"></div>
+        <p id="bulkResult" class="th-notice" role="status" hidden></p>
+        <p id="bulkError" class="th-error" role="alert"></p>
+        <div class="dlg-btns">
+          <span class="th-xs th-muted">이미 신청한 사람은 건너뜁니다. 마감 전이면 본인이 다시 바꿀 수 있습니다.</span>
+          <span class="th-grow"></span>
+          <button type="button" class="th-btn th-btn-outline" id="bulkClose">닫기</button>
+          <button type="submit" class="th-btn" id="bulkGo">대신 신청</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="personDlg" class="th-dialog">
+      <form id="personForm">
+        <h2 class="th-dialog-title" id="personTitle"></h2>
+        <div id="personBody" class="stack tight"></div>
+        <p id="personError" class="th-error" role="alert"></p>
+        <div class="dlg-btns">
+          <span class="th-grow"></span>
+          <button type="button" class="th-btn th-btn-outline" id="personClose">닫기</button>
+          <button type="submit" class="th-btn" id="personSave">저장</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="th-toast" role="status"></div>
     <script src="meal.js"></script>
     <script src="app.js"></script>
   </body>

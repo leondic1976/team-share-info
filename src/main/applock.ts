@@ -2,15 +2,18 @@ import { BrowserWindow, powerMonitor } from 'electron'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import log from 'electron-log/main'
 import type { LockState } from '../shared/ipc'
-import { FREE_TRIES, newRecoveryCode, normRecoveryCode as normCode, pinMatches as matches, sealPin as sealed, waitAfter } from '../node/pin'
+import { FREE_TRIES, newPinProblem, newRecoveryCode, normRecoveryCode as normCode, pinMatches as matches, sealPin as sealed, waitAfter } from '../node/pin'
 import { userDataPath } from './paths'
-import { activeSeat, activeSeatWaitMs, seatIdleMinutes, verifyActiveSeat } from './seats'
+import { activeSeat, activeSeatWaitMs, startAutoLogout, verifyActiveSeat } from './seats'
 
 /**
  * Program lock (optional, off until the user makes a PIN in the settings): a 4-digit PIN is
  * asked when the program starts and after Windows was locked. Only salted hashes are kept
  * (app data folder); a forgotten PIN is replaced with the recovery code shown once when the
  * PIN was made. The server of a server PC keeps running while the screen is locked.
+ *
+ * The same rule as for the people of a shared PC (node/pin.ts): a PIN that is made or changed
+ * has exactly 4 digits and is not one of the obvious ones; wrong tries make the wait longer.
  */
 interface LockFile {
   salt: string
@@ -30,12 +33,14 @@ export const PIN_RE = /^\d{4}$/
 let file: LockFile | null | undefined
 let locked = true
 /**
- * Shared PC (seats.ts): the lock is not optional and uses the PIN of the signed-in person;
- * the optional PIN above is not asked while that mode is on. Starts unlocked: the person
- * has just typed the PIN to sign in.
+ * Shared PC (seats.ts): one PIN per person. The PIN they sign in with is also what opens the
+ * program after "지금 잠그기"; the optional PIN above cannot be made, changed or asked while
+ * that mode is on. A person without a PIN has nothing to lock with, so the lock screen never
+ * appears for them. Nothing locks by itself here: an unattended PC logs the person out
+ * (seats.ts, 자동 로그아웃). Starts unlocked: the person has just signed in.
  */
 let seatLocked = false
-const SEAT_ONLY = '공용 PC 사용 중에는 사용자 PIN으로 잠급니다. PIN은 설정의 "공용 PC 사용"에서 바꿉니다.'
+const SEAT_ONLY = '공용 PC 사용 중에는 사용자 PIN 하나만 씁니다. PIN은 설정의 "공용 PC 사용"에서 만들거나 바꿉니다.'
 
 function load(): LockFile | null {
   if (file !== undefined) return file
@@ -55,7 +60,7 @@ function save(next: LockFile): void {
 
 export function lockState(): LockState {
   const seat = activeSeat()
-  if (seat) return { hasPin: true, locked: seatLocked, waitMs: activeSeatWaitMs(), seat: { name: seat.name, owner: seat.owner } }
+  if (seat) return { hasPin: seat.hasPin, locked: seatLocked && seat.hasPin, waitMs: activeSeatWaitMs(), seat: { name: seat.name, owner: seat.owner } }
   const f = load()
   return { hasPin: !!f, locked: !!f && locked, waitMs: Math.max(0, (f?.waitUntil ?? 0) - Date.now()) }
 }
@@ -63,6 +68,12 @@ export function lockState(): LockState {
 function changed(): void {
   const st = lockState()
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('lock:changed', st)
+}
+
+/** The signed-in person of a shared PC made or removed their PIN: every window learns whether there is a lock now. */
+export function seatPinChanged(): void {
+  if (!activeSeat()?.hasPin) seatLocked = false
+  changed()
 }
 
 /** Shared mode was turned on or off: every window learns which lock applies now. */
@@ -77,7 +88,8 @@ export function lockModeChanged(): void {
 export function createPin(pin: string): { ok: boolean; recovery?: string; error?: string } {
   if (activeSeat()) return { ok: false, error: SEAT_ONLY }
   if (load()) return { ok: false, error: 'PIN이 이미 있습니다.' }
-  if (!PIN_RE.test(pin)) return { ok: false, error: 'PIN은 숫자 4자리입니다.' }
+  const bad = newPinProblem(pin)
+  if (bad) return { ok: false, error: bad }
   const recovery = newRecoveryCode()
   const p = sealed(pin)
   const r = sealed(normCode(recovery))
@@ -128,7 +140,8 @@ export function unlock(pin: string): { ok: boolean; error?: string; waitMs?: num
 
 export function changePin(oldPin: string, newPin: string): { ok: boolean; error?: string; waitMs?: number } {
   if (activeSeat()) return { ok: false, error: SEAT_ONLY }
-  if (!PIN_RE.test(newPin)) return { ok: false, error: '새 PIN은 숫자 4자리입니다.' }
+  const bad = newPinProblem(newPin)
+  if (bad) return { ok: false, error: bad }
   const r = check(oldPin)
   if (!r.ok) return r
   const f = load()!
@@ -142,7 +155,8 @@ export function recoverPin(code: string, newPin: string): { ok: boolean; recover
   if (activeSeat()) return { ok: false, error: SEAT_ONLY }
   const f = load()
   if (!f) return { ok: false, error: 'PIN이 없습니다.' }
-  if (!PIN_RE.test(newPin)) return { ok: false, error: '새 PIN은 숫자 4자리입니다.' }
+  const bad = newPinProblem(newPin)
+  if (bad) return { ok: false, error: bad }
   const waitMs = f.waitUntil - Date.now()
   if (waitMs > 0) return { ok: false, waitMs, error: '잠시 뒤에 다시 입력하세요.' }
   if (!matches(normCode(code), f.recoverySalt, f.recoveryHash)) {
@@ -172,8 +186,10 @@ export function removePin(pin: string): { ok: boolean; error?: string; waitMs?: 
 }
 
 export function lockNow(): void {
-  if (activeSeat()) {
-    if (seatLocked) return
+  const seat = activeSeat()
+  if (seat) {
+    // without a PIN there is nothing to open the lock with
+    if (seatLocked || !seat.hasPin) return
     seatLocked = true
     changed()
     return
@@ -190,14 +206,10 @@ export function seatUnlocked(): void {
 }
 
 export function startAppLock(): void {
-  // whoever sits down after Windows was locked has to know the PIN of the program too
-  powerMonitor.on('lock-screen', () => lockNow())
-  // Shared PC: the next person may sit down without Windows being locked in between, so the
-  // program locks itself when the PC was not touched for a while. Only the screen is covered;
-  // nothing is closed, so writing in progress is kept. (E2E runs unattended: see app:idleSeconds.)
-  if (process.env.TEAMHUB_E2E && !process.env.TEAMHUB_E2E_IDLE) return
-  setInterval(() => {
-    if (!activeSeat() || seatLocked) return
-    if (powerMonitor.getSystemIdleTime() >= seatIdleMinutes() * 60) lockNow()
-  }, 15_000).unref()
+  // whoever sits down after Windows was locked has to know the PIN of the program too.
+  // (Shared PC: Windows locked means the person has left - seats.ts logs them out instead.)
+  powerMonitor.on('lock-screen', () => {
+    if (!activeSeat()) lockNow()
+  })
+  startAutoLogout()
 }

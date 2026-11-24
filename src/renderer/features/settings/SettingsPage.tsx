@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Download, Upload, Lock, Monitor, Sun, Moon, MessageSquarePlus, ExternalLink } from 'lucide-react'
+import { Monitor, Sun, Moon, MessageSquarePlus, ExternalLink } from 'lucide-react'
 import { DOWNLOAD_SITE } from '@shared/constants'
 import { Input } from '@renderer/components/ui/input'
 import { PageHeader } from '@renderer/components/PageHeader'
@@ -9,10 +9,10 @@ import { Switch } from '@renderer/components/ui/switch'
 import { usePrefs, type Theme } from '@renderer/app/prefs-store'
 import { useSession } from '@renderer/app/session-store'
 import { invoke } from '@renderer/lib/bridge'
-import { cn } from '@renderer/lib/utils'
 import { UpdateCard } from './UpdateCard'
 import { MenuCard } from './MenuCard'
 import { StorageCard } from './StorageCard'
+import { BackupCard } from './BackupCard'
 import { WallpaperCard } from './WallpaperCard'
 import { LockCard } from './LockCard'
 import { SharedPcCard } from './SharedPcCard'
@@ -43,7 +43,6 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
   const prefs = usePrefs()
   const app = useSession((s) => s.app)
   const [autostart, setAutostartState] = useState(false)
-  const [msg, setMsg] = useState('')
   const hasAccount = useConn((s) => !!s.memberId)
 
   useEffect(() => {
@@ -135,43 +134,7 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-1.5">
-              <Lock className="size-4 text-personal" /> 개인 데이터 (내 PC에만 저장)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              개인 일정·다이어리·메모·알람 등은 이 PC에만 저장되며 서버로 보내지 않습니다. PC를 바꿀 때는 내보내기 후 새
-              PC에서 가져오세요.
-            </p>
-            <div className="selectable rounded-md bg-muted px-3 py-2 font-mono text-xs break-all" data-testid="local-db-path">
-              {app?.localDbPath}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  const r = await invoke('local:export')
-                  setMsg(r.ok ? `내보냈습니다: ${r.path}` : r.error ? `실패: ${r.error}` : '')
-                }}
-              >
-                <Download /> 내보내기
-              </Button>
-              <Button
-                variant="outline"
-                onClick={async () => {
-                  const r = await invoke('local:import')
-                  if (r.error) setMsg(`실패: ${r.error}`)
-                }}
-              >
-                <Upload /> 가져오기
-              </Button>
-            </div>
-            {msg && <p className={cn('text-xs', msg.startsWith('실패') ? 'text-urgent' : 'text-success')}>{msg}</p>}
-          </CardContent>
-        </Card>
+        <BackupCard />
 
         <LockCard />
 

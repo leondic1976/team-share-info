@@ -7,6 +7,7 @@ import { ICONS, LEGACY_ICON_NAMES } from '@shared/icons'
  * Calls go to the TeamHub window through postMessage; only declared permissions work.
  *   el.innerHTML = TeamHub.icon('utensils') + ' 식사'      // line icon as SVG markup (no emoji in the program)
  *   <i data-icon="search"></i>                          // in HTML: replaced by the icon when the page loads
+ * It also links the program's look (__ui.css) and fonts (__fonts.css) into the frame.
  */
 export const PLUGIN_SDK = `(() => {
   const ICONS = ${JSON.stringify(ICONS)}
@@ -65,6 +66,13 @@ export const PLUGIN_SDK = `(() => {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => hydrateIcons())
   else hydrateIcons()
   document.documentElement.dataset.theme = window.TeamHub.theme
+  // TeamHub's look (resources/ui/base.css: the colours of the main screen and the th-* classes),
+  // put before the extension's own styles so the extension can override it
+  const ui = document.createElement('link')
+  ui.rel = 'stylesheet'
+  ui.href = '__ui.css'
+  ui.setAttribute('blocking', 'render')
+  document.head.insertBefore(ui, document.head.firstChild)
   // TeamHub's fonts (served by the program to every frame); after the extension's own styles so they apply
   const addFonts = () => {
     const l = document.createElement('link')

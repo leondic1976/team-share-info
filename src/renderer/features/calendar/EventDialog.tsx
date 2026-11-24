@@ -172,7 +172,7 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
         .then((e) => {
           setServer(e)
           setOrig({ start: e.startAt, end: e.endAt, rrule: e.rrule, authorId: e.authorId, authorName: e.authorName, kind: e.kind })
-          setReadOnly(e.authorId !== me?.id && me?.role !== 'admin')
+          setReadOnly(e.authorId !== me?.id && (me?.role !== 'admin' || e.kind === 'busy'))
           setF((p) => ({
             ...p,
             kind: e.kind === 'absence' ? 'absence' : 'team',

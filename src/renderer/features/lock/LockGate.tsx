@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Lock, ShieldCheck, Users } from 'lucide-react'
 import type { LockState } from '@shared/ipc'
-import { SEAT_PIN_MAX, SEAT_PIN_MIN } from '@shared/constants'
+import { PIN_LEN, SEAT_PIN_MAX } from '@shared/constants'
 import { invoke, onMain } from '@renderer/lib/bridge'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -17,7 +17,7 @@ export function useLock(): LockState | null {
   return st
 }
 
-/** `max` 4: the optional program lock; a person of a shared PC has a longer PIN (6 digits or more). */
+/** `max` 4: every PIN that is made. Fields that check a PIN of a shared PC take SEAT_PIN_MAX: PINs made before the 4-digit rule are longer. */
 export function PinInput({ label, value, onChange, autoFocus, onEnter, max = 4 }: { label: string; value: string; onChange: (v: string) => void; autoFocus?: boolean; onEnter?: () => void; max?: number }): React.JSX.Element {
   return (
     <label className="block space-y-1">
@@ -163,9 +163,9 @@ function Unlock({ waitMs, onRecovery }: { waitMs: number; onRecovery: (code: str
 }
 
 /**
- * Shared PC: the program locked itself (nobody touched the PC for a while, or "지금 잠그기").
- * The signed-in person continues with their PIN - everything is as they left it - or somebody
- * else takes over, which ends this person's session.
+ * Shared PC: the signed-in person pressed "지금 잠그기" (only people with a PIN can). They
+ * continue with that same PIN - everything is as they left it - or somebody else takes over,
+ * which ends this person's session. Nothing locks by itself: an unattended PC logs out.
  */
 function SeatUnlock({ seat, waitMs, onRecovery }: { seat: { name: string; owner: boolean }; waitMs: number; onRecovery: (code: string) => void }): React.JSX.Element {
   const [pin, setPin] = useState('')
@@ -186,7 +186,7 @@ function SeatUnlock({ seat, waitMs, onRecovery }: { seat: { name: string; owner:
 
   const tryUnlock = async (): Promise<void> => {
     if (busy.current || wait > 0) return
-    if (pin.length < SEAT_PIN_MIN) return setErr(`PIN은 숫자 ${SEAT_PIN_MIN}자리 이상입니다.`)
+    if (pin.length < PIN_LEN) return setErr('PIN을 입력하세요.')
     busy.current = true
     try {
       const r = await invoke('lock:unlock', { pin })
@@ -200,6 +200,7 @@ function SeatUnlock({ seat, waitMs, onRecovery }: { seat: { name: string; owner:
     }
   }
   const recover = async (): Promise<void> => {
+    if (next.length !== PIN_LEN) return setErr(`새 PIN은 숫자 ${PIN_LEN}자리입니다.`)
     const r = await invoke('seat:recover', { code, newPin: next })
     if (r.ok && r.recovery) onRecovery(r.recovery)
     else {
@@ -223,7 +224,7 @@ function SeatUnlock({ seat, waitMs, onRecovery }: { seat: { name: string; owner:
             <span className="text-sm font-medium">복구 코드</span>
             <Input aria-label="복구 코드" className="text-center font-mono tracking-widest uppercase" value={code} maxLength={12} onChange={(e) => setCode(e.target.value)} autoFocus />
           </label>
-          <PinInput label={`새 PIN (숫자 ${SEAT_PIN_MIN}자리 이상)`} value={next} onChange={setNext} onEnter={() => void recover()} max={SEAT_PIN_MAX} />
+          <PinInput label={`새 PIN (숫자 ${PIN_LEN}자리)`} value={next} onChange={setNext} onEnter={() => void recover()} />
           <Button className="w-full" onClick={() => void recover()} disabled={wait > 0}>
             새 PIN 만들기
           </Button>

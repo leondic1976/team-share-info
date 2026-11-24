@@ -841,5 +841,49 @@ ALTER TABLE members ADD COLUMN org_sort INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE join_requests ADD COLUMN shared_pc INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE devices ADD COLUMN shared_pc INTEGER NOT NULL DEFAULT 0;
 `
+  },
+  {
+    id: 21,
+    name: 'feedback',
+    sql: `
+-- 기능요청 및 오류신고: a PC hands a post to this server, which keeps it and hands the posts of a
+-- week to the developer as one bundle. id = the submission id made by the PC (a UUID), so the
+-- same post sent twice is kept once.
+-- state: received (waits for the next bundle) | bundled | uploaded (the bundle was handed over)
+CREATE TABLE feedback_items (
+  id TEXT PRIMARY KEY,
+  member_id TEXT NOT NULL,
+  install_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  author TEXT NOT NULL DEFAULT '',
+  app_version TEXT,
+  os TEXT,
+  created_at INTEGER NOT NULL,
+  received_at INTEGER NOT NULL,
+  state TEXT NOT NULL DEFAULT 'received',
+  bundle_id TEXT
+);
+CREATE INDEX idx_feedback_items_member ON feedback_items(member_id, received_at);
+CREATE INDEX idx_feedback_items_state ON feedback_items(state, received_at);
+CREATE INDEX idx_feedback_items_bundle ON feedback_items(bundle_id);
+-- state: pending (waits to be handed over) | failed (the last try failed: last_error) | uploaded
+-- issue_number: the intake issue on GitHub; NULL when the bundle was handed over as a file
+CREATE TABLE feedback_bundles (
+  id TEXT PRIMARY KEY,
+  period_from INTEGER NOT NULL,
+  period_to INTEGER NOT NULL,
+  item_count INTEGER NOT NULL,
+  state TEXT NOT NULL DEFAULT 'pending',
+  tries INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  last_try_at INTEGER,
+  created_at INTEGER NOT NULL,
+  uploaded_at INTEGER,
+  issue_number INTEGER
+);
+CREATE INDEX idx_feedback_bundles_state ON feedback_bundles(state, created_at);
+`
   }
 ]

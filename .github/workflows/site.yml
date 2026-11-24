@@ -8,10 +8,15 @@ on:
   push:
     branches: [main]
     paths: ['plugins/**', 'site/**', 'scripts/build-site.mjs', 'scripts/build-plugins.mjs']
+  # opened / edited / reopened / labeled start the intake workflow first; the board is rebuilt when
+  # that is done (what a workflow changes with its own token starts no other workflow by itself)
   issues:
-    types: [opened, edited, closed, reopened, labeled, unlabeled, deleted]
+    types: [closed, unlabeled, deleted]
   issue_comment:
     types: [created, edited, deleted]
+  workflow_run:
+    workflows: [feedback-intake]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -36,6 +41,7 @@ jobs:
       - run: node scripts/build-site.mjs
         env:
           GH_TOKEN: ${{ github.token }}
+          FEEDBACK_SEAL_KEY: ${{ secrets.FEEDBACK_SEAL_KEY }}
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site

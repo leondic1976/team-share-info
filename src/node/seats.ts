@@ -1,19 +1,25 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { SEAT_IDLE_DEFAULT, SEAT_IDLE_MAX, SEAT_IDLE_MIN, SEAT_MAX, SEAT_NAME_MAX, SEAT_PIN_MAX, SEAT_PIN_MIN } from '../shared/constants'
-import { FREE_TRIES, newRecoveryCode, normRecoveryCode, pinMatches, sealPin, waitAfter } from './pin'
+import { SEAT_IDLE_DEFAULT, SEAT_IDLE_MAX, SEAT_IDLE_MIN, SEAT_MAX, SEAT_NAME_MAX } from '../shared/constants'
+import { FREE_TRIES, newPinProblem, newRecoveryCode, normRecoveryCode, pinMatches, sealPin, waitAfter } from './pin'
 
 /**
  * People of a shared PC ("공용 PC 사용"): several people use TeamHub on one member PC under
- * one Windows account. Each person ("seat") has a name, a PIN and an own data folder, so each
- * has an own server approval, account and personal data.
+ * one Windows account. Each person ("seat") has a name, an own data folder and - if they want
+ * one - a PIN, so each has an own server approval, account and personal data.
  *
  * This file is the registry only (names, salted PIN hashes, wrong-try counters) and knows
  * nothing about Electron. It lives in the base app data folder as seats.json.
  *  - The person who turns the mode on is the PC 책임자 (owner) and keeps the base folder.
  *  - Everybody else gets <base>/users/<id>.
  *  - Adding a person, removing one and resetting a forgotten PIN need the owner's PIN.
+ *
+ * PINs: a new or changed PIN has exactly 4 digits (pin.ts). PINs made before that rule (6 to 12
+ * digits) keep working until they are changed. A PIN is each person's own choice: without one
+ * the name alone opens that person's TeamHub. "No PIN" is said by null in both hash fields and
+ * by nothing else; a person who has a PIN is never opened by an empty or missing one. When the
+ * PC 책임자 has no PIN, the management actions ask for nothing (the settings card says so).
  */
 export { SEAT_IDLE_MAX, SEAT_IDLE_MIN }
 export const SEAT_ID_RE = /^[a-f0-9]{12}$/
@@ -23,8 +29,9 @@ export interface SeatRecord {
   name: string
   /** PC 책임자: turned the mode on, uses the base folder, cannot be removed. */
   owner: boolean
-  salt: string
-  hash: string
+  /** Salted hash of the PIN. Both null: this person uses no PIN. */
+  salt: string | null
+  hash: string | null
   createdAt: number
   lastUsedAt: number
   /** Wrong tries in a row. */
@@ -37,9 +44,9 @@ export interface SeatsFile {
   version: 1
   enabled: boolean
   idleMinutes: number
-  /** Recovery code of the owner's PIN (shown once when the mode was turned on). */
-  recoverySalt: string
-  recoveryHash: string
+  /** Recovery code of the owner's PIN (shown once when that PIN was made); null while the owner has no PIN. */
+  recoverySalt: string | null
+  recoveryHash: string | null
   recoveryFails: number
   recoveryLockUntil: number
   seats: SeatRecord[]
@@ -49,6 +56,8 @@ export interface SeatPublic {
   id: string
   name: string
   owner: boolean
+  /** False: the name alone signs this person in. */
+  hasPin: boolean
   lastUsedAt: number
   waitMs: number
 }
@@ -57,7 +66,7 @@ export interface SeatOutcome {
   ok: boolean
   error?: string
   waitMs?: number
-  /** Shown once after the mode was turned on or the owner's PIN was replaced with the code. */
+  /** Shown once after the owner made a PIN (turning the mode on, or later) or replaced it with the code. */
   recovery?: string
   /** The seat that was made or removed. */
   id?: string
@@ -66,18 +75,36 @@ export interface SeatOutcome {
 const WRONG_PIN = 'PIN이 맞지 않습니다.'
 const WAIT = '여러 번 틀려 잠시 입력할 수 없습니다.'
 
-/** null when the PIN may be used; otherwise what is wrong with it. */
-export function seatPinProblem(pin: string): string | null {
-  if (!new RegExp(`^\\d{${SEAT_PIN_MIN},${SEAT_PIN_MAX}}$`).test(pin)) return `PIN은 숫자 ${SEAT_PIN_MIN}자리 이상입니다.`
-  if (/^(\d)\1+$/.test(pin)) return '같은 숫자만 이어진 PIN은 쓸 수 없습니다.'
-  const steps = [...pin].slice(1).map((c, i) => Number(c) - Number(pin[i]))
-  if (steps.every((s) => s === 1) || steps.every((s) => s === -1)) return '123456처럼 이어지는 숫자는 PIN으로 쓸 수 없습니다.'
-  return null
+const NEED_PIN = 'PIN을 입력하세요.'
+const NO_PIN = { salt: null, hash: null } as const
+
+/** null when the PIN may be made; otherwise what is wrong with it (exactly 4 digits, not an obvious one). */
+export const seatPinProblem = newPinProblem
+
+/** Whether a person has a PIN. Only null in both fields means "none": a damaged record counts as a PIN that nothing matches. */
+export function seatHasPin(seat: { salt: unknown; hash: unknown }): boolean {
+  return !(seat.salt === null && seat.hash === null)
 }
 
 export function cleanSeatName(name: string): string {
   // eslint-disable-next-line no-control-regex
   return name.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Name for a person who is put back: their own, or "<name> (복구)", "<name> (복구 2)"... when
+ * somebody else has it now.
+ */
+export function restoredSeatName(name: string, taken: string[]): string {
+  const used = new Set(taken.map((n) => n.toLowerCase()))
+  const base = name || '사용자'
+  if (!used.has(base.toLowerCase()) && base.length <= SEAT_NAME_MAX) return base
+  for (let i = 1; i < 1000; i++) {
+    const mark = i === 1 ? ' (복구)' : ` (복구 ${i})`
+    const n = base.slice(0, SEAT_NAME_MAX - mark.length).trimEnd() + mark
+    if (!used.has(n.toLowerCase())) return n
+  }
+  return base
 }
 
 export class SeatRegistry {
@@ -152,7 +179,7 @@ export class SeatRegistry {
     if (!f?.enabled) return []
     const t = this.now()
     return f.seats
-      .map((s) => ({ id: s.id, name: s.name, owner: s.owner, lastUsedAt: s.lastUsedAt, waitMs: Math.max(0, s.lockUntil - t) }))
+      .map((s) => ({ id: s.id, name: s.name, owner: s.owner, hasPin: seatHasPin(s), lastUsedAt: s.lastUsedAt, waitMs: Math.max(0, s.lockUntil - t) }))
       .sort((a, b) => Number(b.owner) - Number(a.owner) || a.name.localeCompare(b.name, 'ko'))
   }
 
@@ -177,11 +204,18 @@ export class SeatRegistry {
     }
   }
 
-  /** Check a PIN against one seat, counting wrong tries (saved at once, so a restart does not reset them). */
+  /**
+   * Check a PIN against one seat, counting wrong tries (saved at once, so a restart does not
+   * reset them). A person without a PIN has nothing to check. For a person with a PIN an empty
+   * one is never right; it is not a guess either, so it is refused without being counted. Old
+   * PINs longer than 4 digits are checked like any other.
+   */
   private check(f: SeatsFile, seat: SeatRecord, pin: string, label = ''): SeatOutcome {
+    if (!seatHasPin(seat)) return { ok: true }
     const t = this.now()
     if (seat.lockUntil > t) return { ok: false, waitMs: seat.lockUntil - t, error: WAIT }
-    if (!/^\d{1,20}$/.test(pin) || !pinMatches(pin, seat.salt, seat.hash)) {
+    if (typeof pin !== 'string' || pin === '') return { ok: false, error: `${label}${NEED_PIN}` }
+    if (!/^\d{1,20}$/.test(pin) || typeof seat.salt !== 'string' || typeof seat.hash !== 'string' || !seat.hash || !pinMatches(pin, seat.salt, seat.hash)) {
       seat.fails += 1
       const waitMs = waitAfter(seat.fails)
       seat.lockUntil = waitMs ? t + waitMs : 0
@@ -210,7 +244,10 @@ export class SeatRegistry {
     return null
   }
 
-  /** Turn the mode on. Whoever does it becomes the PC 책임자 and keeps the data that is on the PC now. */
+  /**
+   * Turn the mode on. Whoever does it becomes the PC 책임자 and keeps the data that is on the PC
+   * now. An empty PIN: the PC 책임자 uses none (then there is no recovery code either).
+   */
   enable(rawName: string, pin: string): SeatOutcome {
     let before: SeatsFile | null
     try {
@@ -220,10 +257,10 @@ export class SeatRegistry {
     }
     if (before?.enabled) return { ok: false, error: '공용 PC 사용이 이미 켜져 있습니다.' }
     const name = cleanSeatName(rawName)
-    const bad = this.nameProblem(null, name) ?? seatPinProblem(pin)
+    const bad = this.nameProblem(null, name) ?? (pin === '' ? null : seatPinProblem(pin))
     if (bad) return { ok: false, error: bad }
-    const recovery = newRecoveryCode()
-    const r = sealPin(normRecoveryCode(recovery))
+    const recovery = pin === '' ? undefined : newRecoveryCode()
+    const r = recovery ? sealPin(normRecoveryCode(recovery)) : NO_PIN
     const t = this.now()
     const id = randomBytes(6).toString('hex')
     this.save({
@@ -234,12 +271,12 @@ export class SeatRegistry {
       recoveryHash: r.hash,
       recoveryFails: 0,
       recoveryLockUntil: 0,
-      seats: [{ id, name, owner: true, ...sealPin(pin), createdAt: t, lastUsedAt: t, fails: 0, lockUntil: 0 }]
+      seats: [{ id, name, owner: true, ...(pin === '' ? NO_PIN : sealPin(pin)), createdAt: t, lastUsedAt: t, fails: 0, lockUntil: 0 }]
     })
     return { ok: true, recovery, id }
   }
 
-  /** Sign-in and unlock: the PIN of that one seat. */
+  /** Sign-in and unlock: the PIN of that one seat (nothing to check for a person without a PIN). */
   verify(id: string, pin: string): SeatOutcome {
     const o = this.open()
     if ('fail' in o) return o.fail
@@ -258,29 +295,30 @@ export class SeatRegistry {
     this.save(o.f)
   }
 
-  /** A new person on this PC: allowed by the PC 책임자's PIN. */
+  /** A new person on this PC: allowed by the PC 책임자's PIN. An empty PIN: the new person uses none. */
   add(ownerPin: string, rawName: string, pin: string): SeatOutcome {
     const o = this.open()
     if ('fail' in o) return o.fail
     const { f } = o
     const name = cleanSeatName(rawName)
-    const bad = this.nameProblem(f, name) ?? seatPinProblem(pin)
+    const bad = this.nameProblem(f, name) ?? (pin === '' ? null : seatPinProblem(pin))
     if (bad) return { ok: false, error: bad }
     if (f.seats.length >= SEAT_MAX) return { ok: false, error: `한 PC에는 ${SEAT_MAX}명까지 등록할 수 있습니다.` }
     const auth = this.checkOwner(f, ownerPin)
     if (!auth.ok) return auth
     const t = this.now()
     const id = randomBytes(6).toString('hex')
-    f.seats.push({ id, name, owner: false, ...sealPin(pin), createdAt: t, lastUsedAt: 0, fails: 0, lockUntil: 0 })
+    f.seats.push({ id, name, owner: false, ...(pin === '' ? NO_PIN : sealPin(pin)), createdAt: t, lastUsedAt: 0, fails: 0, lockUntil: 0 })
     this.save(f)
     return { ok: true, id }
   }
 
   /**
-   * Take a person off this PC: with that person's own PIN, or with the PC 책임자's.
-   * Only the registry entry goes here; the caller removes the data folder.
+   * Check that a person may be taken off this PC (that person's own PIN, or the PC 책임자's)
+   * without doing it yet: the caller first puts the person's data aside (removed-seats.ts)
+   * and only then drops the registry entry. The record is what puts the person back later.
    */
-  remove(id: string, pin: string, by: 'self' | 'owner'): SeatOutcome {
+  authRemove(id: string, pin: string, by: 'self' | 'owner'): SeatOutcome & { record?: SeatRecord } {
     const o = this.open()
     if ('fail' in o) return o.fail
     const { f } = o
@@ -289,12 +327,85 @@ export class SeatRegistry {
     if (seat.owner) return { ok: false, error: 'PC 책임자는 지울 수 없습니다. 다른 사용자를 모두 지운 뒤 공용 PC 사용을 끄세요.' }
     const auth = by === 'self' ? this.check(f, seat, pin) : this.checkOwner(f, pin)
     if (!auth.ok) return auth
-    f.seats = f.seats.filter((s) => s.id !== id)
-    this.save(f)
-    return { ok: true, id }
+    return { ok: true, id, record: { ...seat } }
   }
 
-  /** Forgotten PIN of somebody else: the PC 책임자 sets a new one. That person's data stays. */
+  /** Drop the registry entry of somebody who is not the PC 책임자 (after `authRemove`). */
+  drop(id: string): boolean {
+    try {
+      const o = this.open()
+      if ('fail' in o) return false
+      const seat = o.f.seats.find((s) => s.id === id)
+      if (!seat || seat.owner) return false
+      o.f.seats = o.f.seats.filter((s) => s.id !== id)
+      this.save(o.f)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Take a person off this PC: with that person's own PIN, or with the PC 책임자's.
+   * Only the registry entry goes here; the caller looks after the data folder.
+   */
+  remove(id: string, pin: string, by: 'self' | 'owner'): SeatOutcome {
+    const auth = this.authRemove(id, pin, by)
+    if (!auth.ok) return auth
+    return this.drop(id) ? { ok: true, id } : { ok: false, error: '사용자 목록을 저장하지 못했습니다.' }
+  }
+
+  /** The PC 책임자's PIN alone (erasing a kept backup of a removed person for good). */
+  verifyOwner(pin: string): SeatOutcome {
+    const o = this.open()
+    if ('fail' in o) return o.fail
+    return this.checkOwner(o.f, pin)
+  }
+
+  /** Ids of everybody registered now; null when the registry cannot be read. */
+  ids(): string[] | null {
+    try {
+      return (this.load()?.seats ?? []).map((s) => s.id)
+    } catch {
+      return null
+    }
+  }
+
+  /** What stands in the way of putting a removed person back, before any PIN is asked. */
+  restoreProblem(record: SeatRecord): string | null {
+    const o = this.open()
+    if ('fail' in o) return o.fail.error ?? '공용 PC 사용이 꺼져 있습니다.'
+    if (!SEAT_ID_RE.test(record.id) || record.owner) return '보관된 사용자 정보가 올바르지 않습니다.'
+    if (o.f.seats.some((s) => s.id === record.id)) return '같은 사용자가 이미 등록되어 있습니다.'
+    if (o.f.seats.length >= SEAT_MAX) return `한 PC에는 ${SEAT_MAX}명까지 등록할 수 있습니다. 다른 사용자를 지운 뒤 복구하세요.`
+    return null
+  }
+
+  /**
+   * Put a removed person back with the PIN they had - or without one, if they had none (PC
+   * 책임자's PIN needed). When somebody
+   * with the same name was added meanwhile, the restored person gets a marked name: names
+   * are how people pick themselves at the sign-in window and must stay distinct.
+   */
+  restore(ownerPin: string, record: SeatRecord): SeatOutcome & { name?: string } {
+    const bad = this.restoreProblem(record)
+    if (bad) return { ok: false, error: bad }
+    const o = this.open()
+    if ('fail' in o) return o.fail
+    const { f } = o
+    const auth = this.checkOwner(f, ownerPin)
+    if (!auth.ok) return auth
+    const name = restoredSeatName(
+      cleanSeatName(record.name),
+      f.seats.map((s) => s.name)
+    )
+    const pin = seatHasPin(record) ? { salt: record.salt, hash: record.hash } : NO_PIN
+    f.seats.push({ id: record.id, name, owner: false, ...pin, createdAt: record.createdAt, lastUsedAt: record.lastUsedAt, fails: 0, lockUntil: 0 })
+    this.save(f)
+    return { ok: true, id: record.id, name }
+  }
+
+  /** Forgotten PIN of somebody else: the PC 책임자 sets a new one, or none (empty). That person's data stays. */
   resetPin(ownerPin: string, id: string, newPin: string): SeatOutcome {
     const o = this.open()
     if ('fail' in o) return o.fail
@@ -302,15 +413,20 @@ export class SeatRegistry {
     const seat = f.seats.find((s) => s.id === id)
     if (!seat) return { ok: false, error: '사용자를 찾을 수 없습니다.' }
     if (seat.owner) return { ok: false, error: 'PC 책임자의 PIN은 복구 코드로 새로 만듭니다.' }
-    const bad = seatPinProblem(newPin)
+    const bad = newPin === '' ? null : seatPinProblem(newPin)
     if (bad) return { ok: false, error: bad }
     const auth = this.checkOwner(f, ownerPin)
     if (!auth.ok) return auth
-    Object.assign(seat, sealPin(newPin), { fails: 0, lockUntil: 0 })
+    Object.assign(seat, newPin === '' ? NO_PIN : sealPin(newPin), { fails: 0, lockUntil: 0 })
     this.save(f)
     return { ok: true, id }
   }
 
+  /**
+   * A person makes or changes their own PIN. With a PIN: the old one is needed. Without: nothing
+   * is (anybody at the PC could open that seat anyway). The PC 책임자 making a PIN gets a
+   * recovery code for it.
+   */
   changePin(id: string, oldPin: string, newPin: string): SeatOutcome {
     const o = this.open()
     if ('fail' in o) return o.fail
@@ -319,9 +435,32 @@ export class SeatRegistry {
     if (!seat) return { ok: false, error: WRONG_PIN }
     const bad = seatPinProblem(newPin)
     if (bad) return { ok: false, error: bad }
+    const had = seatHasPin(seat)
     const auth = this.check(f, seat, oldPin)
     if (!auth.ok) return auth
     Object.assign(seat, sealPin(newPin), { fails: 0, lockUntil: 0 })
+    let recovery: string | undefined
+    if (seat.owner && (!had || typeof f.recoveryHash !== 'string')) {
+      recovery = newRecoveryCode()
+      const r = sealPin(normRecoveryCode(recovery))
+      Object.assign(f, { recoverySalt: r.salt, recoveryHash: r.hash, recoveryFails: 0, recoveryLockUntil: 0 })
+    }
+    this.save(f)
+    return { ok: true, id, recovery }
+  }
+
+  /** A person stops using a PIN (their current PIN is needed). The PC 책임자's recovery code goes with it. */
+  removePin(id: string, pin: string): SeatOutcome {
+    const o = this.open()
+    if ('fail' in o) return o.fail
+    const { f } = o
+    const seat = f.seats.find((s) => s.id === id)
+    if (!seat) return { ok: false, error: WRONG_PIN }
+    if (!seatHasPin(seat)) return { ok: false, error: '지금 PIN을 쓰고 있지 않습니다.' }
+    const auth = this.check(f, seat, pin)
+    if (!auth.ok) return auth
+    Object.assign(seat, NO_PIN, { fails: 0, lockUntil: 0 })
+    if (seat.owner) Object.assign(f, { recoverySalt: null, recoveryHash: null, recoveryFails: 0, recoveryLockUntil: 0 })
     this.save(f)
     return { ok: true, id }
   }
@@ -333,6 +472,7 @@ export class SeatRegistry {
     const { f } = o
     const owner = f.seats.find((s) => s.owner)
     if (!owner) return { ok: false, error: 'PC 책임자가 없습니다.' }
+    if (!seatHasPin(owner) || typeof f.recoverySalt !== 'string' || typeof f.recoveryHash !== 'string' || !f.recoveryHash) return { ok: false, error: 'PC 책임자가 PIN을 쓰지 않아 복구 코드가 없습니다.' }
     const bad = seatPinProblem(newPin)
     if (bad) return { ok: false, error: bad }
     const t = this.now()
@@ -355,7 +495,7 @@ export class SeatRegistry {
   setIdleMinutes(ownerPin: string, minutes: number): SeatOutcome {
     const o = this.open()
     if ('fail' in o) return o.fail
-    if (!Number.isInteger(minutes) || minutes < SEAT_IDLE_MIN || minutes > SEAT_IDLE_MAX) return { ok: false, error: `자동 잠금 시간은 ${SEAT_IDLE_MIN}~${SEAT_IDLE_MAX}분입니다.` }
+    if (!Number.isInteger(minutes) || minutes < SEAT_IDLE_MIN || minutes > SEAT_IDLE_MAX) return { ok: false, error: `자동 로그아웃 시간은 ${SEAT_IDLE_MIN}~${SEAT_IDLE_MAX}분입니다.` }
     const auth = this.checkOwner(o.f, ownerPin)
     if (!auth.ok) return auth
     o.f.idleMinutes = minutes

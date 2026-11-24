@@ -3,13 +3,13 @@ import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, isSameDay } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { Paperclip, Send, Bell, BellOff, Users, LogOut, Pencil, Loader2, Download, Trash2, Video, MoreHorizontal, TriangleAlert } from 'lucide-react'
+import { Paperclip, Send, Bell, BellOff, Users, LogOut, Pencil, Loader2, Trash2, Video, MoreHorizontal, TriangleAlert } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Textarea } from '@renderer/components/ui/input'
 import { Dialog } from '@renderer/components/Dialog'
 import { PresenceDot } from '@renderer/components/PresenceDot'
 import { AuthImage } from '@renderer/components/AuthImage'
-import { downloadAuthed, formatSize, uploadAttachment } from '@renderer/components/Attachments'
+import { FileChip, uploadAttachment } from '@renderer/components/Attachments'
 import { api, ApiError, errorMessage } from '@renderer/lib/api'
 import { realtime } from '@renderer/lib/realtime'
 import { useMe, useMembers } from '@renderer/lib/queries'
@@ -403,13 +403,7 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
                     {m.kind === 'image' && m.attachments[0] ? (
                       <AuthImage path={`/api/attachments/${m.attachments[0].id}`} alt={m.body} className="max-h-60 cursor-zoom-in rounded-lg border border-border" onClick={() => setViewer(m.attachments[0].id)} />
                     ) : m.kind === 'file' && m.attachments[0] ? (
-                      <button
-                        className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-sm hover:bg-muted"
-                        onClick={() => downloadAuthed(`/api/attachments/${m.attachments[0].id}`, m.attachments[0].name).catch((e) => setErr(errorMessage(e)))}
-                      >
-                        <Download className="size-4 text-primary" /> {m.attachments[0].name}
-                        <span className="text-xs text-muted-foreground">{formatSize(m.attachments[0].size)}</span>
-                      </button>
+                      <FileChip id={m.attachments[0].id} name={m.attachments[0].name} size={m.attachments[0].size} className={compact ? 'w-60' : 'w-80'} />
                     ) : (
                       <div className={cn('rounded-2xl px-3 py-1.5 text-sm whitespace-pre-wrap break-words', mine ? 'rounded-br-sm bg-primary text-primary-foreground' : 'rounded-bl-sm bg-muted')}>{m.body}</div>
                     )}

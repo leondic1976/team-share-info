@@ -1,9 +1,12 @@
-import { app, dialog, BrowserWindow } from 'electron'
-import { copyFileSync, existsSync, rmSync } from 'node:fs'
+import { dialog, BrowserWindow, shell } from 'electron'
+import { existsSync, rmSync } from 'node:fs'
 import { backup } from 'node:sqlite'
 import { z } from 'zod'
 import { handle } from './registry'
-import { closeLocalDb, localDb, openLocalDb } from '../localdb'
+import { localDb } from '../localdb'
+import { backupFolder, backupInfo, backupNow, deleteSnapshot, dismissRestoreNote, restoreFile, restoreSnapshot, setKeep } from '../localbackup'
+import { SNAPSHOT_ID_RE } from '../../node/localbackup'
+import { LOCAL_BACKUP_KEEP_MAX, LOCAL_BACKUP_KEEP_MIN } from '../../shared/constants'
 import { vaultOpen, vaultSeal } from '../vault'
 import type { OutboxItem } from '../../shared/ipc'
 
@@ -44,6 +47,7 @@ export function registerLocalIpc(): void {
     }
   })
 
+  // 파일에서 가져오기: checked, today's data saved as a snapshot, swapped in at the restart (localbackup.ts)
   handle('local:import', null, async (_req, e) => {
     const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
     const opts = {
@@ -54,29 +58,23 @@ export function registerLocalIpc(): void {
     const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
     const src = r.filePaths[0]
     if (r.canceled || !src) return { ok: false }
-    const target = localDb().db.path
-    const safety = `${target}.before-import`
-    try {
-      await backup(localDb().db.raw, safety)
-      closeLocalDb()
-      for (const ext of ['', '-wal', '-shm']) rmSync(target + ext, { force: true })
-      copyFileSync(src, target)
-      openLocalDb(target)
-      app.relaunch()
-      app.exit(0)
-      return { ok: true, path: src }
-    } catch (err) {
-      // restore the previous data if the import failed midway
-      try {
-        closeLocalDb()
-        copyFileSync(safety, target)
-      } catch {
-        // ignore
-      }
-      openLocalDb(target)
-      return { ok: false, error: String(err) }
-    }
+    const res = await restoreFile(src)
+    return res.ok ? { ok: true, path: src } : { ok: false, error: res.error }
   })
+
+  // ---------- 내 자료 백업 · 복구: snapshots in the backups folder ----------
+  // The renderer names a snapshot by its file name only; main finds it inside the backups folder.
+  const snapId = z.string().regex(SNAPSHOT_ID_RE)
+  handle('local:backup.info', null, () => backupInfo())
+  handle('local:backup.now', null, () => backupNow())
+  handle('local:backup.restore', z.object({ id: snapId }), ({ id }) => restoreSnapshot(id))
+  handle('local:backup.delete', z.object({ id: snapId }), ({ id }) => deleteSnapshot(id))
+  handle('local:backup.setKeep', z.object({ keep: z.number().int().min(LOCAL_BACKUP_KEEP_MIN).max(LOCAL_BACKUP_KEEP_MAX) }), ({ keep }) => setKeep(keep))
+  handle('local:backup.openFolder', null, async () => {
+    const dir = backupFolder()
+    if (!process.env.TEAMHUB_E2E) await shell.openPath(dir)
+  })
+  handle('local:backup.dismiss', null, () => dismissRestoreNote())
 
   // ---------- read cache of server data (13.11, M8-3): shown while the server is unreachable ----------
   // Values are sealed with a key kept under Windows DPAPI (vault.ts); without the key nothing is stored.
