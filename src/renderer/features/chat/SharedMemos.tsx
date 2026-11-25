@@ -17,6 +17,7 @@ import { useSpace } from '@renderer/app/space-store'
 import { cn } from '@renderer/lib/utils'
 import { confirmPii } from '@renderer/lib/pii'
 import { ColorPicker } from '@renderer/features/memos/ColorPicker'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 /** Shared memo board (6.12 ①): short messages to the team, a group or people. */
 export function SharedMemosView(): React.JSX.Element {
@@ -57,7 +58,10 @@ export function SharedMemosView(): React.JSX.Element {
             <div key={m.id} className={cn('flex flex-col rounded-md p-3 text-sm text-slate-900 shadow-sm', m.checkedAt && 'opacity-60')} style={{ background: MEMO_COLORS[m.color] }} data-testid="shared-memo">
               <p className="selectable flex-1 whitespace-pre-wrap break-words">{m.body}</p>
               <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-600">
-                <span className="font-semibold">{m.authorName}</span>
+                <span>
+                  <span className="font-semibold">{m.authorName}</span>
+                  <RoleMark memberId={m.authorId} />
+                </span>
                 <span>{format(m.createdAt, 'M/d HH:mm')}</span>
                 <span className="ml-auto">
                   <ScopeTags scope={m.scope} />

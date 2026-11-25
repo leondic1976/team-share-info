@@ -13,6 +13,7 @@ import { registerLocalIpc } from './ipc/local'
 import { registerLedgerIpc } from './ipc/ledger'
 import { autoStartServer, registerConnectionIpc } from './ipc/connection'
 import { registerNotifyIpc } from './ipc/notify'
+import { registerCommandIpc } from './ipc/command'
 import { registerPersonalIpc } from './ipc/personal'
 import { startScheduler, stopScheduler } from './scheduler'
 import { registerTransferIpc } from './ipc/transfer'
@@ -85,6 +86,7 @@ if (!app.requestSingleInstanceLock()) {
     registerLedgerIpc()
     registerConnectionIpc()
     registerNotifyIpc()
+    registerCommandIpc()
     registerPersonalIpc()
     registerTransferIpc()
     registerAttachIpc()

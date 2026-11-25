@@ -12,6 +12,7 @@ import { useConn } from '@renderer/app/conn-store'
 import { ConversationView } from './ConversationView'
 import { useChatDock, type DockPanel } from './dock-store'
 import { convTitle } from './title'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 const PANEL_W = 340
 const PANEL_H = 460
@@ -170,6 +171,7 @@ export function ChatDock(): React.JSX.Element {
                   <button type="button" className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 py-1.5 pl-2.5 text-left text-sm font-semibold hover:bg-muted" title={`${i.title} · 눌러서 펼치기`} onClick={() => setMinimized(p.id, false)} data-testid="chat-tab">
                     {other && <PresenceDot presence={other.presence} />}
                     <span className="truncate">{i.title}</span>
+                    {other && <RoleMark role={other.role} isOwner={other.isOwner} className="ml-0" />}
                     {i.unread > 0 && (
                       <span className="ml-auto shrink-0 rounded-full bg-urgent px-1.5 text-[0.7rem] font-bold text-white" data-testid="chat-tab-unread">
                         {i.unread}

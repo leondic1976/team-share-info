@@ -438,8 +438,8 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
 
   app.get('/api/messages/search', auth, async (req) => {
     const { q } = parse(z.object({ q: z.string().trim().min(1).max(100) }), req.query)
-    const rows = db.all<{ id: string; conversation_id: string; seq: number; body: string; created_at: number; sender_name: string | null }>(
-      `SELECT x.id, x.conversation_id, x.seq, x.body, x.created_at, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS sender_name FROM messages x LEFT JOIN members m ON m.id = x.sender_id
+    const rows = db.all<{ id: string; conversation_id: string; seq: number; body: string; created_at: number; sender_id: string | null; sender_name: string | null }>(
+      `SELECT x.id, x.conversation_id, x.seq, x.body, x.created_at, x.sender_id, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS sender_name FROM messages x LEFT JOIN members m ON m.id = x.sender_id
        WHERE x.deleted_at IS NULL AND x.kind != 'system' AND x.body LIKE ? ORDER BY x.created_at DESC LIMIT 300`,
       [`%${q}%`]
     )
@@ -450,10 +450,10 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
         const c = db.get<ConvRow>('SELECT * FROM conversations WHERE id = ?', [r.conversation_id])
         allowed.set(r.conversation_id, !!c && isConversationMember(db, c, req.member.id))
       }
-      if (allowed.get(r.conversation_id)) out.push({ ...r, conversationId: r.conversation_id, senderName: r.sender_name, createdAt: r.created_at })
+      if (allowed.get(r.conversation_id)) out.push({ ...r, conversationId: r.conversation_id, senderId: r.sender_id, senderName: r.sender_name, createdAt: r.created_at })
       if (out.length >= 100) break
     }
-    return ok(out.map((r) => ({ id: r.id, conversationId: r.conversationId, seq: r.seq, body: r.body, senderName: r.senderName, createdAt: r.createdAt })))
+    return ok(out.map((r) => ({ id: r.id, conversationId: r.conversationId, seq: r.seq, body: r.body, senderId: r.senderId, senderName: r.senderName, createdAt: r.createdAt })))
   })
 
   // ---- 쪽지 (notes): one-way messages that wait in the inbox (6.7) ----

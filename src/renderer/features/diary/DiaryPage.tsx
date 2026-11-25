@@ -22,6 +22,7 @@ import type { ScopeInput } from '@shared/schemas/scope'
 import { displayName } from '@shared/schemas/auth'
 import { cn } from '@renderer/lib/utils'
 import { WeeklyReview } from './WeeklyReview'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 function MonthPicker({ date, onPick, marked }: { date: string; onPick: (d: string) => void; marked: Set<string> }): React.JSX.Element {
   const [month, setMonth] = useState(() => startOfMonth(parseYmd(date)))
@@ -360,6 +361,7 @@ function WorklogTab(): React.JSX.Element {
                 <CardHeader>
                   <CardTitle>
                     {format(parseYmd(w.date), 'M/d (EEE)', { locale: ko })} · {w.memberName}
+                    <RoleMark memberId={w.memberId} />
                   </CardTitle>
                   <ScopeTags scope={w.scope} />
                 </CardHeader>

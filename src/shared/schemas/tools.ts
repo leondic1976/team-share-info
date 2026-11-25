@@ -153,7 +153,11 @@ export const sendAlarmSchema = z.object({
 })
 export interface SentAlarmDto {
   id: string
+  /** Absent from servers older than the 서무 mark. */
+  fromId?: string
   fromName: string
+  /** Absent from servers older than the 서무 mark. */
+  toId?: string
   toName: string
   fireAt: number
   title: string

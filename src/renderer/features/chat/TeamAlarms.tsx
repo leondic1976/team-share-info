@@ -13,6 +13,7 @@ import { fromInputValue, toInputValue } from '@renderer/lib/dates'
 import { useConn } from '@renderer/app/conn-store'
 import { confirmPii } from '@renderer/lib/pii'
 import { DateTimeInput } from '@renderer/components/DateTimeInput'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 /** Alarms sent to other members: they ring on the receiver's PC at the chosen time (6.12 ②). */
 export function TeamAlarmsView(): React.JSX.Element {
@@ -85,7 +86,10 @@ export function TeamAlarmsView(): React.JSX.Element {
             {sent.data?.map((a) => (
               <div key={a.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted">
                 <span className="w-20 shrink-0 text-xs text-muted-foreground">{format(a.fireAt, 'M/d HH:mm')}</span>
-                <span className="shrink-0 font-medium">{a.toName}</span>
+                <span className="shrink-0 font-medium">
+                  {a.toName}
+                  <RoleMark memberId={a.toId} />
+                </span>
                 <span className="truncate">{a.title}</span>
                 <span className="ml-auto shrink-0 text-xs text-muted-foreground">{state(a)}</span>
                 {!a.deliveredAt && (
@@ -108,7 +112,10 @@ export function TeamAlarmsView(): React.JSX.Element {
             {received.data?.map((a) => (
               <div key={a.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm">
                 <span className="w-20 shrink-0 text-xs text-muted-foreground">{format(a.fireAt, 'M/d HH:mm')}</span>
-                <span className="shrink-0 font-medium">{a.fromName}</span>
+                <span className="shrink-0 font-medium">
+                  {a.fromName}
+                  <RoleMark memberId={a.fromId} />
+                </span>
                 <span className="truncate">{a.title}</span>
                 <span className="ml-auto shrink-0 text-xs text-muted-foreground">{a.dismissedAt ? '확인함' : a.fireAt > Date.now() ? '예정' : ''}</span>
               </div>

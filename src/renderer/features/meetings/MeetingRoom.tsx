@@ -11,6 +11,7 @@ import { realtime } from '@renderer/lib/realtime'
 import { useConn } from '@renderer/app/conn-store'
 import { cn } from '@renderer/lib/utils'
 import { Room, type PeerView } from './rtc'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 function VideoEl({ stream, muted, className, testId }: { stream: MediaStream | null; muted?: boolean; className?: string; testId?: string }): React.JSX.Element {
   const ref = useRef<HTMLVideoElement>(null)
@@ -20,7 +21,7 @@ function VideoEl({ stream, muted, className, testId }: { stream: MediaStream | n
   return <video ref={ref} autoPlay playsInline muted={muted} className={className} data-testid={testId} />
 }
 
-function Tile({ name, stream, cam, mic, hand, level, local, conn }: { name: string; stream: MediaStream | null; cam: boolean; mic: boolean; hand: boolean; level: number; local?: boolean; conn?: string }): React.JSX.Element {
+function Tile({ memberId, name, stream, cam, mic, hand, level, local, conn }: { memberId?: string | null; name: string; stream: MediaStream | null; cam: boolean; mic: boolean; hand: boolean; level: number; local?: boolean; conn?: string }): React.JSX.Element {
   const speaking = mic && level > 0.08
   return (
     <div className={cn('relative flex aspect-video min-h-0 items-center justify-center overflow-hidden rounded-lg bg-slate-800 ring-2', speaking ? 'ring-green-400' : 'ring-transparent')} data-testid={local ? 'tile-me' : 'tile-peer'} data-name={name}>
@@ -29,6 +30,7 @@ function Tile({ name, stream, cam, mic, hand, level, local, conn }: { name: stri
       {!local && stream && !cam && <VideoEl stream={stream} className="hidden" />}
       <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">
         {mic ? <Mic className="size-3" /> : <MicOff className="size-3 text-red-400" />} {name}
+        <RoleMark memberId={memberId} className="ml-0 bg-white/20 text-white" />
         {local && ' (나)'}
       </div>
       {hand && <div className="absolute right-1.5 top-1.5 rounded bg-amber-400 px-1.5 py-0.5 text-xs font-semibold text-slate-900"><Hand className="mr-0.5 inline size-3.5 align-[-0.15em]" aria-hidden />손들기</div>}
@@ -282,9 +284,9 @@ export function MeetingRoom({ id }: { id: string }): React.JSX.Element {
 
   const tiles = (
     <>
-      <Tile name={names[me] ?? '나'} stream={r.local} cam={r.cam} mic={r.mic} hand={r.hand} level={r.localLevel} local />
+      <Tile memberId={me} name={names[me] ?? '나'} stream={r.local} cam={r.cam} mic={r.mic} hand={r.hand} level={r.localLevel} local />
       {views.map((v: PeerView) => (
-        <Tile key={v.id} name={names[v.id] ?? '참가자'} stream={v.camera} cam={v.state.cam} mic={v.state.mic} hand={v.state.hand} level={v.level} conn={v.connection} />
+        <Tile key={v.id} memberId={v.id} name={names[v.id] ?? '참가자'} stream={v.camera} cam={v.state.cam} mic={v.state.mic} hand={v.state.hand} level={v.level} conn={v.connection} />
       ))}
     </>
   )
@@ -333,6 +335,7 @@ export function MeetingRoom({ id }: { id: string }): React.JSX.Element {
                     <div key={p.memberId} className="flex items-center gap-2">
                       <span className="flex-1 truncate">
                         {p.name}
+                        <RoleMark memberId={p.memberId} className="bg-white/20 text-white" />
                         {p.memberId === meeting.hostId && ' · 연 사람'}
                       </span>
                       {(p.memberId === me ? r.hand : v?.state.hand) && <Hand className="size-3.5 text-amber-400" aria-label="손들기" />}

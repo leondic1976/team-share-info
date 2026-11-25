@@ -73,6 +73,38 @@ export interface InstalledPlugin {
 }
 
 // ---------- shared rooms (server) ----------
+/** What a PC reports of its installed extensions (지시 92). */
+export const pluginInventorySchema = z.object({
+  plugins: z
+    .array(z.object({ id: z.string().regex(PLUGIN_ID_RE), version: z.string().max(20).default(''), enabled: z.boolean().default(true) }))
+    .max(200)
+})
+/** A PC counts as using an extension when it was opened there in this many days. */
+export const PLUGIN_USE_DAYS = 30
+
+export interface PluginInstallPerson {
+  memberId: string
+  name: string
+  pcName: string
+  enabled: boolean
+  lastUsedAt: number | null
+  /** opened in the last PLUGIN_USE_DAYS days */
+  using: boolean
+  me: boolean
+}
+export interface PluginInstallStats {
+  /** PCs that have it installed */
+  installed: number
+  /** of those, PCs that opened it in the last PLUGIN_USE_DAYS days */
+  used: number
+  people: PluginInstallPerson[]
+}
+export interface PluginInstallsDto {
+  /** PCs that have any extension installed, and that used any lately */
+  totals: { installed: number; used: number; pcs: number }
+  plugins: Record<string, PluginInstallStats>
+}
+
 export const pluginRoomInputSchema = z.object({
   title: z.string().trim().min(1).max(100),
   scope: scopeSchema,

@@ -9,6 +9,7 @@ import { displayName } from '@shared/schemas/auth'
 import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { useMe } from '@renderer/lib/queries'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 /**
  * Departments used to be managed here. They now live in one place, 설정 → 조직 관리, which
@@ -103,7 +104,8 @@ export function MemberOrderCard(): React.JSX.Element {
                     <li key={m.id} className="flex items-center gap-2 px-3 py-1" data-testid={`order-row-${m.name}`}>
                       <span className="w-6 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
                       <span className="min-w-0 flex-1 truncate">
-                        {displayName(m)} <span className="text-xs text-muted-foreground">{m.title}</span>
+                        {displayName(m)}
+                        <RoleMark role={m.role} isOwner={m.isOwner} /> <span className="text-xs text-muted-foreground">{m.title}</span>
                       </span>
                       <Button size="icon-sm" variant="ghost" aria-label={`${m.name} 위로`} disabled={i === 0 || save.isPending} onClick={() => move(r.id, list, i, -1)}>
                         <ArrowUp />

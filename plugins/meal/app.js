@@ -27,6 +27,9 @@
   let busy = false
   let holidays = [] // [{ date, name }] from TeamHub (관리 → 공휴일)
   const proxySel = { lunch: '', dinner: '' } // who is picked in "대신 신청"
+  let statsView = 'summary' // 통계: summary | daily | person | dept
+  let mineMonth = '' // 내 기록: the month shown
+  const saved = {} // 통계: month -> snapshot kept on this PC (undefined: not read yet)
 
   const now = () => Date.now() + offset
   let effOf = null
@@ -43,6 +46,8 @@
   const canProxy = () => M.canProxy(room, me.id)
   const canManage = () => M.canManage(room, me.id)
   const isOwner = () => !!room && room.createdBy === me.id
+  /** 통계: those in charge (the admin who made the settings, the 식수서무) and the server PC (지시 90). */
+  const canStats = () => canManage() || !!me.isOwner
   const mine = () => (room && room.entries && room.entries[me.id] ? room.entries[me.id].value : null)
   const pad = (n) => String(n).padStart(2, '0')
   const hm = (ms) => {
@@ -111,18 +116,29 @@
     // the newest of my own request and one somebody made for me
     const rec = M.recordOf(room, members, me.id, date, meal)
     const on = !!(rec && rec.on)
+    const firm = !!(rec && rec.firm)
     const at = rec ? rec.at : 0
     const who = rec && rec.by ? ` · ${esc(rec.byName)} 대신` : ''
     const count = M.dayList(room, date, meal, members).length
     const cut = M.cutoffAt(c, date, meal)
     const open = st === 'open'
     const text = M.menuOf(eff().menus, date, meal)
-    return `<div class="tile ${on ? 'on' : ''} ${open ? '' : 'locked'}" data-tile="${date}:${meal}">
+    const btn = (act, label, cls, title) => `<button class="th-btn th-btn-sm ${cls}" data-act="${act}" data-date="${date}" data-meal="${meal}" ${title ? `title="${title}"` : ''} ${busy ? 'disabled' : ''}>${label}</button>`
+    // 확실히 신청안함: my own certain "no"; while it stands nobody else can request or cancel this meal for me
+    const state = firm
+      ? `${badge('urgent', `${icon('lock')} 확실히 신청안함`)}<span class="th-xs th-muted th-nums">${hm(at)} 본인 표시</span><span class="th-xs th-muted">대신 신청 불가</span>`
+      : `${on ? badge('success', `${icon('circle-check')} 신청함`) : badge('muted', open ? '신청 안 함' : '신청하지 않음')}${at ? `<span class="th-xs th-muted th-nums">${hm(at)} ${on ? '신청' : '취소'}${who}</span>` : ''}`
+    const acts = !open
+      ? badge('muted', '마감')
+      : firm
+        ? `${btn('unfirm', '표시 풀기', 'th-btn-outline', '확실히 신청안함을 풉니다. 그 뒤에는 신청할 수 있고, 다른 사람도 대신 신청할 수 있습니다.')}${btn('apply', '신청', '')}`
+        : `${btn('firm', '확실히 신청안함', 'th-btn-ghost', '이 식사는 먹지 않습니다. 표시해 두면 다른 사람이 대신 신청하거나 취소할 수 없고, 본인만 풀 수 있습니다.')}${btn(on ? 'cancel' : 'apply', on ? '취소' : at ? '다시 신청' : '신청', on ? 'th-btn-outline cancel' : '')}`
+    return `<div class="tile ${on ? 'on' : ''} ${firm ? 'firm' : ''} ${open ? '' : 'locked'}" data-tile="${date}:${meal}">
       <div class="meal"><b>${M.MEALS[meal]}</b><span class="count th-xs th-muted th-nums">${count}명 신청</span></div>
       <div class="menu">${text ? esc(text.split('\n').join(', ')) : noMenu()}</div>
-      <div class="state">${on ? badge('success', `${icon('circle-check')} 신청함`) : badge('muted', open ? '신청 안 함' : '신청하지 않음')}${at ? `<span class="th-xs th-muted th-nums">${hm(at)} ${on ? '신청' : '취소'}${who}</span>` : ''}</div>
+      <div class="state">${state}</div>
       <div class="deadline th-xs th-nums ${open ? '' : 'over'}">${open ? `${c.meals[meal].cutoff} 마감 · ${M.remaining(cut - now())}` : `${c.meals[meal].cutoff} 마감됨`}</div>
-      <div class="act">${open ? `<button class="th-btn th-btn-sm ${on ? 'th-btn-outline cancel' : ''}" data-act="${on ? 'cancel' : 'apply'}" data-date="${date}" data-meal="${meal}" ${busy ? 'disabled' : ''}>${on ? '취소' : at ? '다시 신청' : '신청'}</button>` : badge('muted', '마감')}</div>
+      <div class="act">${acts}</div>
     </div>`
   }
   function summaryCard(c, today) {
@@ -185,25 +201,30 @@
       <div class="cols">
         <div class="stack tight">
           ${list.length ? list.map((x) => x.html).join('') : `<section class="th-card">${empty('utensils', '신청을 받는 날이 없습니다', '관리자와 식수서무가 설정에서 받는 식사와 요일을 정합니다.')}</section>`}
-          <p class="th-hint">마감 시각 전에는 신청·취소·다시 신청을 마음대로 할 수 있습니다. 마감 뒤에는 바꿀 수 없습니다.</p>
+          <p class="th-hint">마감 시각 전에는 신청·취소·다시 신청을 마음대로 할 수 있습니다. 마감 뒤에는 바꿀 수 없습니다. 먹지 않을 식사에 [확실히 신청안함]을 눌러 두면 다른 사람이 대신 신청·취소할 수 없고, 본인만 [표시 풀기]로 풉니다.</p>
         </div>
         <aside class="stack tight">${todayMenuCard(c, today)}${mineCard(c, days)}</aside>
       </div>
     </div>`
   }
-  /** target = { id, name }: request or cancel for that member (anybody may). */
-  async function change(date, meal, on, target) {
+  /**
+   * target = { id, name }: request or cancel for that member (anybody may, except for a meal they
+   * marked 확실히 신청안함). firm (my own, with on = false): mark the meal 확실히 신청안함.
+   */
+  async function change(date, meal, on, target, firm) {
     if (busy) return
     busy = true
     try {
       await syncClock()
       // read the newest state first: the settings may have changed and my entry is replaced as a whole
       room = await call('rooms.get', { roomId: room.id })
-      const r = !target ? M.apply(mine(), config(), date, meal, on, now()) : canProxy() ? M.applyFor(mine(), config(), target, date, meal, on, now()) : { error: '대신 신청할 권한이 없습니다.' }
+      const was = !target && M.isFirm(room, me.id, date, meal)
+      const r = !target ? M.apply(mine(), config(), date, meal, on, now(), firm) : canProxy() ? M.applyFor(mine(), config(), target, date, meal, on, now(), room) : { error: '대신 신청할 권한이 없습니다.' }
       if (r.error) toast(r.error)
       else {
         room = await call('rooms.setEntry', { roomId: room.id, value: r.entry })
-        toast(`${target ? `${target.name} 님의 ` : ''}${M.dateLabel(date, M.ymd(now()))} ${M.MEALS[meal]}을 ${on ? '신청했습니다' : '취소했습니다'}.`)
+        const what = `${target ? `${target.name} 님의 ` : ''}${M.dateLabel(date, M.ymd(now()))} ${M.MEALS[meal]}을`
+        toast(firm ? `${what} 확실히 신청안함으로 정했습니다. 다른 사람은 대신 신청할 수 없습니다.` : was && !on ? `${what} 확실히 신청안함에서 풀었습니다.` : `${what} ${on ? '신청했습니다' : '취소했습니다'}.`)
       }
     } catch (e) {
       toast(e.message || '저장하지 못했습니다.')
@@ -347,6 +368,7 @@
     if (!statusDate) statusDate = today
     const meals = M.menuMeals(c)
     const lists = Object.fromEntries(meals.map((k) => [k, M.dayList(room, statusDate, k, members)]))
+    const declined = Object.fromEntries(meals.map((k) => [k, M.declinedList(room, statusDate, k, members)]))
     const blocks = meals
       .map((k) => {
         const list = lists[k]
@@ -359,12 +381,15 @@
           : []
         const state = st === 'open' ? badge('important', `신청 받는 중 · ${c.meals[k].cutoff} 마감`) : st === 'closed' ? badge('success', '마감 · 확정') : badge('muted', M.holidayName(c, statusDate) ? `공휴일(${esc(M.holidayName(c, statusDate))})` : '받지 않는 날')
         const text = M.menuOf(eff().menus, statusDate, k)
+        const no = declined[k]
+        const firmIds = new Set(no.map((p) => p.id))
         const depts = new Map()
         for (const p of list) depts.set(p.deptName || '부서 미지정', [...(depts.get(p.deptName || '부서 미지정') || []), p])
         return `<section class="th-card" data-status="${k}"><div class="th-card-header" style="align-items:center"><h2 class="th-card-title">${M.MEALS[k]}</h2><span><b class="big primary total">${list.length}</b>명${manualNote(list)}</span>${state}${text ? `<span class="th-xs th-muted">${esc(text.split('\n').join(', '))}</span>` : ''}</div>
           <div class="rows">
           ${list.length ? [...depts].map(([d, ps]) => `<div class="dept"><span class="dept-name th-xs th-muted">${esc(d)} <b class="th-nums">${ps.length}</b></span><div class="who">${ps.map((p) => `<span data-who="${esc(p.id)}" title="${hm(p.at)} ${p.by ? `${esc(p.byName)} 님이 대신 신청` : '신청'}">${esc(p.name)}${manualMark(p)}${p.by ? ' <small>대신</small>' : ''}${proxy && p.id !== me.id ? `<button class="x" data-unproxy="${esc(p.id)}" data-meal="${k}" aria-label="${esc(p.name)} 신청 대신 취소" title="대신 취소" ${busy ? 'disabled' : ''}>${icon('x') || '취소'}</button>` : ''}</span>`).join('')}</div></div>`).join('') : '<p class="line th-xs th-muted">신청한 사람이 없습니다.</p>'}
-          ${proxy ? `<div class="proxy"><label for="proxy-${k}" class="th-xs th-muted">대신 신청</label><select class="th-input" id="proxy-${k}" data-proxy-sel="${k}"><option value="">사람 고르기</option>${rest.map((m) => `<option value="${esc(m.id)}" ${proxySel[k] === m.id ? 'selected' : ''}>${esc(`${m.deptName ? `${m.deptName} · ` : ''}${m.name}${m.manual ? ' (미등록)' : ''}`)}</option>`).join('')}</select><button class="th-btn th-btn-outline th-btn-sm" data-proxy="${k}" ${busy ? 'disabled' : ''}>대신 신청</button></div>` : ''}
+          ${no.length ? `<div class="dept declined" data-declined="${k}"><span class="dept-name th-xs th-muted">확실히 신청안함 <b class="th-nums">${no.length}</b></span><div class="who">${no.map((p) => `<span data-firm="${esc(p.id)}" title="${hm(p.at)} 본인이 확실히 신청안함으로 정함 · 다른 사람은 대신 신청·취소할 수 없음">${icon('lock')}${esc(p.name)}</span>`).join('')}</div></div>` : ''}
+          ${proxy ? `<div class="proxy"><label for="proxy-${k}" class="th-xs th-muted">대신 신청</label><select class="th-input" id="proxy-${k}" data-proxy-sel="${k}"><option value="">사람 고르기</option>${rest.map((m) => (firmIds.has(m.id) ? `<option value="${esc(m.id)}" disabled>${esc(`${m.deptName ? `${m.deptName} · ` : ''}${m.name} (본인이 확실히 신청안함 · 대신 신청 불가)`)}</option>` : `<option value="${esc(m.id)}" ${proxySel[k] === m.id ? 'selected' : ''}>${esc(`${m.deptName ? `${m.deptName} · ` : ''}${m.name}${m.manual ? ' (미등록)' : ''}`)}</option>`)).join('')}</select><button class="th-btn th-btn-outline th-btn-sm" data-proxy="${k}" ${busy ? 'disabled' : ''}>대신 신청</button></div>` : ''}
           </div>
         </section>`
       })
@@ -376,21 +401,134 @@
     </div>`
   }
 
-  // ---------- 집계 ----------
+  // ---------- 통계 (those in charge and the server PC, 지시 90) ----------
+  const pctOf = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '-')
+  const mealCols = () => M.menuMeals(config())
+  /**
+   * The numbers of a month: worked out from the requests kept now, or the copy this PC saved
+   * when the month was over (requests are kept 100 days, those made for others 62).
+   */
+  function statsOf(m) {
+    const live = M.statsSnapshot(room, m, members, now())
+    const best = M.betterOf(live, saved[m])
+    // a finished month is saved on this PC so it can still be counted later
+    if (m < M.ymd(now()).slice(0, 7) && live.summary.total > 0 && (!saved[m] || live.summary.total >= saved[m].summary.total) && live !== saved[m]) {
+      saved[m] = live
+      void call('storage.set', { key: `stats:${m}`, value: live }).catch(() => undefined)
+    }
+    return { snap: best, fromSaved: best !== live }
+  }
+  /** Reads the copy saved on this PC once per month, then draws again. */
+  function loadSaved(m) {
+    if (m in saved) return
+    saved[m] = null
+    void call('storage.get', { key: `stats:${m}` })
+      .then((v) => {
+        if (v && v.v === 1) {
+          saved[m] = v
+          if (tab === 'month' && month === m) render()
+        }
+      })
+      .catch(() => undefined)
+  }
+  const kpi = (label, value, sub) => `<div class="kpi"><span class="th-xs th-muted">${label}</span><b class="big th-nums">${value}</b>${sub ? `<span class="th-xs th-muted">${sub}</span>` : ''}</div>`
   function renderMonth() {
     if (!month) month = M.ymd(now()).slice(0, 7)
-    const t = M.monthTally(room, month, members, now(), false)
-    const [y, m] = month.split('-').map(Number)
-    return `<div class="stack"><section class="th-card">
-      <div class="th-card-header"><h2 class="th-card-title">${y}년 ${m}월 집계</h2><span>점심 <b class="big">${t.lunch}</b>회</span><span>저녁 <b class="big">${t.dinner}</b>회</span><span class="push th-xs th-muted">마감이 지나 확정된 신청만 셉니다 · 신청 기록은 ${M.LIMITS.keepDays}일 동안 보관</span></div>
-      ${
-        t.rows.length
-          ? `<div class="th-table-wrap"><table class="th-table tally"><thead><tr><th>부서</th><th>이름</th><th class="th-num">점심</th><th class="th-num">저녁</th><th class="th-num">합계</th></tr></thead><tbody>
-            ${t.rows.map((r) => `<tr><td class="th-muted">${esc(r.deptName)}</td><td data-tally="${esc(r.id)}">${esc(r.name)}${manualMark(r)}${r.manual && r.gone ? ` ${badge('muted', '삭제됨')}` : ''}</td><td class="th-num">${r.lunch}</td><td class="th-num">${r.dinner}</td><td class="th-num"><b>${r.lunch + r.dinner}</b></td></tr>`).join('')}
-            </tbody><tfoot><tr><td></td><td>합계</td><td class="th-num">${t.lunch}</td><td class="th-num">${t.dinner}</td><td class="th-num">${t.lunch + t.dinner}</td></tr></tfoot></table></div>`
-          : empty('receipt', '이 달에 확정된 신청이 없습니다', '마감이 지난 신청이 여기에 사람별로 모입니다.')
-      }
-    </section></div>`
+    loadSaved(month)
+    const { snap, fromSaved } = statsOf(month)
+    const sm = snap.summary
+    const [y, mo] = month.split('-').map(Number)
+    const meals = mealCols()
+    const note = `<p class="th-hint">마감이 지난 신청만 셉니다(확정). ${fromSaved ? `<b>이 PC에 보관한 집계</b>(${stamp(snap.savedAt)} 기준)를 보여 줍니다 — 신청 기록은 ${M.LIMITS.keepDays}일(대신 신청은 ${M.LIMITS.proxyKeepDays}일)만 남기 때문에, 지난달 집계는 담당자 PC에 자동으로 보관됩니다.` : `신청 기록은 ${M.LIMITS.keepDays}일(대신 신청은 ${M.LIMITS.proxyKeepDays}일) 남고, 지난달 집계는 이 화면을 연 담당자 PC에 자동으로 보관됩니다.`}</p>`
+    if (!sm.total && !sm.pending.lunch && !sm.pending.dinner)
+      return `<div class="stack"><section class="th-card">${empty('chart-column', `${y}년 ${mo}월에는 신청이 없습니다`, '마감이 지난 신청이 여기에 모입니다.')}</section>${note}</div>`
+    let body
+    if (statsView === 'summary') {
+      const peak = sm.peak ? `${M.dateLabel(sm.peak.date, '')} ${M.MEALS[sm.peak.meal]} ${sm.peak.count}명` : '-'
+      body = `<section class="th-card" data-stats="summary"><div class="th-card-header"><h2 class="th-card-title">${y}년 ${mo}월 통합</h2></div>
+        <div class="th-card-body"><div class="kpis">
+          ${meals.includes('lunch') ? kpi('점심', `${sm.lunch}회`, `하루 평균 ${sm.avgLunch}명`) : ''}
+          ${meals.includes('dinner') ? kpi('저녁', `${sm.dinner}회`, `하루 평균 ${sm.avgDinner}명`) : ''}
+          ${kpi('합계', `${sm.total}회`, `받은 날 ${sm.days}일`)}
+          ${kpi('먹은 사람', `${sm.people}명`, sm.manualPeople ? `미등록 ${sm.manualPeople}명 포함` : '')}
+          ${kpi('대신 신청', pctOf(sm.proxied, sm.total), `${sm.proxied}회`)}
+          ${kpi('가장 많은 때', peak, '')}
+          ${sm.declined && sm.declined.lunch + sm.declined.dinner ? kpi('확실히 신청안함', `${sm.declined.lunch + sm.declined.dinner}회`, '본인이 먹지 않는다고 정한 식사(미신청과 따로 셈)') : ''}
+          ${sm.pending.lunch + sm.pending.dinner ? kpi('신청 받는 중', `${sm.pending.lunch + sm.pending.dinner}회`, '아직 마감 전(확정에 들어가지 않음)') : ''}
+        </div></div></section>
+        <section class="th-card"><div class="th-card-header"><h2 class="th-card-title">부서별</h2></div>${deptTable(snap)}</section>`
+    } else if (statsView === 'daily') {
+      const rows = snap.daily.filter((d) => d.served || d.why)
+      body = `<section class="th-card" data-stats="daily"><div class="th-card-header"><h2 class="th-card-title">${y}년 ${mo}월 일별</h2></div>
+        <div class="th-table-wrap"><table class="th-table"><thead><tr><th>날짜</th>${meals.map((k) => `<th class="th-num">${M.MEALS[k]}</th>`).join('')}<th class="th-num">합계</th><th>비고</th></tr></thead><tbody>
+        ${rows
+          .map((d) => {
+            const today = M.ymd(now())
+            const open = !fromSaved && d.served && meals.some((k) => M.stateOf(config(), d.date, k, now()) === 'open')
+            return `<tr data-day-row="${d.date}" class="${d.date === today ? 'today' : ''}"><td class="th-nums">${M.dateLabel(d.date, today)}</td>${meals.map((k) => `<td class="th-num">${d.served ? d[k] || 0 : ''}</td>`).join('')}<td class="th-num"><b>${d.served ? meals.reduce((s, k) => s + (d[k] || 0), 0) : ''}</b></td><td class="th-xs th-muted">${d.served ? (open ? badge('important', '신청 받는 중') : '') : d.why ? `공휴일(${esc(d.why)})` : ''}</td></tr>`
+          })
+          .join('')}
+        </tbody><tfoot><tr><td>합계(확정)</td>${meals.map((k) => `<td class="th-num">${sm[k]}</td>`).join('')}<td class="th-num">${sm.total}</td><td></td></tr></tfoot></table></div></section>`
+    } else if (statsView === 'dept') {
+      body = `<section class="th-card" data-stats="dept"><div class="th-card-header"><h2 class="th-card-title">${y}년 ${mo}월 부서별</h2></div>${deptTable(snap)}</section>`
+    } else {
+      body = `<section class="th-card" data-stats="person"><div class="th-card-header"><h2 class="th-card-title">${y}년 ${mo}월 개인별</h2><span class="th-xs th-muted">${sm.people}명</span></div>
+        ${
+          snap.rows.length
+            ? `<div class="th-table-wrap"><table class="th-table tally"><thead><tr><th>부서</th><th>이름</th><th class="th-num">점심</th><th class="th-num">저녁</th><th class="th-num">합계</th></tr></thead><tbody>
+            ${snap.rows.map((r) => `<tr><td class="th-muted">${esc(r.deptName)}</td><td data-tally="${esc(r.id)}">${esc(r.name)}${manualMark(r)}</td><td class="th-num">${r.lunch}</td><td class="th-num">${r.dinner}</td><td class="th-num"><b>${r.lunch + r.dinner}</b></td></tr>`).join('')}
+            </tbody><tfoot><tr><td></td><td>합계</td><td class="th-num">${sm.lunch}</td><td class="th-num">${sm.dinner}</td><td class="th-num">${sm.total}</td></tr></tfoot></table></div>`
+            : empty('receipt', '이 달에 확정된 신청이 없습니다', '마감이 지난 신청이 여기에 사람별로 모입니다.')
+        }</section>`
+    }
+    return `<div class="stack">${body}${note}</div>`
+  }
+  function deptTable(snap) {
+    if (!snap.depts.length) return `<div class="th-card-body"><p class="th-hint">확정된 신청이 없습니다.</p></div>`
+    return `<div class="th-table-wrap"><table class="th-table"><thead><tr><th>부서</th><th class="th-num">인원</th><th class="th-num">점심</th><th class="th-num">저녁</th><th class="th-num">합계</th><th class="th-num">비율</th></tr></thead><tbody>
+      ${snap.depts.map((d) => `<tr data-dept-row="${esc(d.dept)}"><td>${esc(d.dept)}</td><td class="th-num">${d.people}</td><td class="th-num">${d.lunch}</td><td class="th-num">${d.dinner}</td><td class="th-num"><b>${d.lunch + d.dinner}</b></td><td class="th-num th-muted">${pctOf(d.lunch + d.dinner, snap.summary.total)}</td></tr>`).join('')}
+      </tbody><tfoot><tr><td>합계</td><td class="th-num">${snap.summary.people}</td><td class="th-num">${snap.summary.lunch}</td><td class="th-num">${snap.summary.dinner}</td><td class="th-num">${snap.summary.total}</td><td></td></tr></tfoot></table></div>`
+  }
+
+  // ---------- 내 기록 (everybody, 지시 91) ----------
+  function renderMine() {
+    if (!mineMonth) mineMonth = M.ymd(now()).slice(0, 7)
+    const today = M.ymd(now())
+    const meals = mealCols()
+    const pm = M.personMonth(room, members, me.id, mineMonth, now())
+    const [y, mo] = mineMonth.split('-').map(Number)
+    const cell = (r, closed) => {
+      if (!r) return `<span class="th-xs th-muted">${closed ? '-' : ''}</span>`
+      const who = r.by ? `${esc(r.byName)} 대신` : '본인'
+      if (r.firm) return `<span class="th-badge th-badge-urgent" data-firm title="${hm(r.at)} 본인이 확실히 신청안함으로 정함">${icon('lock')} 신청안함</span> <span class="th-xs th-muted">본인 확정</span>`
+      if (r.on) return `<span class="th-badge th-badge-success" title="${hm(r.at)} ${who} 신청">${r.closed ? '먹음' : '신청함'}</span> <span class="th-xs th-muted">${who}</span>`
+      return `<span class="th-badge th-badge-muted" title="${hm(r.at)} ${who} 취소">취소</span> <span class="th-xs th-muted">${who}</span>`
+    }
+    const history = M.personMonths(room, members, me.id, now(), 4)
+    return `<div class="stack">
+      <section class="th-card" data-mine="summary"><div class="th-card-header"><h2 class="th-card-title">${y}년 ${mo}월 내 식사</h2></div>
+        <div class="th-card-body"><div class="kpis">
+          ${meals.includes('lunch') ? kpi('점심(확정)', `${pm.done.lunch}회`, pm.open.lunch ? `신청 중 ${pm.open.lunch}회` : '') : ''}
+          ${meals.includes('dinner') ? kpi('저녁(확정)', `${pm.done.dinner}회`, pm.open.dinner ? `신청 중 ${pm.open.dinner}회` : '') : ''}
+          ${kpi('합계(확정)', `${pm.done.lunch + pm.done.dinner}회`, '')}
+          ${pm.declined.lunch + pm.declined.dinner ? kpi('확실히 신청안함', `${pm.declined.lunch + pm.declined.dinner}회`, '본인이 먹지 않는다고 정한 식사') : ''}
+        </div></div></section>
+      <section class="th-card"><div class="th-card-header"><h2 class="th-card-title">날짜별 기록</h2><span class="th-xs th-muted">본인 신청·대신 신청·취소·확실히 신청안함이 모두 보입니다</span></div>
+        ${
+          pm.days.some((d) => d.any)
+            ? `<div class="th-table-wrap"><table class="th-table" data-mine="days"><thead><tr><th>날짜</th>${meals.map((k) => `<th>${M.MEALS[k]}</th>`).join('')}</tr></thead><tbody>
+              ${pm.days
+                .filter((d) => d.any || d.date === today)
+                .map((d) => `<tr class="${d.date === today ? 'today' : ''}"><td class="th-nums">${M.dateLabel(d.date, today)}</td>${meals.map((k) => `<td>${cell(d.meals[k], d.meals[k] ? d.meals[k].closed : M.stateOf(config(), d.date, k, now()) !== 'open')}</td>`).join('')}</tr>`)
+                .join('')}
+              </tbody></table></div>`
+            : `<div class="th-card-body">${empty('receipt', '이 달에는 신청한 기록이 없습니다', '')}</div>`
+        }</section>
+      <section class="th-card"><div class="th-card-header"><h2 class="th-card-title">최근 달</h2><span class="th-xs th-muted">확정된 횟수 · 기록은 ${M.LIMITS.keepDays}일 동안 남습니다</span></div>
+        <div class="th-table-wrap"><table class="th-table" data-mine="months"><thead><tr><th>달</th>${meals.map((k) => `<th class="th-num">${M.MEALS[k]}</th>`).join('')}<th class="th-num">합계</th></tr></thead><tbody>
+        ${history.map((h) => `<tr><td>${Number(h.month.slice(0, 4))}년 ${Number(h.month.slice(5))}월</td>${meals.map((k) => `<td class="th-num">${h[k]}</td>`).join('')}<td class="th-num"><b>${meals.reduce((s, k) => s + h[k], 0)}</b></td></tr>`).join('')}
+        </tbody></table></div></section>
+    </div>`
   }
 
   // ---------- 설정 (the owner and the 식수서무) ----------
@@ -613,6 +751,8 @@
         return ` <span class="th-badge th-badge-important" data-bstatus="cancelSelf" title="신청했다가 본인이 취소했습니다">본인 취소</span>`
       case 'cancelProxy':
         return ` <span class="th-badge th-badge-important" data-bstatus="cancelProxy" title="신청했다가 ${by(st.byName)} 님이 대신 취소했습니다">${by(st.byName)} 대신 취소</span>`
+      case 'firm':
+        return ` <span class="th-badge th-badge-urgent" data-bstatus="firm" title="본인이 확실히 신청안함으로 정해 두어 다른 사람이 대신 신청·취소할 수 없습니다">${icon('lock')} 본인 신청안함</span> <span class="th-xs th-muted" data-bwhy>대신 신청 불가</span>`
       case 'mixed':
         return ` <span class="th-badge th-badge-muted" data-bstatus="mixed" title="고른 날짜·식사마다 다릅니다">날짜마다 다름</span>`
       default:
@@ -623,8 +763,9 @@
     const chosen = bulkChosen()
     const people = M.resolve(room, members)
     const q = bulk.filter.trim()
-    // somebody who has it already (or, for a cancel, has nothing to cancel) cannot be picked
-    const done = (id) => M.alreadySet(people, id, chosen, bulk.on)
+    // somebody who has it already (or, for a cancel, has nothing to cancel), or who marked the
+    // meal(s) 확실히 신청안함 themselves, cannot be picked
+    const done = (id) => M.settled(people, id, chosen, bulk.on)
     const all = everyone()
     for (const id of Array.from(bulk.sel)) if (done(id) || !all.some((m) => m.id === id)) bulk.sel.delete(id)
     const groups = M.deptGroups(all, me.deptName)
@@ -645,7 +786,10 @@
               ? `<div class="bulk-list">${shown
                   .map((m) => {
                     const d = done(m.id)
-                    return `<label class="th-check"><input type="checkbox" data-bid="${esc(m.id)}" ${d ? (bulk.on ? 'checked disabled' : 'disabled') : bulk.sel.has(m.id) ? 'checked' : ''} /> <span>${esc(m.name)}</span>${manualMark(m)}${m.id === me.id ? ` ${badge('muted', '나')}` : ''}${chosen.length ? statusMark(M.pickStatus(people, m.id, chosen)) : ''}</label>`
+                    const st = chosen.length ? M.pickStatus(people, m.id, chosen) : { kind: 'none' }
+                    // a "no" the person set for themselves is not ticked: nothing was requested
+                    const firm = st.kind === 'firm'
+                    return `<label class="th-check${firm ? ' firm' : ''}"><input type="checkbox" data-bid="${esc(m.id)}" ${d ? (bulk.on && !firm ? 'checked disabled' : 'disabled') : bulk.sel.has(m.id) ? 'checked' : ''} /> <span>${esc(m.name)}</span>${manualMark(m)}${m.id === me.id ? ` ${badge('muted', '나')}` : ''}${statusMark(st)}</label>`
                   })
                   .join('')}</div>`
               : ''
@@ -665,7 +809,7 @@
     return M.deptGroups(everyone(), me.deptName)
       .filter((g) => dept === undefined || g.dept === dept)
       .flatMap((g) => g.members)
-      .filter((m) => (!q || m.name.includes(q)) && !M.alreadySet(people, m.id, chosen, bulk.on))
+      .filter((m) => (!q || m.name.includes(q)) && !M.settled(people, m.id, chosen, bulk.on))
       .map((m) => m.id)
   }
   async function applyBulk() {
@@ -723,7 +867,17 @@
       const cur = month || today.slice(0, 7)
       const [y, m] = cur.split('-').map(Number)
       nav = `${arrow(-1, 'data-month="-1"', '지난달')}<span class="label">${y}년 ${m}월</span>${arrow(1, 'data-month="1"', '다음 달')}${tool('data-month="0"', '이번 달', undefined, cur === today.slice(0, 7))}`
-      tools = tool('id="csvMonth"', `${icon('download')} CSV로 저장`, undefined, !M.monthTally(room, cur, members, now(), false).rows.length)
+      const views = [
+        ['summary', '통합'],
+        ['daily', '일별'],
+        ['person', '개인별'],
+        ['dept', '부서별']
+      ]
+      tools = `<span class="seg" role="group" aria-label="통계 보기">${views.map(([k, l]) => tool(`data-stats-view="${k}" aria-pressed="${statsView === k}"`, l, statsView === k ? '' : 'th-btn-outline')).join('')}</span>${tool('id="csvMonth"', `${icon('download')} CSV로 저장`, undefined, !statsOf(cur).snap.summary.total)}`
+    } else if (room && tab === 'mine') {
+      const cur = mineMonth || today.slice(0, 7)
+      const [y, m] = cur.split('-').map(Number)
+      nav = `${arrow(-1, 'data-mine-month="-1"', '지난달')}<span class="label">${y}년 ${m}월</span>${arrow(1, 'data-mine-month="1"', '다음 달')}${tool('data-mine-month="0"', '이번 달', undefined, cur === today.slice(0, 7))}`
     } else if (room && tab === 'apply') actions = `${canProxy() ? bulkButton() : ''}${canManage() ? tool('id="editWeek"', `${icon('pencil')} 메뉴 등록`, '') : ''}`
     $('nav').innerHTML = nav
     $('tools').innerHTML = tools
@@ -733,10 +887,11 @@
   function render() {
     const manage = room ? canManage() || me.isAdmin : me.isAdmin
     if (tab === 'settings' && !manage) tab = 'apply'
+    if (tab === 'month' && !(room && canStats())) tab = 'apply'
     if (!room && tab !== 'settings') tab = 'apply'
     document.querySelectorAll('nav [role=tab]').forEach((b) => {
       b.setAttribute('aria-selected', String(b.dataset.tab === tab))
-      b.classList.toggle('hidden', b.dataset.tab === 'settings' ? !manage : b.dataset.tab !== 'apply' && !room)
+      b.classList.toggle('hidden', b.dataset.tab === 'settings' ? !manage : b.dataset.tab === 'month' ? !(room && canStats()) : b.dataset.tab !== 'apply' && !room)
     })
     $('clock').textContent = `서버 시각 ${hm(now())}`
     if (tab !== 'menu') menuEdit = false
@@ -749,7 +904,7 @@
         : empty('utensils', '아직 식사 신청을 받지 않습니다', '관리자(서버 PC)가 신청 마감 시각을 정하면 여기서 신청할 수 있습니다.')
       return
     }
-    $('main').innerHTML = tab === 'apply' ? renderApply() : tab === 'menu' ? renderMenu() : tab === 'status' ? renderStatus() : tab === 'month' ? renderMonth() : `<div class="stack">${renderSettings()}${peopleCard()}</div>`
+    $('main').innerHTML = tab === 'apply' ? renderApply() : tab === 'menu' ? renderMenu() : tab === 'status' ? renderStatus() : tab === 'month' ? renderMonth() : tab === 'mine' ? renderMine() : `<div class="stack">${renderSettings()}${peopleCard()}</div>`
   }
   render.bars = renderBars
   /** Something is being typed that a redraw would throw away. */
@@ -764,7 +919,7 @@
   document.addEventListener('click', (e) => {
     const t = e.target.closest('button')
     if (!t || t.closest('nav')) return
-    if (t.dataset.act) return void change(t.dataset.date, t.dataset.meal, t.dataset.act === 'apply')
+    if (t.dataset.act) return void change(t.dataset.date, t.dataset.meal, t.dataset.act === 'apply', null, t.dataset.act === 'firm')
     if (t.dataset.proxy || t.dataset.unproxy) {
       const meal = t.dataset.proxy || t.dataset.meal
       const id = t.dataset.unproxy || proxySel[meal]
@@ -800,6 +955,16 @@
     if (t.dataset.week) {
       const cur = M.weekStart(M.ymd(now()))
       menuWeek = t.dataset.week === 'this' ? cur : t.dataset.week === 'next' ? M.addDays(cur, 7) : M.addDays(menuWeek, 7 * Number(t.dataset.week))
+      return render()
+    }
+    if (t.dataset.statsView) {
+      statsView = t.dataset.statsView
+      return render()
+    }
+    if (t.dataset.mineMonth) {
+      const [y, m] = (mineMonth || M.ymd(now()).slice(0, 7)).split('-').map(Number)
+      const d = t.dataset.mineMonth === '0' ? new Date(now()) : new Date(y, m - 1 + Number(t.dataset.mineMonth), 1)
+      mineMonth = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`
       return render()
     }
     if (t.dataset.month) {
@@ -855,11 +1020,14 @@
           () => toast('주문용 글을 복사했습니다.'),
           (err) => toast(err.message)
         )
-      case 'csvMonth':
-        return void call('file.save', { name: `식사신청_${month}.csv`, text: M.monthCsv(room, month, members, now()) }).then(
+      case 'csvMonth': {
+        const snap = statsOf(month).snap
+        const kind = statsView === 'daily' ? ['일별', M.dailyCsv(snap)] : statsView === 'dept' ? ['부서별', M.deptCsv(snap)] : ['개인별', M.personCsv(snap)]
+        return void call('file.save', { name: `식사신청_${month}_${kind[0]}.csv`, text: kind[1] }).then(
           (r) => r && r.ok && toast('저장했습니다.'),
           (err) => toast(err.message)
         )
+      }
     }
   })
   document.addEventListener('change', (e) => {
@@ -938,8 +1106,6 @@
   ;(async () => {
     try {
       me = await call('me')
-      // an older TeamHub does not give extension frames its look (__ui.css)
-      $('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim()
       await syncClock()
       members = await call('members').catch(() => [])
       await loadHolidays()

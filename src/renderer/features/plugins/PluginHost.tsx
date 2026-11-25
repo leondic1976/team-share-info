@@ -90,6 +90,12 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
   const [src, setSrc] = useState('')
   const room = params.get('room')
 
+  // opened on this PC: counted as using it (확장 기능 page, 지시 92); offline it is simply not counted
+  const enabled = !!plugin?.enabled
+  useEffect(() => {
+    if (enabled) void api.post(`/api/plugins/${encodeURIComponent(id)}/used`).catch(() => undefined)
+  }, [enabled, id])
+
   useEffect(() => {
     if (!plugin?.enabled) return
     const dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -111,7 +117,8 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
       }
       switch (m.method) {
         case 'me':
-          return me ? { id: me.id, name: me.name, deptName: me.deptName ?? null, isAdmin: me.role === 'admin' } : null
+          // isOwner: this PC is the server PC (최종관리자), e.g. 식사 신청 shows it the statistics
+          return me ? { id: me.id, name: me.name, deptName: me.deptName ?? null, isAdmin: me.role === 'admin', isOwner: !!me.isOwner } : null
         case 'time':
           // the server's clock: deadlines must not depend on the clock of each PC
           return api.get<{ now: number }>('/api/time')

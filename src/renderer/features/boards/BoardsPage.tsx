@@ -27,6 +27,7 @@ import { cn } from '@renderer/lib/utils'
 import { FavoriteStar } from '@renderer/features/memos/widgets'
 import { confirmPii } from '@renderer/lib/pii'
 import { DateTimeInput } from '@renderer/components/DateTimeInput'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 const KIND_LABEL = { free: '자유', work: '업무 공유', qna: '질의응답' } as const
 
@@ -401,7 +402,10 @@ export function BoardsPage(): React.JSX.Element {
                         {p.hasPoll && <Vote className="size-3.5 shrink-0 text-primary" />}
                       </div>
                       <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                        {p.authorName} · {format(p.createdAt, 'M/d')}
+                        <span>
+                          {p.authorName}
+                          <RoleMark memberId={p.authorId} /> · {format(p.createdAt, 'M/d')}
+                        </span>
                         <span className="ml-auto flex items-center gap-2">
                           {p.attachmentCount > 0 && <Paperclip className="size-3" />}
                           <span className="flex items-center gap-0.5">

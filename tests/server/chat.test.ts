@@ -49,7 +49,8 @@ describe('messenger (M5)', () => {
     expect((await s.req(c, { method: 'GET', url: `/api/attachments/${att.id}`, ip: IP })).statusCode).toBe(404)
     expect((await s.req(c, { method: 'GET', url: `/api/conversations/${conv.id}/messages`, ip: IP })).statusCode).toBe(404)
     expect((await s.req(c, { method: 'GET', url: '/api/messages/search?q=사진', ip: IP })).json().data).toEqual([])
-    expect((await s.req(b, { method: 'GET', url: '/api/messages/search?q=사진', ip: IP })).json().data).toHaveLength(1)
+    // the sender's id comes with each hit, so the client can show the 서무 mark next to the name
+    expect((await s.req(b, { method: 'GET', url: '/api/messages/search?q=사진', ip: IP })).json().data).toMatchObject([{ senderId: a.memberId, body: '사진' }])
   })
 
   it('rooms: invite with a system message, leave', async () => {

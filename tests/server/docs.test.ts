@@ -28,6 +28,8 @@ describe('docs (M6-4..6)', () => {
     expect((await s.req(b, { method: 'GET', url: '/api/docs?unread=1', ip: IP })).json().data).toHaveLength(1)
     const list = (await s.req(s.admin, { method: 'GET', url: '/api/docs?kind=mustread' })).json().data
     expect(list[0].readStats).toEqual({ read: 0, total: 2 })
+    // who wrote and who last changed it, by id (for the 서무 mark next to the names)
+    expect(list[0]).toMatchObject({ authorId: s.admin.memberId, updatedById: s.admin.memberId })
   })
 
   it('manuals are team wikis with revision history and restore', async () => {
@@ -65,6 +67,7 @@ describe('docs (M6-4..6)', () => {
     await s.req(s.admin, { method: 'POST', url: '/api/annual-tasks', payload: { month: 1, title: '예산 편성', scope: team } })
     expect((await s.req(c, { method: 'GET', url: '/api/docs', ip: IP })).json().data).toEqual([])
     expect((await s.req(c, { method: 'GET', url: '/api/annual-tasks', ip: IP })).json().data.map((x: { title: string }) => x.title)).toEqual(['예산 편성'])
+    expect((await s.req(c, { method: 'GET', url: '/api/annual-tasks', ip: IP })).json().data[0].authorId).toBe(s.admin.memberId)
     expect((await s.req(a, { method: 'GET', url: '/api/annual-tasks', ip: IP })).json().data).toHaveLength(2)
     const tpl = (await s.req(c, { method: 'GET', url: '/api/doc-templates', ip: IP })).json().data
     expect(tpl.map((t: { name: string }) => t.name)).toEqual(expect.arrayContaining(['회의록', '인수인계서']))

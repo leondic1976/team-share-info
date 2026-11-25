@@ -6,6 +6,7 @@ import { useOrgDisplay } from '@renderer/lib/queries'
 import { invoke, onMain } from '@renderer/lib/bridge'
 import type { UpdateState } from '@shared/ipc'
 import { cn } from '@renderer/lib/utils'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 const CONN_LABEL: Record<ConnState, { text: string; dot: string }> = {
   loading: { text: '준비 중', dot: 'bg-muted-foreground' },
@@ -51,7 +52,10 @@ export function StatusBar(): React.JSX.Element {
           {orgText}
         </span>
         <span className="text-border">│</span>
-        <span className="truncate">{me?.name ?? app?.winUser ?? ''}</span>
+        <span className="truncate">
+          {me?.name ?? app?.winUser ?? ''}
+          {me && <RoleMark role={me.role} isOwner={me.isOwner} />}
+        </span>
         <span className="text-border">│</span>
         <span className="flex items-center gap-1.5 whitespace-nowrap" data-testid="conn-state">
           <span className={cn('inline-block size-2 rounded-full', c.dot)} />

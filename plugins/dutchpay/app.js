@@ -190,7 +190,6 @@
   }
 
   // an older TeamHub does not give extension frames its look (__ui.css): say so
-  window.addEventListener('load', () => ($('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim()))
 
   async function init() {
     document.querySelectorAll('select.unit').forEach((s) => (s.innerHTML = D.UNITS.map((u) => `<option value="${u}"${u === 100 ? ' selected' : ''}>${u === 1 ? '1원 (그대로)' : D.won(u).replace('원', '') + '원 단위'}</option>`).join('')))

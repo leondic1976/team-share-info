@@ -87,6 +87,11 @@ export function roleLabel(m: { role: Role; isOwner?: boolean }): string {
   return m.isOwner === undefined ? '관리자' : m.isOwner ? '최종관리자' : '서무'
 }
 
+/** True for a 서무: an admin who is not the server PC's own account (the 최종관리자). */
+export function isClerk(m: { role?: Role | null; isOwner?: boolean } | null | undefined): boolean {
+  return !!m && m.role === 'admin' && m.isOwner === false
+}
+
 /** Details of a member that an admin may set; once set by an admin they stay as set. */
 export const ADMIN_SET_FIELDS = ['name', 'deptId', 'title', 'ext', 'mobile', 'duty'] as const
 

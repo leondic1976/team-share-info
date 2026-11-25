@@ -18,6 +18,7 @@ import { QuickMemo, StickyWindow } from './features/memos/StickyWindow'
 import { LauncherBar } from './features/launcher/LauncherBar'
 import { MeetingRoom } from './features/meetings/MeetingRoom'
 import { InvitePopup } from './features/meetings/InvitePopup'
+import { ControlRoomPopup, DrillPopupWindow } from './features/command/CommandPage'
 import { FeedbackWindow } from './features/feedback/FeedbackWindow'
 import { LockedSmall, LockGate } from './features/lock/LockGate'
 import { LogoutWarning } from './features/seat/LogoutWarning'
@@ -99,6 +100,10 @@ export function App(): React.JSX.Element {
     )
   const room = /^#\/popup\/meeting\/([\w-]+)/.exec(hash)
   if (room) return loaded ? <MeetingRoom id={room[1]} /> : <Loading />
+  const drill = /^#\/popup\/drill\/([\w-]+)/.exec(hash)
+  if (drill) return loaded ? <DrillPopupWindow id={drill[1]} /> : <Loading />
+  const control = /^#\/popup\/drill-control\/([\w-]+)/.exec(hash)
+  if (control) return loaded ? <ControlRoomPopup id={control[1]} /> : <Loading />
   const inv = /^#\/popup\/invite\/([\w-]+)/.exec(hash)
   if (inv) return loaded ? <InvitePopup id={inv[1]} /> : <Loading />
   // shared PC: the notice before the automatic logout (nothing personal in it, so it shows while locked too)

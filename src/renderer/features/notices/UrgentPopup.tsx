@@ -7,6 +7,7 @@ import { RichView } from '@renderer/components/Editor'
 import { invoke, onMain } from '@renderer/lib/bridge'
 import { api, ApiError, errorMessage } from '@renderer/lib/api'
 import { useConn } from '@renderer/app/conn-store'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 /** Three short alarm beeps generated with WebAudio (no sound file needed). */
 export function beep(): void {
@@ -139,7 +140,8 @@ export function UrgentPopup({ id }: { id: string }): React.JSX.Element {
         <Siren className="th-emergency-blink size-6" aria-hidden />
         <span className="text-lg font-extrabold tracking-wide">긴급공지</span>
         <span className="ml-auto text-sm opacity-90">
-          {p.authorName} · {format(p.publishedAt, 'M/d HH:mm')}
+          {p.authorName}
+          <RoleMark memberId={p.authorId} className="bg-white/25 text-current" /> · {format(p.publishedAt, 'M/d HH:mm')}
         </span>
         <button
           type="button"

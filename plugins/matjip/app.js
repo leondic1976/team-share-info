@@ -284,7 +284,6 @@
   }
 
   // an older TeamHub does not give extension frames its look (__ui.css): say so
-  window.addEventListener('load', () => ($('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim()))
 
   async function init() {
     $('fCat').innerHTML = M.CATS.map((c) => `<option>${esc(c)}</option>`).join('')

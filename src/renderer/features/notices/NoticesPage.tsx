@@ -21,6 +21,7 @@ import { NOTICE_LEVEL_LABEL, type NoticeDto, type NoticeSummaryDto, type Receipt
 import { cn } from '@renderer/lib/utils'
 import { NoticeCompose } from './NoticeCompose'
 import { FavoriteStar } from '@renderer/features/memos/widgets'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 type Filter = 'all' | 'unread' | 'mine'
 /** 긴급공지 (red, on every screen) and ordinary notices are listed apart. */
@@ -167,7 +168,8 @@ function NoticeDetail({ id }: { id: string }): React.JSX.Element {
         <FavoriteStar itemType="notice" itemId={n.id} title={n.title} route={`/notices/${n.id}`} />
       </h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        {n.authorName} · {fmt(n.publishedAt ?? n.publishAt)}
+        {n.authorName}
+        <RoleMark memberId={n.authorId} /> · {fmt(n.publishedAt ?? n.publishAt)}
         {n.expiresAt ? ` · ${fmt(n.expiresAt)}까지` : ''}
       </p>
       <RichView html={n.bodyHtml} className="mt-4" />
@@ -327,7 +329,10 @@ export function NoticesPage(): React.JSX.Element {
                       <span className={cn('truncate text-sm', unread ? 'font-bold' : 'font-medium')}>{n.title}</span>
                     </div>
                     <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>{n.authorName}</span>
+                      <span>
+                        {n.authorName}
+                        <RoleMark memberId={n.authorId} />
+                      </span>
                       <span>{fmt(n.publishedAt ?? n.publishAt)}</span>
                       {!n.publishedAt && <span className="text-important">예약</span>}
                       {n.attachmentCount > 0 && <Paperclip className="size-3" />}

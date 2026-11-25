@@ -26,6 +26,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAnnualTasks } from '@renderer/features/docs/AnnualCalendar'
 import { annualDate } from '@renderer/features/docs/useDocAlerts'
 import { EventDialog, ModeDialog, type EditMode, type EventTarget } from './EventDialog'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 /** 'personal' = only what is on this PC, 'shared' = only what is on the server; a member id = that member's shared events */
 type Show = 'all' | 'mine' | 'personal' | 'shared' | string
@@ -193,12 +194,16 @@ export function CalendarPage(): React.JSX.Element {
   const renderContent = (arg: EventContentArg): React.JSX.Element => {
     const origin = (arg.event.extendedProps as { origin: string }).origin
     const local = origin === 'local'
+    // absence and busy blocks are titled by the person: a 서무 gets the mark there
+    const item = origin === 'server' ? (arg.event.extendedProps as { item?: { kind?: string; authorId?: string } }).item : undefined
+    const byPerson = item && (item.kind === 'absence' || item.kind === 'busy') ? item.authorId : undefined
     return (
       <div className="flex min-w-0 items-center gap-1 overflow-hidden px-0.5 text-[0.78rem]">
         {local && <Lock className="size-3 shrink-0" aria-label="개인 일정" />}
         {origin === 'annual' && <CalendarClock className="size-3 shrink-0" aria-label="연간 업무" />}
         {arg.timeText && !arg.event.allDay && <span className="shrink-0 opacity-80">{arg.timeText}</span>}
         <span className="truncate">{arg.event.title}</span>
+        {byPerson && <RoleMark memberId={byPerson} className="ml-0 bg-white/25 text-current" />}
       </div>
     )
   }

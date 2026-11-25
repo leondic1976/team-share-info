@@ -6,9 +6,6 @@
   const T = window.OcrText
   const call = (m, p) => window.TeamHub.call(m, p)
   // an older TeamHub does not give extension frames its look (__ui.css): say so once the page has loaded
-  const lookCheck = () => ($('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim())
-  if (document.readyState === 'complete') lookCheck()
-  else window.addEventListener('load', lookCheck)
   // line icons come from TeamHub (TeamHub.icon); an older TeamHub without them shows the text only
   const icon = (n, o) => (window.TeamHub.icon ? window.TeamHub.icon(n, o) : '')
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])

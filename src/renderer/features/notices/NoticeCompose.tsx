@@ -19,8 +19,8 @@ import { DateTimeInput } from '@renderer/components/DateTimeInput'
 
 const LEVELS: { v: NoticeLevel; label: string; hint: string; cls: string }[] = [
   { v: 'normal', label: '일반', hint: '목록에만 표시', cls: 'border-border' },
-  { v: 'important', label: '중요', hint: 'Windows 알림', cls: 'border-important text-important' },
-  { v: 'urgent', label: '긴급', hint: '화면 맨 위 팝업 + 소리', cls: 'border-urgent text-urgent' }
+  { v: 'important', label: '중요', hint: '알림 카드 + 소리', cls: 'border-important text-important' },
+  { v: 'urgent', label: '긴급', hint: '화면 가운데 창 + 경보음', cls: 'border-urgent text-urgent' }
 ]
 
 function toLocalInput(ms: number): string {

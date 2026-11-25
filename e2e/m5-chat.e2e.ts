@@ -6,7 +6,24 @@ import type { Page } from 'playwright-core'
 import { go, joinAndApprove, launch, runWizard, type Launched } from './helpers'
 
 const PORT = '47898'
+const SHOTS = process.env.TEAMHUB_SHOT_DIR
+
+/** With TEAMHUB_SHOT_DIR set: a screenshot in the light and in the dark theme. */
+async function shot(p: Page, name: string): Promise<void> {
+  if (!SHOTS) return
+  await p.waitForTimeout(400)
+  await p.screenshot({ path: `${SHOTS}/${name}-light.png` })
+  await p.evaluate(() => document.documentElement.classList.add('dark'))
+  await p.waitForTimeout(300)
+  await p.screenshot({ path: `${SHOTS}/${name}-dark.png` })
+  await p.evaluate(() => document.documentElement.classList.remove('dark'))
+}
 const attach = join(tmpdir(), 'teamhub-e2e-chat-attach.txt')
+
+async function closeDialog(p: Page): Promise<void> {
+  await p.getByRole('dialog').getByRole('button', { name: '닫기' }).first().click()
+  await expect.poll(() => p.getByRole('dialog').count()).toBe(0)
+}
 
 async function sendText(p: Page, text: string): Promise<void> {
   await p.getByLabel('메시지 입력').fill(text)
@@ -123,5 +140,38 @@ describe('M5 messenger and notes', () => {
     await b.page.getByTestId('conv-서버관리자').click()
     await expect.poll(() => b.page.getByTestId('message-list').textContent(), { timeout: 10000 }).toContain('나간 뒤에 보낸 메시지')
     expect(await b.page.getByTestId('message-list').textContent()).toContain('꺼져 있을 때 보낸 메시지')
+  })
+
+  it('새 대화 and 쪽지 쓰기 pickers show each person as 온라인 / 오프라인, live', async () => {
+    const state = (): Promise<string | null> => a.page.getByRole('dialog').getByTestId('picker-presence-팀원B').getAttribute('data-presence')
+    const label = (): Promise<string | null> => a.page.getByRole('dialog').getByTestId('picker-presence-팀원B').textContent()
+    await go(a.page, '/chat')
+    await a.page.getByRole('button', { name: '대화', exact: true }).click()
+    await a.page.getByRole('button', { name: '새 대화' }).click()
+    await expect.poll(state, { timeout: 10000 }).toBe('online')
+    expect(await label()).toBe('온라인')
+    await shot(a.page, 'presence-newchat')
+    await closeDialog(a.page)
+    // back on the 쪽지 tab, the earlier [쪽지 쓰기] press does not reopen the dialog by itself
+    await a.page.getByRole('button', { name: '쪽지', exact: true }).click()
+    await a.page.getByRole('button', { name: '받은 쪽지' }).waitFor()
+    expect(await a.page.getByRole('dialog').count()).toBe(0)
+    await a.page.getByRole('button', { name: '쪽지 쓰기' }).click()
+    await expect.poll(state, { timeout: 10000 }).toBe('online')
+    // the chosen person's chip carries the dot too
+    await a.page.getByRole('dialog').getByLabel('팀원B').check()
+    expect(await a.page.getByRole('dialog').locator('[aria-label="온라인"]').count()).toBe(2)
+    await shot(a.page, 'presence-note')
+    // B closes the app: the open picker turns to 오프라인 without reopening
+    await b.close({ keepData: true })
+    await expect.poll(state, { timeout: 15000 }).toBe('offline')
+    expect(await label()).toBe('오프라인')
+    await shot(a.page, 'presence-note-offline')
+    await closeDialog(a.page)
+    await a.page.getByRole('button', { name: '대화', exact: true }).click()
+    await a.page.getByRole('button', { name: '새 대화' }).click()
+    await expect.poll(state, { timeout: 10000 }).toBe('offline')
+    expect(await label()).toBe('오프라인')
+    await closeDialog(a.page)
   })
 })

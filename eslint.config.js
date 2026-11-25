@@ -29,6 +29,23 @@ export default tseslint.config(
     }
   },
   {
+    files: ['command/renderer/**/*.{ts,tsx}'],
+    languageOptions: { globals: { ...globals.browser } },
+    plugins: { 'react-hooks': reactHooks },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn'
+    }
+  },
+  {
+    // 긴급구조지휘대 (command/) stands on its own: it may later run without TeamHub, so it never
+    // imports the host's code (the host gives what it needs through command/*/host.ts).
+    files: ['command/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: ['**/src/**', '@renderer/*', '@shared/*', '@renderer', '@shared'] }]
+    }
+  },
+  {
     // 13.10: personal (local) storage must never touch the network.
     files: ['src/main/localdb/**/*.ts'],
     rules: {

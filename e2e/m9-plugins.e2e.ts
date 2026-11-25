@@ -86,6 +86,19 @@ describe('plugins: ladder game (install in app, play alone and together)', () =>
     await expect.poll(() => f.locator('#resultTable').textContent(), { timeout: 20000 }).toBe(text)
   }, 90000)
 
+  it('the 확장 기능 page shows how many PCs installed and used each extension, and who (지시 92)', async () => {
+    await go(b.page, '/plugins')
+    const card = b.page.getByTestId('catalog-plugin').filter({ hasText: '사다리타기' })
+    await expect.poll(() => card.getByTestId('install-line').textContent(), { timeout: 20000 }).toContain('설치 2대')
+    const line = (await card.getByTestId('install-line').textContent()) ?? ''
+    expect(line).toContain('서버관리자')
+    expect(line).toContain('팀원B (나)')
+    expect(line).toMatch(/사용 [12]대/)
+    expect(await b.page.getByTestId('install-totals').textContent()).toMatch(/설치 PC 2\/\d+대/)
+    // an extension nobody installed says so
+    expect(await b.page.getByTestId('catalog-plugin').filter({ hasNotText: '사다리타기' }).first().getByTestId('install-line').textContent()).toBe('아직 설치한 PC가 없습니다')
+  }, 60000)
+
   it('plugins cannot reach the network and only use declared permissions', async () => {
     const blocked = await a.page.evaluate(async () => {
       const iframe = document.querySelector<HTMLIFrameElement>('[data-testid="plugin-frame"]')!

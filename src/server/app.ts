@@ -35,6 +35,8 @@ import { registerLedgerRoutes } from './routes/ledgers'
 import { registerSearchRoutes } from './routes/search'
 import { pruneIdempotency, registerIdempotency } from './idempotency'
 import { runBackupJob } from './backup'
+import { registerCommand } from './command-host'
+import type { CommandServer } from '../../command/server/routes'
 
 export interface BuildOptions {
   db: Db
@@ -47,6 +49,8 @@ export interface BuildOptions {
 }
 
 export interface BuiltApp {
+  /** 긴급구조지휘대 module (command/) */
+  command: CommandServer
   app: FastifyInstance
   ctx: ServerContext
 }
@@ -121,6 +125,8 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   registerFeedbackRoutes(app, ctx, { requireAuth, requireAdmin })
   registerLedgerRoutes(app, ctx, { requireAuth })
   registerSearchRoutes(app, ctx, { requireAuth })
+  // 긴급구조지휘대: a module of its own (command/), data in command.db next to teamhub.db
+  const command = registerCommand(app, ctx, { requireAuth })
   hub.onMemberOffline = (memberId) => leaveAllMeetings(ctx, memberId)
 
   const timers: NodeJS.Timeout[] = []
@@ -151,6 +157,16 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
         }
       }, 3600_000)
     )
+    // 긴급구조지휘대: messages of running drills go out on time (every 5 seconds)
+    timers.push(
+      setInterval(() => {
+        try {
+          command.runJobs()
+        } catch (e) {
+          recordError(ctx, `command jobs: ${(e as Error).message}`)
+        }
+      }, 5000)
+    )
     // feedback posts: the weekly bundle, and bundles that still wait (also soon after a start,
     // so a server PC that was off catches up)
     const feedbackJob = (): void => void runFeedbackJob(ctx).catch((e: unknown) => recordError(ctx, `feedback: ${(e as Error).message}`))
@@ -160,8 +176,9 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   app.addHook('onClose', async () => {
     for (const t of timers) clearInterval(t)
     hub.close()
+    command.close()
   })
   await app.ready()
   hub.attach(app.server)
-  return { app, ctx }
+  return { app, ctx, command }
 }

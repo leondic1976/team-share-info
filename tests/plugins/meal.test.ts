@@ -201,6 +201,50 @@ describe('meal plugin: who eats, and the monthly count', () => {
     expect(csv).toContain('행정팀,가나,2,1,3')
     expect(csv).toContain(',합계,3,1,4')
   })
+
+  it('statistics (지시 90): day by day, by department, the month at a glance, CSV', () => {
+    const now = at(MON, 16)
+    const plain = (v: unknown) => JSON.parse(JSON.stringify(v))
+    const daily = M.dailyTally(room, '2026-11', members, now)
+    expect(daily).toHaveLength(30)
+    const mon = daily.find((d: any) => d.date === MON)
+    expect(plain(mon.meals)).toEqual({ lunch: { count: 2, closed: true, proxied: 0, manual: 0, declined: 0 }, dinner: { count: 1, closed: true, proxied: 0, manual: 0, declined: 0 } })
+    expect(daily.find((d: any) => d.date === '2026-11-01').served).toBe(false)
+    expect(plain(M.deptTally(room, '2026-11', members, now))).toEqual([
+      { dept: '민원팀', people: 1, lunch: 1, dinner: 0 },
+      { dept: '행정팀', people: 1, lunch: 2, dinner: 1 }
+    ])
+    const sm = M.monthSummary(room, '2026-11', members, now)
+    // weekdays of November up to Monday the 23rd: 16 days have closed
+    expect(plain(sm)).toEqual({ lunch: 3, dinner: 1, total: 4, days: 16, avgLunch: 0.2, avgDinner: 0.1, peak: { date: MON, meal: 'lunch', count: 2 }, people: 2, manualPeople: 0, proxied: 0, pending: { lunch: 0, dinner: 0 }, declined: { lunch: 0, dinner: 0 } })
+    // Monday 11:00: the dinner of that day is still open
+    expect(plain(M.monthSummary(room, '2026-11', members, at(MON, 11)).pending)).toEqual({ lunch: 0, dinner: 1 })
+    const snap = M.statsSnapshot(room, '2026-11', members, now)
+    expect(M.dailyCsv(snap)).toContain('날짜,점심,저녁,합계,비고')
+    expect(M.dailyCsv(snap)).toContain(`${MON},2,1,3,`)
+    expect(M.dailyCsv(snap)).toContain('2026-11-01,,,,받지 않는 날')
+    expect(M.deptCsv(snap)).toContain('행정팀,1,2,1,3')
+    expect(M.personCsv(snap)).toContain('행정팀,가나,2,1,3')
+    // a copy saved earlier counts when it holds more (old records are dropped after 100 days)
+    const fuller = { ...snap, summary: { ...snap.summary, total: 9 } }
+    expect(M.betterOf(snap, fuller)).toBe(fuller)
+    expect(M.betterOf(snap, { ...snap, summary: { ...snap.summary, total: 1 } })).toBe(snap)
+    expect(M.betterOf(snap, null)).toBe(snap)
+  })
+
+  it('내 기록 (지시 91): a person: the days, final and open counts, the recent months', () => {
+    const now = at(MON, 11)
+    const a = M.personMonth(room, members, 'a', '2026-11', now)
+    expect(a.days.filter((d: any) => d.any).map((d: any) => d.date)).toEqual(['2026-11-20', MON])
+    expect([a.done, a.open].map((x: any) => JSON.parse(JSON.stringify(x)))).toEqual([{ lunch: 2, dinner: 0 }, { lunch: 0, dinner: 1 }])
+    const c = M.personMonth(room, members, 'c', '2026-11', now)
+    expect(JSON.parse(JSON.stringify(c.days.find((d: any) => d.date === MON).meals.lunch))).toEqual({ on: false, by: '', byName: '', at: at(MON, 10), closed: true })
+    expect(JSON.parse(JSON.stringify(c.done))).toEqual({ lunch: 0, dinner: 0 })
+    expect(JSON.parse(JSON.stringify(M.personMonths(room, members, 'b', at(MON, 16), 2)))).toEqual([
+      { month: '2026-11', lunch: 1, dinner: 0 },
+      { month: '2026-10', lunch: 1, dinner: 0 }
+    ])
+  })
 })
 
 describe('meal plugin: menus (per day and meal) and the week', () => {
@@ -477,7 +521,7 @@ describe('meal plugin: requests for many people at once (by department)', () => 
     const slots = [{ date: MON, meal: 'lunch' }, { date: TUE, meal: 'lunch' }, { date: MON, meal: 'lunch' }]
     const out = M.applyBulk(r0, 's1', config, who(['kim', 'lee', 'choi', 's1', 'lee']), slots, true, at(MON, 9), members)
     // 4 people x 2 slots, kim's Monday lunch is there already
-    expect(plain(out.result)).toEqual({ applied: 7, already: 1, closed: 0, unfit: 0, trimmed: 0 })
+    expect(plain(out.result)).toEqual({ applied: 7, already: 1, closed: 0, firm: 0, unfit: 0, trimmed: 0 })
     expect(Object.keys(out.entry.for).sort()).toEqual(['choi', 'kim', 'lee'])
     expect(out.entry.for.kim.days[MON]).toBeUndefined()
     expect(plain(out.entry.for.lee)).toEqual({ name: '이주무', days: { [MON]: { lunch: { on: true, at: at(MON, 9) } }, [TUE]: { lunch: { on: true, at: at(MON, 9) } } } })
@@ -489,7 +533,7 @@ describe('meal plugin: requests for many people at once (by department)', () => 
     expect(M.bulkSummary(out.result, true, true)).toBe('7건 신청, 1건은 이미 신청함')
     // again: nothing left to do, nothing rewritten
     const again = M.applyBulk(r1, 's1', config, who(['kim', 'lee', 'choi', 's1']), slots, true, at(MON, 9, 30), members)
-    expect(plain(again.result)).toEqual({ applied: 0, already: 8, closed: 0, unfit: 0, trimmed: 0 })
+    expect(plain(again.result)).toEqual({ applied: 0, already: 8, closed: 0, firm: 0, unfit: 0, trimmed: 0 })
     expect(again.entry.for.lee.days[MON].lunch.at).toBe(at(MON, 9))
     // alreadySet is what the list uses to mark "신청함"
     const people = M.resolve(r1, members)
@@ -500,7 +544,7 @@ describe('meal plugin: requests for many people at once (by department)', () => 
     const first = M.applyBulk(room(), 's1', config, who(['kim', 'lee', 'choi']), [{ date: MON, meal: 'lunch' }], true, at(MON, 9), members).entry
     const r1 = room({ s1: { name: '김서무', value: first } })
     const out = M.applyBulk(r1, 's1', config, who(['kim', 'lee', 'han']), [{ date: MON, meal: 'lunch' }], false, at(MON, 9, 10), members)
-    expect(plain(out.result)).toEqual({ applied: 2, already: 1, closed: 0, unfit: 0, trimmed: 0 })
+    expect(plain(out.result)).toEqual({ applied: 2, already: 1, closed: 0, firm: 0, unfit: 0, trimmed: 0 })
     expect(out.entry.for.han).toBeUndefined()
     expect(M.bulkSummary(out.result, false, false)).toBe('2명 취소, 1명은 신청하지 않아 그대로')
     const leeOwn = M.apply(null, config, MON, 'lunch', true, at(MON, 9, 20)).entry
@@ -515,7 +559,7 @@ describe('meal plugin: requests for many people at once (by department)', () => 
   it('skips what has closed at the moment of saving and says how many', () => {
     const slots = [{ date: MON, meal: 'lunch' }, { date: MON, meal: 'dinner' }, { date: '2026-11-28', meal: 'lunch' }]
     const out = M.applyBulk(room(), 's1', config, who(['kim', 'lee', 'choi']), slots, true, at(MON, 10, 30), members)
-    expect(plain(out.result)).toEqual({ applied: 3, already: 0, closed: 6, unfit: 0, trimmed: 0 })
+    expect(plain(out.result)).toEqual({ applied: 3, already: 0, closed: 6, firm: 0, unfit: 0, trimmed: 0 })
     expect(Object.keys(out.entry.for.kim.days[MON])).toEqual(['dinner'])
     expect(M.bulkSummary(out.result, true, true)).toBe('3건 신청, 6건은 마감되어 제외')
     expect(M.bulkSummary({ applied: 9, already: 2, closed: 1, unfit: 0, trimmed: 0 }, true, false)).toBe('9명 신청, 2명은 이미 신청함, 1명은 마감되어 제외')
@@ -753,5 +797,109 @@ describe('meal plugin: people registered by hand (staff who do not use TeamHub)'
     expect(add(after, 'adm', at(MON, 11), [{ id: X1, as: X2 }]).shared.people[X1].as).toBeUndefined()
     const undone = add(after, 'adm', at(MON, 11), [{ id: X1, as: '' }]).shared
     expect(M.manualList(M.effective(room(undone)).people).map((p: any) => p.name)).toEqual(['김주무(임시)'])
+  })
+})
+
+describe('meal plugin: 확실히 신청안함 — a "no" only the member can take back (1.6.0)', () => {
+  const TUE = '2026-11-24'
+  const shared = { ...M.cleanConfig({ ...config, stewards: ['s1'] }), since: { s1: 1 } }
+  const members = [
+    { id: 'adm', name: '박관리', deptName: '총무과' },
+    { id: 'kim', name: '김주무', deptName: '민원팀' },
+    { id: 's1', name: '김서무', deptName: '총무과' },
+    { id: 'lee', name: '이주무', deptName: '민원팀' }
+  ]
+  const room = (entries: Record<string, any> = {}) => ({ createdBy: 'adm', shared, entries })
+  const e = (name: string, value: any) => ({ name, value })
+  const plain = (v: unknown) => JSON.parse(JSON.stringify(v))
+  const lunch = [{ date: MON, meal: 'lunch' }]
+  const kim = { id: 'kim', name: '김주무' }
+  const firmKim = () => M.apply(null, config, MON, 'lunch', false, at(MON, 9), true).entry
+
+  it('is kept only in the member\'s own days, as a "no", under the same deadline', () => {
+    const own = firmKim()
+    expect(plain(own.days[MON].lunch)).toEqual({ on: false, at: at(MON, 9), firm: true })
+    // a "yes" is never firm; somebody else cannot write a firm mark for another
+    expect(M.apply(null, config, MON, 'lunch', true, at(MON, 9), true).entry.days[MON].lunch.firm).toBeUndefined()
+    const forged = M.cleanEntry({ days: {}, for: { kim: { name: '김주무', days: { [MON]: { lunch: { on: false, at: 5, firm: true } } } } } })
+    expect(forged.for.kim.days[MON].lunch.firm).toBeUndefined()
+    expect(M.apply(null, config, MON, 'lunch', false, at(MON, 10, 30), true).error).toContain('마감')
+    expect(M.isFirm(room({ kim: e('김주무', own) }), 'kim', MON, 'lunch')).toBe(true)
+    expect(M.isFirm(room({ kim: e('김주무', own) }), 'kim', MON, 'dinner')).toBe(false)
+    expect(M.isFirm(room({ kim: e('김주무', own) }), 'lee', MON, 'lunch')).toBe(false)
+  })
+
+  it('refuses a request or cancel made for the member by anybody, also by those in charge', () => {
+    const r = room({ kim: e('김주무', firmKim()) })
+    for (const on of [true, false]) {
+      const out = M.applyFor(null, config, kim, MON, 'lunch', on, at(MON, 9, 10), r)
+      expect(out.error).toContain('확실히 신청안함')
+      expect(out.error).toContain('김주무 님이')
+    }
+    // the other meal and another day stay open to them
+    expect(M.applyFor(null, config, kim, MON, 'dinner', true, at(MON, 9, 10), r).entry).toBeTruthy()
+    expect(M.applyFor(null, config, kim, TUE, 'lunch', true, at(MON, 9, 10), r).entry).toBeTruthy()
+  })
+
+  it('ignores a record made for the member while the mark stands, whatever its time (a stale or changed client)', () => {
+    // written without looking (no room passed): later than the mark, and one written before it
+    const later = M.applyFor(null, config, kim, MON, 'lunch', true, at(MON, 9, 30)).entry
+    const before = M.applyFor(null, config, kim, MON, 'lunch', true, at(MON, 8)).entry
+    const r = room({ kim: e('김주무', firmKim()), lee: e('이주무', later), s1: e('김서무', before) })
+    expect(M.dayList(r, MON, 'lunch', members)).toHaveLength(0)
+    expect(plain(M.recordOf(r, members, 'kim', MON, 'lunch'))).toEqual({ on: false, at: at(MON, 9), by: '', byName: '', firm: true })
+    expect(M.declinedList(r, MON, 'lunch', members).map((p: any) => p.name)).toEqual(['김주무'])
+    expect(M.monthTally(r, '2026-11', members, at(MON, 23), false).rows).toEqual([])
+    expect(M.orderText(r, MON, members, MON)).toContain('점심 0명')
+  })
+
+  it('the member takes it back themselves: a plain cancel or a request; then others may again', () => {
+    const marked = firmKim()
+    const undone = M.apply(marked, config, MON, 'lunch', false, at(MON, 9, 20)).entry
+    expect(undone.days[MON].lunch.firm).toBeUndefined()
+    const r = room({ kim: e('김주무', undone) })
+    expect(M.isFirm(r, 'kim', MON, 'lunch')).toBe(false)
+    // a record made while it stood (earlier than taking it back) does not come back
+    const during = M.applyFor(null, config, kim, MON, 'lunch', true, at(MON, 9, 10)).entry
+    expect(M.dayList(room({ kim: e('김주무', undone), lee: e('이주무', during) }), MON, 'lunch', members)).toHaveLength(0)
+    // nor one with a clock set ahead: it is never later than when the server stored it
+    const ahead = M.applyFor(null, config, kim, MON, 'lunch', true, at(MON, 10)).entry
+    expect(M.dayList(room({ kim: e('김주무', undone), lee: { name: '이주무', value: ahead, at: at(MON, 9, 10) } }), MON, 'lunch', members)).toHaveLength(0)
+    expect(M.dayList(room({ kim: e('김주무', undone), lee: { name: '이주무', value: ahead, at: at(MON, 9, 25) } }), MON, 'lunch', members)).toHaveLength(1)
+    // one made afterwards counts
+    const after = M.applyFor(null, config, kim, MON, 'lunch', true, at(MON, 9, 30), r)
+    expect(after.error).toBeUndefined()
+    expect(M.dayList(room({ kim: e('김주무', undone), lee: e('이주무', after.entry) }), MON, 'lunch', members).map((p: any) => p.byName)).toEqual(['이주무'])
+    // or the member requests at once
+    const own = M.apply(marked, config, MON, 'lunch', true, at(MON, 9, 20)).entry
+    expect(M.dayList(room({ kim: e('김주무', own) }), MON, 'lunch', members).map((p: any) => p.name)).toEqual(['김주무'])
+  })
+
+  it('the bulk list marks the member and skips them; the result says so', () => {
+    const r = room({ kim: e('김주무', firmKim()) })
+    const people = M.resolve(r, members)
+    expect(plain(M.pickStatus(people, 'kim', lunch))).toEqual({ kind: 'firm' })
+    expect(plain(M.pickStatus(people, 'kim', [...lunch, { date: MON, meal: 'dinner' }]))).toEqual({ kind: 'mixed' })
+    expect([M.settled(people, 'kim', lunch, true), M.settled(people, 'kim', lunch, false), M.settled(people, 'lee', lunch, true)]).toEqual([true, true, false])
+    expect(M.settled(people, 'kim', [...lunch, { date: MON, meal: 'dinner' }], true)).toBe(false)
+    expect(M.firmAny(people, 'kim', [...lunch, { date: MON, meal: 'dinner' }])).toBe(true)
+    const out = M.applyBulk(r, 's1', config, [kim, { id: 'lee', name: '이주무' }], [...lunch, { date: MON, meal: 'dinner' }], true, at(MON, 9, 10), members)
+    expect(plain(out.result)).toEqual({ applied: 3, already: 0, closed: 0, firm: 1, unfit: 0, trimmed: 0 })
+    expect(out.entry.for.kim.days[MON].lunch).toBeUndefined()
+    expect(out.entry.for.kim.days[MON].dinner.on).toBe(true)
+    expect(M.bulkSummary(out.result, true, true)).toBe("3건 신청, 1건은 본인이 '확실히 신청안함'으로 정해 제외")
+  })
+
+  it('counts as a "no" in the statistics and in 내 기록, apart from no answer', () => {
+    const r = room({ kim: e('김주무', firmKim()), lee: e('이주무', M.apply(null, config, MON, 'lunch', true, at(MON, 9)).entry) })
+    const day = M.dailyTally(r, '2026-11', members, at(MON, 23)).find((d: any) => d.date === MON)
+    expect(day.meals.lunch).toMatchObject({ count: 1, declined: 1 })
+    const sm = M.monthSummary(r, '2026-11', members, at(MON, 23))
+    expect(plain(sm.declined)).toEqual({ lunch: 1, dinner: 0 })
+    expect(sm.people).toBe(1)
+    const pm = M.personMonth(r, members, 'kim', '2026-11', at(MON, 23))
+    expect(plain(pm.declined)).toEqual({ lunch: 1, dinner: 0 })
+    expect(pm.days.find((d: any) => d.date === MON).meals.lunch).toMatchObject({ on: false, firm: true, by: '' })
+    expect(plain(pm.done)).toEqual({ lunch: 0, dinner: 0 })
   })
 })

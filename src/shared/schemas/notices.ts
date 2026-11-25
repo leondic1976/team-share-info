@@ -68,6 +68,8 @@ export interface UrgentPayload {
   id: string
   title: string
   bodyHtml: string
+  /** Absent from servers older than the 서무 mark. */
+  authorId?: string
   authorName: string
   requireAck: boolean
   replyOptions: string[]

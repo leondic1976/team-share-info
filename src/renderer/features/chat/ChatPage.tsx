@@ -22,6 +22,7 @@ import { SharedMemosView } from './SharedMemos'
 import { TeamAlarmsView } from './TeamAlarms'
 import { cn } from '@renderer/lib/utils'
 import { confirmPii } from '@renderer/lib/pii'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 const when = (t: number | null): string => (!t ? '' : isToday(t) ? format(t, 'HH:mm') : format(t, 'M/d'))
 
@@ -46,7 +47,7 @@ function NewChatDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
       }
     >
       <div className="space-y-3">
-        <MemberPicker value={ids} onChange={setIds} excludeSelf />
+        <MemberPicker value={ids} onChange={setIds} excludeSelf presence />
         {ids.length > 1 && (
           <Field label="대화방 이름 (선택)">
             <Input aria-label="대화방 이름" value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -193,7 +194,7 @@ function NotesView({ composeKey, to }: { composeKey: number; to: string | null }
         >
           <div className="space-y-3">
             <Field label="받는 사람">
-              <MemberPicker value={composing.to} onChange={(to) => setComposing({ to })} excludeSelf />
+              <MemberPicker value={composing.to} onChange={(to) => setComposing({ to })} excludeSelf presence />
             </Field>
             <Field label="내용">
               <Textarea aria-label="쪽지 내용" value={body} onChange={(e) => setBody(e.target.value)} className="min-h-28" />
@@ -229,12 +230,16 @@ export function ChatPage(): React.JSX.Element {
   const list = useQuery({ queryKey: ['chat', 'list'], queryFn: () => api.get<ConversationDto[]>('/api/conversations'), enabled: online, placeholderData: (p) => p })
   const search = useQuery({
     queryKey: ['chat', 'search', q],
-    queryFn: () => api.get<{ id: string; conversationId: string; body: string; senderName: string | null; createdAt: number }[]>('/api/messages/search', { q }),
+    queryFn: () => api.get<{ id: string; conversationId: string; body: string; senderId?: string | null; senderName: string | null; createdAt: number }[]>('/api/messages/search', { q }),
     enabled: online && q.trim().length > 1
   })
   useEffect(() => {
     if (id === 'notes') setTab('notes')
   }, [id])
+  // A press of [쪽지 쓰기] is spent once the 쪽지 tab is left: coming back by the tab must not reopen the dialog.
+  useEffect(() => {
+    if (tab !== 'notes') setComposeKey(0)
+  }, [tab])
 
   const convs = (list.data ?? []).filter((c) => space === 'team' || c.groupId === space)
   const { data: me } = useMe()
@@ -307,6 +312,7 @@ export function ChatPage(): React.JSX.Element {
                   <div className="flex items-center gap-1.5">
                     {c.groupColor && <span className="size-2.5 shrink-0 rounded-full" style={{ background: c.groupColor }} />}
                     <span className={cn('truncate text-sm', c.unread ? 'font-bold' : 'font-medium')}>{titleOf(c)}</span>
+                    {c.kind === 'dm' && <RoleMark memberId={c.memberIds.find((x) => x !== me?.id)} className="ml-0" />}
                     {c.kind !== 'dm' && <span className="text-xs text-muted-foreground">{c.memberCount}</span>}
                     {c.muted && <BellOff className="size-3 text-muted-foreground" />}
                     <span className="ml-auto shrink-0 text-xs text-muted-foreground">{when(c.lastMessageAt)}</span>
@@ -324,7 +330,8 @@ export function ChatPage(): React.JSX.Element {
                   {search.data!.map((m) => (
                     <button key={m.id} className="block w-full cursor-pointer px-3 py-1.5 text-left hover:bg-muted" onClick={() => navigate(`/chat/${m.conversationId}`)}>
                       <div className="truncate text-xs">
-                        <b>{m.senderName}</b> {m.body}
+                        <b>{m.senderName}</b>
+                        <RoleMark memberId={m.senderId} /> {m.body}
                       </div>
                       <div className="text-[0.7rem] text-muted-foreground">{format(m.createdAt, 'M/d HH:mm')}</div>
                     </button>

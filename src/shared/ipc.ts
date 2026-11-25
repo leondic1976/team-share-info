@@ -405,6 +405,12 @@ export interface IpcMap {
   'memo:onTop': { req: { id: string; on: boolean }; res: void }
   'memo:quick': { req: void; res: void }
   'memo:closeWindow': { req: void; res: void }
+  /** 긴급구조지휘대: the 훈련 창 of a drill (brought to the front when open; msgId: the message to show) */
+  'command:openDrill': { req: { drillId: string; msgId?: string }; res: void }
+  /** 긴급구조지휘대: the 훈련 통제실 window of a drill */
+  'command:openControl': { req: { drillId: string }; res: void }
+  'command:closeWindow': { req: void; res: void }
+  'command:openDrills': { req: void; res: string[] }
   'local:alarms.list': { req: void; res: AlarmDto[] }
   'local:alarms.save': { req: AlarmInput; res: string }
   'local:alarms.setEnabled': { req: { id: string; enabled: boolean }; res: void }
@@ -724,6 +730,10 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'memo:onTop',
   'memo:quick',
   'memo:closeWindow',
+  'command:openDrill',
+  'command:openControl',
+  'command:closeWindow',
+  'command:openDrills',
   'local:alarms.list',
   'local:alarms.save',
   'local:alarms.setEnabled',
@@ -899,6 +909,8 @@ export interface MainEventMap {
   'preview:changed': { sound: boolean }
   /** play the alert sound ("팀뿌요~") in the TeamHub window */
   'app:sound': { kind: 'alert' }
+  /** 긴급구조지휘대: the 훈련 창 was asked for again (a new message or 다시 알림) */
+  'command:poke': { drillId: string; msgId: string | null }
   'transfer:update': TransferItem[]
   'transfer:edited': { fileId: string; folderId: string; name: string; path: string }
   'memos:changed': { id: string | null }
@@ -915,7 +927,7 @@ export interface MainEventMap {
   'lock:changed': LockState
 }
 export type MainEvent = keyof MainEventMap
-export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'popup:closeRequest', 'preview:changed', 'app:sound', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed', 'storage:progress', 'lock:changed']
+export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'popup:closeRequest', 'preview:changed', 'app:sound', 'command:poke', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed', 'storage:progress', 'lock:changed']
 
 export interface TeamhubBridge {
   /** Absolute path of a dropped/selected File (Electron webUtils). */

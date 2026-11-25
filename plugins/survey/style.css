@@ -5,12 +5,6 @@
   display: none !important;
 }
 /* an older TeamHub has no __ui.css (and so no colour tokens): a plain notice */
-#oldApp {
-  margin: 0;
-  padding: 8px 20px;
-  background: #fef3c7;
-  color: #92400e;
-}
 small {
   color: var(--muted-foreground);
   font-size: 0.75rem;

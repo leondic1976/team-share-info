@@ -35,7 +35,7 @@ class Boundary extends Component<{ children: ReactNode; resetKey: string }, Stat
       <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center" role="alert" data-testid="page-error">
         <TriangleAlert className="size-10 text-important" aria-hidden />
         <h2 className="text-lg font-bold">이 화면을 여는 중에 오류가 났습니다</h2>
-        <p className="max-w-md text-sm text-muted-foreground">다른 메뉴는 그대로 쓸 수 있습니다. 다시 시도해도 같으면 도움말 → 기능요청·오류신고로 아래 내용을 알려 주세요.</p>
+        <p className="max-w-md text-sm text-muted-foreground">다른 메뉴는 그대로 쓸 수 있습니다. 다시 시도해도 같으면 설정 → 기능요청 및 오류신고로 아래 내용을 알려 주세요.</p>
         <code className="selectable max-w-xl rounded-md bg-muted px-3 py-1.5 text-xs break-all">{error.message || String(error)}</code>
         <Button variant="outline" onClick={() => this.setState({ error: null })}>
           <RotateCcw /> 다시 시도

@@ -45,6 +45,8 @@ export interface DocSummaryDto {
   eventId: string | null
   authorId: string
   authorName: string
+  /** Absent from servers older than the 서무 mark. */
+  updatedById?: string | null
   updatedByName: string | null
   createdAt: number
   updatedAt: number
@@ -102,6 +104,8 @@ export interface AnnualTaskDto {
   bodyHtml: string
   remindDaysBefore: number
   scope: ScopeDto
+  /** Absent from servers older than the 서무 mark. */
+  authorId?: string
   authorName: string
   canEdit: boolean
 }

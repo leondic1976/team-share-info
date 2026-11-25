@@ -2,8 +2,25 @@ import { describe, it, expect, afterAll } from 'vitest'
 import type { Page } from 'playwright-core'
 import { go, joinAndApprove, launch, runWizard, type Launched } from './helpers'
 
+const SHOTS = process.env.TEAMHUB_SHOT_DIR
+
 const PORT = '47919'
 const frame = (p: Page) => p.frameLocator('[data-testid="plugin-frame"]')
+/** The frame itself, to run code in it (the extension's own Meal and TeamHub). */
+const frameOf = async (p: Page) => (await (await p.locator('[data-testid="plugin-frame"]').elementHandle())!.contentFrame())!
+/** With TEAMHUB_SHOT_DIR set: a screenshot in the light and in the dark theme (the program and the frame). */
+const shot = async (p: Page, name: string): Promise<void> => {
+  if (!SHOTS) return
+  const f = await frameOf(p)
+  await p.waitForTimeout(400)
+  await p.screenshot({ path: `${SHOTS}/${name}-light.png` })
+  await p.evaluate(() => document.documentElement.classList.add('dark'))
+  await f.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
+  await p.waitForTimeout(300)
+  await p.screenshot({ path: `${SHOTS}/${name}-dark.png` })
+  await p.evaluate(() => document.documentElement.classList.remove('dark'))
+  await f.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
+}
 const open = async (p: Page, ready: string): Promise<void> => {
   await go(p, '/plugins/meal')
   await frame(p).locator(ready).first().waitFor({ timeout: 20000 })
@@ -34,7 +51,8 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     expect(await fb.locator('.empty').textContent()).toContain('아직 식사 신청을 받지 않습니다')
     expect(await fb.locator('#settingsTab').isVisible()).toBe(false)
     // the look of the program reaches the frame (__ui.css): the same header as the other pages
-    expect(await fb.locator('#oldApp').isVisible()).toBe(false)
+    // no "update TeamHub" notice any more (지시 89): built-in extensions come with the program
+    expect(await fb.getByText('최신 버전으로 업데이트해야').count()).toBe(0)
     expect(await fb.locator('.th-page-header').evaluate((el) => [getComputedStyle(el).borderBottomWidth, getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim()])).toEqual(['1px', '1'])
 
     await open(a.page, '.empty')
@@ -266,6 +284,33 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     expect(await dinnerA.textContent()).toContain('미등록E2E')
   }, 120000)
 
+  it('통계 only for those in charge and the server PC; 내 기록 for everybody (지시 90·91)', async () => {
+    const fa = frame(a.page)
+    const fb = frame(b.page)
+    const wait = { timeout: 15000 }
+    // the member (not in charge): no 통계, but their own record
+    await open(b.page, '.day.today')
+    expect(await fb.locator('#statsTab').isVisible()).toBe(false)
+    await fb.locator('nav [data-tab="mine"]').click()
+    await fb.locator('[data-mine="summary"]').waitFor(wait)
+    // today's dinner was requested for them by the admin (여러 명 대신 신청)
+    await expect.poll(() => fb.locator('table[data-mine="days"] tr.today').textContent(), wait).toContain('서버관리자 대신')
+    expect(await fb.locator('table[data-mine="months"] tbody tr').count()).toBe(4)
+    // the server PC (the admin who made the settings): the four views
+    await open(a.page, '.day.today')
+    expect(await fa.locator('#statsTab').isVisible()).toBe(true)
+    await fa.locator('#statsTab').click()
+    await fa.locator('[data-stats="summary"]').waitFor(wait)
+    expect(await fa.locator('[data-stats="summary"]').textContent()).toContain('신청 받는 중')
+    await fa.locator('[data-stats-view="daily"]').click()
+    await fa.locator('[data-stats="daily"] tr.today').waitFor(wait)
+    await fa.locator('[data-stats-view="person"]').click()
+    await fa.locator('[data-stats="person"]').waitFor(wait)
+    await fa.locator('[data-stats-view="dept"]').click()
+    await fa.locator('[data-stats="dept"]').waitFor(wait)
+    await fa.locator('nav [data-tab="apply"]').click()
+  }, 90000)
+
   it('a public holiday is not served', async () => {
     const fb = frame(b.page)
     const d = new Date(Date.now() + 86400000)
@@ -287,4 +332,91 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     await expect.poll(() => fb.locator('.day').count(), { timeout: 15000 }).toBe(1)
     expect(await fb.locator(`[data-holiday="${tomorrow}"]`).textContent()).toContain('임시공휴일E2E')
   }, 90000)
+  it('확실히 신청안함: once the member marks it, nobody else can request or cancel that meal for them; only they take it back (1.6.0)', async () => {
+    const fa = frame(a.page)
+    const fb = frame(b.page)
+    const wait = { timeout: 15000 }
+    // 팀원B's dinner today was requested for them by the admin; they mark it 확실히 신청안함
+    const dinner = fb.locator('.day.today [data-tile$=":dinner"]')
+    await expect.poll(() => dinner.textContent(), wait).toContain('신청함')
+    await dinner.getByRole('button', { name: '확실히 신청안함' }).click()
+    await expect.poll(() => dinner.textContent(), wait).toContain('대신 신청 불가')
+    expect(await dinner.locator('.state').textContent()).toContain('확실히 신청안함')
+    expect(await dinner.getByRole('button', { name: '표시 풀기' }).isVisible()).toBe(true)
+    await shot(b.page, 'meal-firm-tile')
+
+    // 현황 on the admin's PC: not among those eating, listed apart, and cannot be picked for 대신 신청
+    await open(a.page, '.day.today')
+    await fa.locator('nav [data-tab="status"]').click()
+    const dinnerA = fa.locator('[data-status="dinner"]')
+    await expect.poll(() => dinnerA.locator('[data-declined="dinner"]').textContent(), wait).toContain('팀원B')
+    const eating = dinnerA.locator('[data-who]', { hasText: '팀원B' })
+    expect(await eating.count()).toBe(0)
+    const opt = dinnerA.locator('.proxy select option', { hasText: '팀원B' })
+    expect(await opt.isDisabled()).toBe(true)
+    expect(await opt.textContent()).toContain('대신 신청 불가')
+    await shot(a.page, 'meal-firm-status')
+
+    // 여러 명 대신 신청: the mark with the reason, the box cannot be ticked, for a cancel neither
+    await fa.locator('#bulkOpen').click()
+    await fa.locator('#bulkPeople .bulk-group').first().waitFor(wait)
+    const row = fa.locator('#bulkPeople label:has([data-bstatus="firm"])')
+    await expect.poll(() => row.count(), wait).toBe(1)
+    expect(await row.locator('> span').first().textContent()).toBe('팀원B')
+    expect(await row.locator('[data-bstatus="firm"]').textContent()).toContain('본인 신청안함')
+    expect(await row.textContent()).toContain('대신 신청 불가')
+    expect(await row.locator('input[data-bid]').isDisabled()).toBe(true)
+    await shot(a.page, 'meal-firm-bulk')
+    await fa.locator('input[name="bulkAct"][value="off"]').check()
+    expect(await row.locator('input[data-bid]').isDisabled()).toBe(true)
+    await fa.locator('#bulkClose').click()
+
+    // a client that does not look (an older screen, a changed script) writes a request for them
+    // anyway: the save is refused by the extension, and a record written regardless does not count
+    const fr = await frameOf(a.page)
+    const forced = await fr.evaluate(async () => {
+      // the extension's own globals, untyped here
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const w = window as any
+      const M = w.Meal
+      const all = await w.TeamHub.call('rooms.list')
+      const room = M.pickRoom(all)
+      const me = await w.TeamHub.call('me')
+      const target = (await w.TeamHub.call('members')).find((m: { name: string }) => m.name === '팀원B')
+      const d = new Date()
+      const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const config = M.withHolidays(M.effective(room).config, [])
+      const mine = room.entries[me.id] ? room.entries[me.id].value : null
+      const refused = M.applyFor(mine, config, { id: target.id, name: target.name }, today, 'dinner', true, Date.now(), room).error || ''
+      const r = M.applyFor(mine, config, { id: target.id, name: target.name }, today, 'dinner', true, Date.now() + 60000)
+      await w.TeamHub.call('rooms.setEntry', { roomId: room.id, value: r.entry })
+      return refused
+    })
+    expect(forced).toContain('확실히 신청안함')
+    await a.page.waitForTimeout(1500)
+    expect(await dinnerA.locator('[data-declined="dinner"]').textContent()).toContain('팀원B')
+    expect(await eating.count()).toBe(0)
+    expect(await dinner.textContent()).toContain('대신 신청 불가')
+
+    // 내 기록 shows it as the member's own certain "no"
+    await fb.locator('nav [data-tab="mine"]').click()
+    await expect.poll(() => fb.locator('table[data-mine="days"] tr.today').textContent(), wait).toContain('신청안함')
+    expect(await fb.locator('table[data-mine="days"] tr.today').textContent()).toContain('본인 확정')
+    await fb.locator('nav [data-tab="apply"]').click()
+
+    // only the member takes it back; what was written while it stood does not come back
+    await dinner.getByRole('button', { name: '표시 풀기' }).click()
+    await expect.poll(() => dinner.textContent(), wait).toContain('신청 안 함')
+    expect(await dinner.textContent()).not.toContain('대신 신청 불가')
+    await expect.poll(() => dinnerA.locator('[data-declined="dinner"]').count(), wait).toBe(0)
+    // (the record forced in carried a clock one minute ahead: it still counts as written when the server stored it)
+    expect(await eating.count()).toBe(0)
+    // from now on anybody may again: the admin requests it for them through the list
+    await expect.poll(() => opt.isDisabled(), wait).toBe(false)
+    await dinnerA.locator('.proxy select').selectOption((await opt.getAttribute('value'))!)
+    await dinnerA.getByRole('button', { name: '대신 신청', exact: true }).click()
+    await expect.poll(() => eating.count(), wait).toBe(1)
+    await expect.poll(() => dinner.textContent(), wait).toContain('신청함')
+    expect(await dinner.textContent()).toContain('서버관리자 대신')
+  }, 120000)
 })

@@ -15,6 +15,7 @@ import { MemberEditDialog } from './MemberEditDialog'
 import { displayName, roleLabel } from '@shared/schemas/auth'
 import { OwnerOnlyNote, useIsOwner } from './owner'
 import { affiliationText } from '@shared/org'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 export function MembersTab(): React.JSX.Element {
   const qc = useQueryClient()
@@ -120,7 +121,10 @@ export function MembersTab(): React.JSX.Element {
                 <td className="px-4 py-2">
                   <span className="flex items-center gap-2">
                     <span className={`inline-block size-2 rounded-full ${d.online ? 'bg-success' : 'bg-muted-foreground/40'}`} />
-                    {d.memberName}
+                    <span>
+                      {d.memberName}
+                      <RoleMark memberId={d.memberId} />
+                    </span>
                   </span>
                 </td>
                 <td className="text-muted-foreground">

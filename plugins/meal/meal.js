@@ -40,6 +40,7 @@
     stateMax: 60000
   }
   const DAY = 86400000
+  const NO_DEPT_NAME = '부서 미지정'
   const WEEK = ['일', '월', '화', '수', '목', '금', '토']
 
   const pad = (n) => String(n).padStart(2, '0')
@@ -149,8 +150,13 @@
     return `${Math.floor(min / 1440)}일 남음`
   }
 
-  /** One member's requests as stored in their entry: { days: { 'YYYY-MM-DD': { lunch: { on, at } } } }. */
-  function cleanDays(src) {
+  /**
+   * One member's requests as stored in their entry: { days: { 'YYYY-MM-DD': { lunch: { on, at, firm? } } } }.
+   * `firm` (확실히 신청안함, 1.6.0) is a "no" the member set for themselves: while it stands nobody
+   * else's request or cancel for that meal counts (see resolve()). It is kept only in the member's
+   * own days (`own`), never in what somebody wrote for others.
+   */
+  function cleanDays(src, own) {
     const days = {}
     if (!src || typeof src !== 'object') return days
     for (const date of Object.keys(src)) {
@@ -158,7 +164,10 @@
       const day = {}
       for (const k of MEAL_KEYS) {
         const r = src[date] && src[date][k]
-        if (r && typeof r === 'object') day[k] = { on: !!r.on, at: Number(r.at) || 0 }
+        if (r && typeof r === 'object') {
+          day[k] = { on: !!r.on, at: Number(r.at) || 0 }
+          if (own && !r.on && r.firm) day[k].firm = true
+        }
       }
       if (Object.keys(day).length) days[date] = day
     }
@@ -167,7 +176,7 @@
   /** `for` holds what this member requested for others: { memberId: { name, days } }. */
   function cleanEntry(value) {
     const v = value && typeof value === 'object' ? value : {}
-    const out = { v: 1, days: cleanDays(v.days) }
+    const out = { v: 1, days: cleanDays(v.days, true) }
     if (v.for && typeof v.for === 'object') {
       const others = {}
       for (const id of Object.keys(v.for)) {
@@ -221,12 +230,32 @@
     if (entry.for && !Object.keys(entry.for).length) delete entry.for
     return entry
   }
-  function apply(value, config, date, meal, on, now) {
+  /**
+   * `firm` (with on = false): 확실히 신청안함 — the member says for certain they will not eat, and
+   * from then on nobody else can request or cancel that meal for them. Only they can take it
+   * back, by requesting (on = true) or cancelling plainly (on = false without firm).
+   */
+  function apply(value, config, date, meal, on, now, firm) {
     const error = refusal(config, date, meal, now)
     if (error) return { error }
     const entry = prune(cleanEntry(value), now)
-    entry.days[date] = Object.assign({}, entry.days[date], { [meal]: { on: !!on, at: now } })
+    const rec = { on: !!on, at: now }
+    if (!on && firm) rec.firm = true
+    entry.days[date] = Object.assign({}, entry.days[date], { [meal]: rec })
     return { entry }
+  }
+  /** Has the member (their own entry, or the member a person registered by hand was merged into) marked 확실히 신청안함? */
+  function isFirm(room, id, date, meal) {
+    const hand = effective(room).people
+    const tid = isManualId(id) && hand[id] && hand[id].as ? hand[id].as : id
+    const e = room && room.entries && room.entries[tid]
+    const r = e && cleanDays(e.value && e.value.days, true)[date]
+    return !!(r && r[meal] && r[meal].firm)
+  }
+  /** Why somebody else cannot request or cancel for `target` ('' = they can). */
+  function firmRefusal(room, target, date, meal) {
+    if (!room || !target || !isFirm(room, target.id, date, meal)) return ''
+    return `${target.name ? `${target.name} 님이` : '본인이'} ${dateLabel(date, '')} ${MEALS[meal] || ''}을 '확실히 신청안함'으로 정해 두어 다른 사람이 대신 신청·취소할 수 없습니다. 본인만 바꿀 수 있습니다.`
   }
 
   /** In charge of meals: the admin who made the settings (the owner) and the 식수서무 they named. */
@@ -240,13 +269,15 @@
   const canProxy = (room, id) => !!room && isId(id)
   /**
    * Request or cancel for another member (target = { id, name }), under the same deadline.
-   * Anybody may (see canProxy).
+   * Anybody may (see canProxy), except for a meal the member marked 확실히 신청안함 (`room`,
+   * the newest one read before saving, is needed to see that; resolve() ignores such a record
+   * anyway).
    * It is written into the entry of the one who does it (`value`); the newest of the member's
    * own request and the ones made for them counts, so the member can still change it.
    */
-  function applyFor(value, config, target, date, meal, on, now) {
+  function applyFor(value, config, target, date, meal, on, now, room) {
     if (!target || typeof target.id !== 'string' || !target.id) return { error: '대신 신청할 사람을 고르세요.' }
-    const error = refusal(config, date, meal, now)
+    const error = refusal(config, date, meal, now) || firmRefusal(room, target, date, meal)
     if (error) return { error }
     const entry = prune(cleanEntry(value), now)
     const others = entry.for || (entry.for = {})
@@ -259,8 +290,10 @@
   const byDeptName = (a, b) => (a.deptName || '').localeCompare(b.deptName || '', 'ko') || a.name.localeCompare(b.name, 'ko')
   /**
    * Every member with a request, own or made for them: Map id → { id, name, deptName, days }
-   * where days[date][meal] = { on, at, by, byName } (by = who requested it for them, '' = themselves).
-   * The newest record counts; at the same moment the member's own.
+   * where days[date][meal] = { on, at, by, byName, firm? } (by = who requested it for them, '' = themselves).
+   * The newest record counts; at the same moment the member's own. A meal the member marked
+   * 확실히 신청안함 (`firm`) keeps their own record whatever others wrote for them, at any time:
+   * this is where the mark is enforced, for every screen, count and file.
    */
   function resolve(room, members) {
     const entries = (room && room.entries) || {}
@@ -286,13 +319,19 @@
     }
     // a person registered by hand who turned out to be a member: shown under that member
     const alias = (id) => (isManualId(id) && hand[id] && hand[id].as ? hand[id].as : id)
-    const put = (p, days, by, byName) => {
+    // a record made for somebody else is never later than the moment the server stored the entry
+    // it is in (entries[id].at), so a wrong or forged clock cannot win over the member's own
+    const put = (p, days, by, byName, cap) => {
       for (const date of Object.keys(days)) {
         for (const k of Object.keys(days[date])) {
           const r = days[date][k]
+          const rAt = by && cap > 0 ? Math.min(r.at, cap) : r.at
           const cur = p.days[date] && p.days[date][k]
-          if (cur && (r.at < cur.at || (r.at === cur.at && by))) continue
-          p.days[date] = Object.assign({}, p.days[date], { [k]: { on: r.on, at: r.at, by, byName } })
+          if (cur && by && cur.firm) continue
+          if (cur && (rAt < cur.at || (rAt === cur.at && by))) continue
+          const rec = { on: r.on, at: rAt, by, byName }
+          if (!by && r.firm) rec.firm = true
+          p.days[date] = Object.assign({}, p.days[date], { [k]: rec })
         }
       }
     }
@@ -312,7 +351,7 @@
         const tid = alias(raw)
         const m = info.get(tid)
         if (!trusted && !m && !entries[tid] && !(isManualId(tid) && hand[tid])) continue
-        put(person(tid, (m && m.name) || (tid === raw ? clean[id].for[raw].name : '')), clean[id].for[raw].days, tid === id ? '' : id, tid === id ? '' : entries[id].name || '')
+        put(person(tid, (m && m.name) || (tid === raw ? clean[id].for[raw].name : '')), clean[id].for[raw].days, tid === id ? '' : id, tid === id ? '' : entries[id].name || '', Number(entries[id].at) || 0)
       }
     }
     return out
@@ -331,6 +370,15 @@
     }
     return out.sort(byDeptName)
   }
+  /** Who marked that meal of that day 확실히 신청안함 themselves (they are not eating, for certain). */
+  function declinedList(room, date, meal, members) {
+    const out = []
+    for (const p of resolve(room, members).values()) {
+      const r = p.days[date] && p.days[date][meal]
+      if (r && r.firm) out.push({ id: p.id, name: p.name, deptName: p.deptName, at: r.at, manual: !!p.manual })
+    }
+    return out.sort(byDeptName)
+  }
   /** Meals per person in a month ('YYYY-MM'). Only days whose deadline has passed count, unless `all`. */
   function monthTally(room, month, members, now, all) {
     const config = effective(room).config
@@ -345,6 +393,160 @@
     }
     rows.sort(byDeptName)
     return { rows, lunch: rows.reduce((s, r) => s + r.lunch, 0), dinner: rows.reduce((s, r) => s + r.dinner, 0) }
+  }
+
+  // ---------- statistics (지시 90·91) ----------
+  /** Every date of a month ('YYYY-MM'). */
+  function monthDays(month) {
+    const [y, m] = month.split('-').map(Number)
+    const n = new Date(y, m, 0).getDate()
+    return Array.from({ length: n }, (_, i) => `${month}-${pad(i + 1)}`)
+  }
+  /**
+   * Day by day: [{ date, served, why, meals: { lunch: { count, closed, proxied, manual, declined } … } }].
+   * `count` is every request that stands; `closed` says whether it is final (deadline passed);
+   * `declined` those who marked 확실히 신청안함 (a "no", not a missing answer).
+   */
+  function dailyTally(room, month, members, now) {
+    const config = effective(room).config
+    const people = Array.from(resolve(room, members).values())
+    return monthDays(month).map((date) => {
+      const meals = {}
+      for (const k of MEAL_KEYS) {
+        if (!config.meals[k].on) continue
+        let count = 0
+        let proxied = 0
+        let manual = 0
+        let declined = 0
+        for (const p of people) {
+          const r = p.days[date] && p.days[date][k]
+          if (r && r.firm) declined++
+          if (!r || !r.on) continue
+          count++
+          if (r.by) proxied++
+          if (p.manual) manual++
+        }
+        meals[k] = { count, closed: now >= cutoffAt(config, date, k), proxied, manual, declined }
+      }
+      return { date, served: isServed(config, date), why: holidayName(config, date), meals }
+    })
+  }
+  /** Per department: [{ dept, people, lunch, dinner }] (final requests only), in the order of the per-person table. */
+  function deptTally(room, month, members, now) {
+    const out = []
+    const at = new Map()
+    for (const r of monthTally(room, month, members, now, false).rows) {
+      const dept = r.deptName || NO_DEPT_NAME
+      if (!at.has(dept)) {
+        at.set(dept, out.length)
+        out.push({ dept, people: 0, lunch: 0, dinner: 0 })
+      }
+      const d = out[at.get(dept)]
+      d.people++
+      d.lunch += r.lunch
+      d.dinner += r.dinner
+    }
+    return out
+  }
+  /**
+   * The whole month at a glance (final requests only, unless said otherwise):
+   *  { lunch, dinner, total, days, avgLunch, avgDinner, peak: { date, meal, count } | null,
+   *    people, manualPeople, proxied, pending: { lunch, dinner }, declined: { lunch, dinner } } where
+   * `days` are the served days already closed, `pending` the requests of the days still open and
+   * `declined` the meals people marked 확실히 신청안함 (closed days).
+   */
+  function monthSummary(room, month, members, now) {
+    const daily = dailyTally(room, month, members, now)
+    const t = monthTally(room, month, members, now, false)
+    const out = { lunch: t.lunch, dinner: t.dinner, total: t.lunch + t.dinner, days: 0, avgLunch: 0, avgDinner: 0, peak: null, people: t.rows.length, manualPeople: t.rows.filter((r) => r.manual).length, proxied: 0, pending: { lunch: 0, dinner: 0 }, declined: { lunch: 0, dinner: 0 } }
+    const closedDays = { lunch: 0, dinner: 0 }
+    for (const d of daily) {
+      if (!d.served) continue
+      let anyClosed = false
+      for (const k of Object.keys(d.meals)) {
+        const m = d.meals[k]
+        if (m.closed) {
+          anyClosed = true
+          closedDays[k]++
+          out.proxied += m.proxied
+          out.declined[k] += m.declined
+          if (!out.peak || m.count > out.peak.count) out.peak = { date: d.date, meal: k, count: m.count }
+        } else out.pending[k] += m.count
+      }
+      if (anyClosed) out.days++
+    }
+    out.avgLunch = closedDays.lunch ? Math.round((out.lunch / closedDays.lunch) * 10) / 10 : 0
+    out.avgDinner = closedDays.dinner ? Math.round((out.dinner / closedDays.dinner) * 10) / 10 : 0
+    if (out.peak && !out.peak.count) out.peak = null
+    return out
+  }
+  /**
+   * One person's month (내 기록): days = [{ date, any, meals: { lunch: { on, by, byName, at, closed, firm } | null } }]
+   * for the served days, done = final counts { lunch, dinner }, open = requests still open,
+   * declined = meals marked 확실히 신청안함 (counted as a "no", not as no answer).
+   */
+  function personMonth(room, members, id, month, now) {
+    const config = effective(room).config
+    const p = resolve(room, members).get(id)
+    const days = []
+    const done = { lunch: 0, dinner: 0 }
+    const open = { lunch: 0, dinner: 0 }
+    const declined = { lunch: 0, dinner: 0 }
+    for (const date of monthDays(month)) {
+      if (!isServed(config, date)) continue
+      const meals = {}
+      let any = false
+      for (const k of MEAL_KEYS) {
+        if (!config.meals[k].on) continue
+        const r = p && p.days[date] && p.days[date][k]
+        const closed = now >= cutoffAt(config, date, k)
+        meals[k] = r ? { on: !!r.on, by: r.by || '', byName: r.byName || '', at: r.at, closed } : null
+        if (r && r.firm) meals[k].firm = true
+        if (r) any = true
+        if (r && r.on) (closed ? done : open)[k]++
+        if (r && r.firm) declined[k]++
+      }
+      days.push({ date, any, meals })
+    }
+    return { days, done, open, declined }
+  }
+  /** The recent months (this one first) with what one person had (final): [{ month, lunch, dinner }]. */
+  function personMonths(room, members, id, now, n) {
+    const out = []
+    const d = new Date(now)
+    for (let i = 0; i < (n || 4); i++) {
+      const month = ymd(new Date(d.getFullYear(), d.getMonth() - i, 1).getTime()).slice(0, 7)
+      const r = monthTally(room, month, members, now, false).rows.find((x) => x.id === id)
+      out.push({ month, lunch: r ? r.lunch : 0, dinner: r ? r.dinner : 0 })
+    }
+    return out
+  }
+  /** What the statistics keep of a month (saved on the PC of the one in charge when the month is over). */
+  function statsSnapshot(room, month, members, now) {
+    const t = monthTally(room, month, members, now, false)
+    return {
+      v: 1,
+      month,
+      savedAt: now,
+      summary: monthSummary(room, month, members, now),
+      rows: t.rows.map((r) => ({ id: r.id, name: r.name, deptName: r.deptName, lunch: r.lunch, dinner: r.dinner, manual: !!r.manual })),
+      daily: dailyTally(room, month, members, now).map((d) => ({ date: d.date, served: d.served, why: d.why, lunch: d.meals.lunch ? d.meals.lunch.count : null, dinner: d.meals.dinner ? d.meals.dinner.count : null })),
+      depts: deptTally(room, month, members, now)
+    }
+  }
+  /** Of what is kept now and a saved snapshot, the fuller one counts (old records are dropped after 100 days). */
+  const betterOf = (live, saved) => (saved && saved.v === 1 && saved.summary && saved.summary.total > live.summary.total ? saved : live)
+  const csvOf = (rows) => '\ufeff' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n'
+  function dailyCsv(snap) {
+    const has = (k) => snap.daily.some((d) => d[k] !== null)
+    const head = ['날짜', ...(has('lunch') ? ['점심'] : []), ...(has('dinner') ? ['저녁'] : []), '합계', '비고']
+    return csvOf([head, ...snap.daily.map((d) => [d.date, ...(has('lunch') ? [d.served ? d.lunch || 0 : ''] : []), ...(has('dinner') ? [d.served ? d.dinner || 0 : ''] : []), d.served ? (d.lunch || 0) + (d.dinner || 0) : '', d.served ? '' : d.why ? `공휴일(${d.why})` : '받지 않는 날'])])
+  }
+  function deptCsv(snap) {
+    return csvOf([['부서', '인원', '점심', '저녁', '합계'], ...snap.depts.map((d) => [d.dept, d.people, d.lunch, d.dinner, d.lunch + d.dinner]), ['합계', snap.summary.people, snap.summary.lunch, snap.summary.dinner, snap.summary.total]])
+  }
+  function personCsv(snap) {
+    return csvOf([['부서', '이름', '점심', '저녁', '합계'], ...snap.rows.map((r) => [r.deptName, r.manual ? `${r.name} (미등록)` : r.name, r.lunch, r.dinner, r.lunch + r.dinner]), ['', '합계', snap.summary.lunch, snap.summary.dinner, snap.summary.total]])
   }
 
   // ---------- people registered by hand (staff who do not use TeamHub) ----------
@@ -766,6 +968,25 @@
     }
     return out
   }
+  /** Is any of the slots marked 확실히 신청안함 by `id` themselves? (people = resolve()) */
+  function firmAny(people, id, slots) {
+    const p = people && people.get(id)
+    return (slots || []).some((s) => !!(p && p.days[s.date] && p.days[s.date][s.meal] && p.days[s.date][s.meal].firm))
+  }
+  /**
+   * Nothing to do for `id` over the slots: each says `on` already or was marked 확실히 신청안함
+   * (which nobody else may change). Such a person cannot be picked in the bulk list.
+   */
+  function settled(people, id, slots, on) {
+    const p = people && people.get(id)
+    return (
+      (slots || []).length > 0 &&
+      slots.every((s) => {
+        const r = p && p.days[s.date] && p.days[s.date][s.meal]
+        return !!(r && r.firm) || !!(r && r.on) === !!on
+      })
+    )
+  }
   /** Does the record that counts for `id` already say `on` for every one of the slots? (people = resolve()) */
   function alreadySet(people, id, slots, on) {
     const p = people && people.get(id)
@@ -779,6 +1000,7 @@
    *  { kind: 'proxy', byName }            requested for them by somebody else
    *  { kind: 'cancelSelf' }               requested, then cancelled by themselves
    *  { kind: 'cancelProxy', byName }      cancelled for them by somebody else
+   *  { kind: 'firm' }                     marked 확실히 신청안함 by themselves: nobody else may change it
    *  { kind: 'mixed' }                    the slots differ
    */
   function pickStatus(people, id, slots) {
@@ -786,7 +1008,7 @@
     let out = null
     for (const s of slots || []) {
       const r = p && p.days[s.date] && p.days[s.date][s.meal]
-      const one = !r ? { kind: 'none' } : r.on ? (r.by ? { kind: 'proxy', byName: r.byName || '' } : { kind: 'self' }) : r.by ? { kind: 'cancelProxy', byName: r.byName || '' } : { kind: 'cancelSelf' }
+      const one = !r ? { kind: 'none' } : r.firm ? { kind: 'firm' } : r.on ? (r.by ? { kind: 'proxy', byName: r.byName || '' } : { kind: 'self' }) : r.by ? { kind: 'cancelProxy', byName: r.byName || '' } : { kind: 'cancelSelf' }
       if (!out) out = one
       else if (out.kind !== one.kind || (out.byName || '') !== (one.byName || '')) return { kind: 'mixed' }
     }
@@ -800,6 +1022,7 @@
    *  - applied: written
    *  - already: skipped, the record that counts says so already (a cancel of nothing as well)
    *  - closed:  skipped, the deadline has passed or the day takes no requests
+   *  - firm:    skipped, the person marked that meal 확실히 신청안함 themselves
    *  - unfit:   not written because the entry would pass the size limit
    *  - trimmed: days of old records made for others (and old menus) dropped to make room
    * The acting person's own requests are never dropped. Their own name among the targets is
@@ -823,7 +1046,7 @@
     }
     if (!people.length) return { error: '대신 신청할 사람을 고르세요.' }
     if (!wanted.length) return { error: '날짜와 식사를 고르세요.' }
-    const result = { applied: 0, already: 0, closed: 0, unfit: 0, trimmed: 0 }
+    const result = { applied: 0, already: 0, closed: 0, firm: 0, unfit: 0, trimmed: 0 }
     const open = wanted.filter((s) => !refusal(config, s.date, s.meal, now))
     result.closed = (wanted.length - open.length) * people.length
     const mine = room.entries && room.entries[id] ? room.entries[id].value : null
@@ -832,6 +1055,11 @@
     const done = [] // what was written, in order, so the last can be taken back when it does not fit
     for (const p of people) {
       for (const s of open) {
+        // a "no" the person set for themselves is theirs alone to change
+        if (p.id !== id && firmAny(current, p.id, [s])) {
+          result.firm++
+          continue
+        }
         if (alreadySet(current, p.id, [s], on)) {
           result.already++
           continue
@@ -892,6 +1120,7 @@
     const parts = [`${result.applied}${u} ${on ? '신청' : '취소'}`]
     if (result.already) parts.push(`${result.already}${u}은 ${on ? '이미 신청함' : '신청하지 않아 그대로'}`)
     if (result.closed) parts.push(`${result.closed}${u}은 마감되어 제외`)
+    if (result.firm) parts.push(`${result.firm}${u}은 본인이 '확실히 신청안함'으로 정해 제외`)
     if (result.unfit) parts.push(`${result.unfit}${u}은 저장 공간이 모자라 반영하지 못함`)
     if (result.trimmed) parts.push(`지난 기록 ${result.trimmed}일치를 지움`)
     return parts.join(', ')
@@ -915,5 +1144,5 @@
     return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n'
   }
 
-  g.Meal = { isManualId, newManualId, cleanPerson, cleanPeople, manualList, roster, nameClash, splitCount, countText, MEALS, MEAL_KEYS, MENU_SLOTS, LIMITS, deptGroups, groupState, bulkSlots, alreadySet, pickStatus, applyBulk, bulkSummary, weekStart, menuWindow, cleanMenuText, cleanMenus, pickSettings, effective, menuOf, menuStamp, weekDays, menuMeals, saveAs, fitMenus, weekText, parseBlock, placeBlock, canManage, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
+  g.Meal = { isFirm, firmRefusal, declinedList, firmAny, settled, monthDays, dailyTally, deptTally, monthSummary, personMonth, personMonths, statsSnapshot, betterOf, dailyCsv, deptCsv, personCsv, isManualId, newManualId, cleanPerson, cleanPeople, manualList, roster, nameClash, splitCount, countText, MEALS, MEAL_KEYS, MENU_SLOTS, LIMITS, deptGroups, groupState, bulkSlots, alreadySet, pickStatus, applyBulk, bulkSummary, weekStart, menuWindow, cleanMenuText, cleanMenus, pickSettings, effective, menuOf, menuStamp, weekDays, menuMeals, saveAs, fitMenus, weekText, parseBlock, placeBlock, canManage, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
 })(typeof window !== 'undefined' ? window : globalThis)

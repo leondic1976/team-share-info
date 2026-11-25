@@ -26,6 +26,7 @@ import { describeRule } from '@shared/recurrence'
 import { RecurrenceEditor } from './RecurrenceEditor'
 import { cn } from '@renderer/lib/utils'
 import { DateTimeInput } from '@renderer/components/DateTimeInput'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 export type EditMode = 'this' | 'following' | 'all'
 type Kind = 'personal' | 'team' | 'absence'
@@ -392,6 +393,7 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
             <h3 className="text-lg font-bold">{server.title}</h3>
             <p className="text-muted-foreground">
               {fmtRange(f.start, f.end, f.allDay)} · {server.authorName}
+              <RoleMark memberId={server.authorId} />
             </p>
             {server.rrule && <p>반복: {describeRule(server.rrule)}</p>}
             {server.location && <p>장소: {server.location}</p>}
@@ -573,7 +575,8 @@ function AttendeesBlock({ event, onChanged }: { event: EventDto; onChanged: () =
       <div className="flex flex-wrap gap-1.5 text-xs">
         {list.map((a) => (
           <span key={a.memberId} className={cn('rounded-full px-2 py-0.5', a.response === 'yes' ? 'bg-success/15 text-success' : a.response === 'no' ? 'bg-urgent/10 text-urgent' : 'bg-muted')}>
-            {a.name} · {RESP[a.response]}
+            {a.name}
+            <RoleMark memberId={a.memberId} className="bg-background/60" /> · {RESP[a.response]}
           </span>
         ))}
       </div>

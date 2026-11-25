@@ -19,7 +19,7 @@ import { invoke } from '@renderer/lib/bridge'
 import { api } from '@renderer/lib/api'
 import { WallpaperLayer } from './WallpaperLayer'
 import { ComingSoon } from '@renderer/features/placeholder/ComingSoon'
-import { CommandPage } from '@renderer/features/command/CommandPage'
+import { CommandAlerts, CommandPage, useCommandBadge } from '@renderer/features/command/CommandPage'
 import { ConnectionCard } from '@renderer/features/settings/ConnectionCard'
 import { HomePage } from '@renderer/features/home/HomePage'
 import { BlockingScreen } from './BlockingScreen'
@@ -39,6 +39,7 @@ import { useMorningSummary, useTeamAlarms } from '@renderer/features/alarms/useT
 import { usePluginInvites } from '@renderer/features/plugins/usePluginInvites'
 import { MeetingsPage, useLiveMeetings, useMeetingAlerts } from '@renderer/features/meetings/MeetingsPage'
 import { useEventAlerts } from '@renderer/features/calendar/useEventAlerts'
+import { usePluginInventory } from './usePluginInventory'
 
 // Pages load when first opened: a smaller start-up bundle and less idle memory (11장).
 const SettingsPage = lazy(() => import('@renderer/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
@@ -78,6 +79,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   useDocAlerts()
   useEventReminders()
   useEventAlerts()
+  usePluginInventory(state === 'online')
   useTeamAlarms()
   useMorningSummary()
   useMeetingAlerts()
@@ -86,6 +88,8 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   useJoinAlerts(me?.role === 'admin')
   useLedgerAlerts(me?.id)
   const liveMeetings = useLiveMeetings()
+  const commandOn = !!me && !(me.disabledFeatures ?? []).includes('command')
+  const commandBadge = useCommandBadge(commandOn)
   const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => {
@@ -165,7 +169,8 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
       />
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
       <div className="flex min-h-0 flex-1">
-        <Sidebar isAdmin={isAdmin} disabledFeatures={disabled} badges={{ notices: unread, chat: chatUnread.messages + chatUnread.notes, meetings: liveMeetings.data?.length ?? 0, admin: me?.pendingJoins ?? 0, ledger: me?.ledgerUnseen ?? 0 }} />
+        <Sidebar isAdmin={isAdmin} disabledFeatures={disabled} badges={{ notices: unread, chat: chatUnread.messages + chatUnread.notes, meetings: liveMeetings.data?.length ?? 0, admin: me?.pendingJoins ?? 0, ledger: me?.ledgerUnseen ?? 0, command: commandBadge }} />
+        <CommandAlerts meId={me?.id ?? null} enabled={commandOn && state === 'online'} />
         <main className="min-w-0 flex-1 overflow-hidden">
           <PageErrorBoundary>
           <Suspense fallback={<Loading />}>

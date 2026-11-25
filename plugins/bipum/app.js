@@ -938,7 +938,6 @@
   })
 
   // an older TeamHub does not give extension frames its look (__ui.css): say so
-  window.addEventListener('load', () => ($('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim()))
 
   let again = 0
   async function changed() {

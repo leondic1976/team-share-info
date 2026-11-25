@@ -36,6 +36,7 @@ interface DocRow {
   reviewed_at: number | null
   created_by: string
   author_name: string
+  updated_by: string | null
   updated_by_name: string | null
   created_at: number
   updated_at: number
@@ -74,6 +75,7 @@ export function registerDocRoutes(app: FastifyInstance, ctx: ServerContext, guar
       eventId: r.event_id,
       authorId: r.created_by,
       authorName: r.author_name,
+      updatedById: r.updated_by,
       updatedByName: r.updated_by_name,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
@@ -287,6 +289,7 @@ export function registerDocRoutes(app: FastifyInstance, ctx: ServerContext, guar
 
   // ---- annual work calendar ----
   const annualDto = (r: { id: string; month: number; day: number | null; title: string; body_html: string; remind_days_before: number; scope_type: string; created_by: string; author_name: string }, req: FastifyRequest): AnnualTaskDto => ({
+    authorId: r.created_by,
     id: r.id,
     month: r.month,
     day: r.day,

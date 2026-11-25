@@ -5,13 +5,6 @@
 body:not(.together) .together-only {
   display: none !important;
 }
-#oldApp {
-  margin: 0;
-  padding: 8px 20px;
-  background: #fef3c7;
-  color: #92400e;
-}
-
 /* ---------- content rhythm ---------- */
 .stack {
   display: grid;

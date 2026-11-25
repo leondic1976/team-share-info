@@ -13,6 +13,7 @@ import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
 import type { AnnualTaskDto } from '@shared/schemas/docs'
 import type { ScopeInput } from '@shared/schemas/scope'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 export function useAnnualTasks() {
   const online = useConn((s) => s.state === 'online')
@@ -152,6 +153,7 @@ export function AnnualCalendar(): React.JSX.Element {
             <ScopeTags scope={open.scope} />
             <p className="text-muted-foreground">
               {open.remindDaysBefore}일 전 알림 · 등록 {open.authorName}
+              <RoleMark memberId={open.authorId} />
             </p>
             <RichView html={open.bodyHtml || '<p>-</p>'} />
           </div>

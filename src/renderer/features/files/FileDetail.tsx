@@ -12,6 +12,7 @@ import { invoke } from '@renderer/lib/bridge'
 import { useMe } from '@renderer/lib/queries'
 import type { FileDto, FileVersionDto } from '@shared/schemas/files'
 import { FavoriteStar } from '@renderer/features/memos/widgets'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 const IMG = /\.(png|jpe?g|gif|bmp|webp|svg)$/i
 const TXT = /\.(txt|csv|log|md|json|xml|ini)$/i
@@ -87,10 +88,14 @@ export function FileDetail({ fileId, onClose }: { fileId: string; onClose: () =>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <FavoriteStar itemType="file" itemId={f.id} title={f.name} route={`/files/${f.folderId}`} />
-          <span>{d.path}</span>·<span>{formatSize(f.size)}</span>·<span>v{f.versionCount}</span>·<span>올린 사람 {f.createdByName}</span>
+          <span>{d.path}</span>·<span>{formatSize(f.size)}</span>·<span>v{f.versionCount}</span>·<span>
+            올린 사람 {f.createdByName}
+            <RoleMark memberId={f.createdBy} />
+          </span>
           {f.lockedBy && (
             <Badge variant="important">
-              <Lock className="size-3" /> {f.lockedByName} 편집 중
+              <Lock className="size-3" /> {f.lockedByName}
+              <RoleMark memberId={f.lockedBy} className="ml-0" /> 편집 중
             </Badge>
           )}
         </div>
@@ -138,7 +143,10 @@ export function FileDetail({ fileId, onClose }: { fileId: string; onClose: () =>
               <div key={v.id} className="flex items-center gap-3 px-3 py-1.5 text-sm" data-testid={`version-${v.versionNo}`}>
                 <b className="w-10">v{v.versionNo}</b>
                 <span className="text-muted-foreground">{format(v.createdAt, 'yyyy-MM-dd HH:mm')}</span>
-                <span>{v.createdByName}</span>
+                <span>
+                  {v.createdByName}
+                  <RoleMark memberId={v.createdBy} />
+                </span>
                 <span className="text-muted-foreground">{formatSize(v.size)}</span>
                 <span className="truncate text-xs text-muted-foreground">{v.note}</span>
                 <span className="ml-auto flex gap-1">

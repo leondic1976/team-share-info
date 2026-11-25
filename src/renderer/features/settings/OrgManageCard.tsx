@@ -15,6 +15,7 @@ import { useConn } from '@renderer/app/conn-store'
 import { displayName, type MemberDto } from '@shared/schemas/auth'
 import type { DepartmentDto } from '@shared/schemas/org'
 import { DEPT_MAX_DEPTH, affiliationText, buildOrgTree, deptPath, deptPathText, flattenOrg, subtreeIds, type OrgNode } from '@shared/org'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 type Node = OrgNode<MemberDto>
 type Editing = { edit: DepartmentDto } | { parentId: string | null }
@@ -378,6 +379,7 @@ export function OrgManageCard(): React.JSX.Element | null {
                           </Button>
                           <span className="flex w-36 shrink-0 items-center gap-1 truncate">
                             {displayName(m)}
+                            <RoleMark role={m.role} isOwner={m.isOwner} className="ml-0" />
                             {m.id === g.headId && <Badge>부서장</Badge>}
                           </span>
                           <Select aria-label={`${m.name} 부서`} className="h-8 min-w-0 flex-1" value={m.deptId && flat.some((n) => n.dept.id === m.deptId) ? m.deptId : ''} onChange={(e) => patchMember.mutate({ id: m.id, body: { deptId: e.target.value || null } })}>

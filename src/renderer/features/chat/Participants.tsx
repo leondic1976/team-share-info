@@ -118,7 +118,7 @@ export function ParticipantsDialog({ conv, onClose, onSwitch, onLeft }: { conv: 
         ) : (
           <>
             <p className="text-xs font-semibold text-muted-foreground">추가할 사람</p>
-            <MemberPicker value={ids} onChange={setIds} excludeSelf />
+            <MemberPicker value={ids} onChange={setIds} excludeSelf presence />
             {conv.kind === 'dm' ? (
               <p className="text-xs text-muted-foreground">1:1 대화에 사람을 추가하면 새 대화방이 만들어집니다. 이전 대화 내용은 새 대화방으로 옮겨지지 않습니다.</p>
             ) : (

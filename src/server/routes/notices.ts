@@ -73,11 +73,12 @@ function toSummary(ctx: ServerContext, r: NoticeRow, viewer: { id: string; role:
   }
 }
 
-export function urgentPayload(r: Pick<NoticeRow, 'id' | 'title' | 'body_html' | 'author_name' | 'require_ack' | 'reply_options' | 'published_at' | 'level'>): UrgentPayload {
+export function urgentPayload(r: Pick<NoticeRow, 'id' | 'title' | 'body_html' | 'created_by' | 'author_name' | 'require_ack' | 'reply_options' | 'published_at' | 'level'>): UrgentPayload {
   return {
     id: r.id,
     title: r.title,
     bodyHtml: r.body_html,
+    authorId: r.created_by,
     authorName: r.author_name,
     requireAck: !!r.require_ack,
     replyOptions: parseJson<string[]>(r.reply_options, []),

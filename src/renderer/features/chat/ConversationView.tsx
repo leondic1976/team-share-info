@@ -27,6 +27,7 @@ import { confirmPii } from '@renderer/lib/pii'
 import { sendOrQueue, useOutbox } from '@renderer/lib/outbox'
 import { EmoticonPicker } from './EmoticonPicker'
 import { emojiOnly } from './emoticons'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 const PAGE = 50
 /** messages of a conversation kept for reading while the server is off */
@@ -355,6 +356,8 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
   const c = conv.data
   // 1:1: the other person, for the presence dot of a small window
   const other = compact && c?.kind === 'dm' ? team?.find((m) => m.id !== me?.id && c.memberIds.includes(m.id)) : undefined
+  // 1:1: the other person, for the 서무 mark next to the title (main page and small window)
+  const dmOther = c?.kind === 'dm' ? team?.find((m) => m.id !== me?.id && c.memberIds.includes(m.id)) : undefined
   const meet = (): void => {
     if (!c) return
     void startMeeting({
@@ -402,6 +405,7 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
         <h2 className={cn('truncate font-bold', compact && 'text-sm')} data-testid="conv-title">
           {c ? convTitle(c, team, me?.id) : '…'}
         </h2>
+        {dmOther && <RoleMark role={dmOther.role} isOwner={dmOther.isOwner} className="ml-0" />}
         <button
           type="button"
           className="shrink-0 cursor-pointer rounded px-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default"
@@ -514,7 +518,12 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
               ) : (
                 <div className={cn('group flex items-end gap-1.5', mine ? 'flex-row-reverse' : '', !grouped && 'mt-2')} data-testid="message">
                   <div className={cn(compact ? 'max-w-[78%]' : 'max-w-[70%]', mine ? 'items-end' : 'items-start', 'flex flex-col')}>
-                    {!mine && !grouped && <span className="mb-0.5 text-xs font-semibold">{m.senderName}</span>}
+                    {!mine && !grouped && (
+                      <span className="mb-0.5 text-xs font-semibold">
+                        <span>{m.senderName}</span>
+                        <RoleMark memberId={m.senderId} />
+                      </span>
+                    )}
                     {m.deleted ? (
                       <div className="flex items-center gap-1.5 rounded-2xl border border-dashed border-border px-3 py-1.5 text-sm text-muted-foreground italic" data-testid="message-deleted">
                         <Ban className="size-3.5 shrink-0" aria-hidden /> 삭제된 메시지입니다.

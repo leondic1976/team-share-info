@@ -25,8 +25,8 @@ import { BookOpen } from 'lucide-react'
 import { FavoritesWidget, TodayWorkWidget } from '@renderer/features/memos/widgets'
 import { LiveMeetingsWidget } from '@renderer/features/meetings/MeetingsPage'
 import { affiliationText } from '@shared/org'
-
-const ORDER = { online: 0, away: 1, absent: 2, offline: 3 } as const
+import { RoleMark } from '@renderer/components/RoleMark'
+import { byPresence } from '@shared/presence'
 
 function Widget({ title, icon: Icon, right, children, testId }: { title: string; icon: typeof Users; right?: ReactNode; children: ReactNode; testId?: string }): React.JSX.Element {
   return (
@@ -45,7 +45,7 @@ function Widget({ title, icon: Icon, right, children, testId }: { title: string;
 export function PresenceWidget(): React.JSX.Element {
   const online = useConn((s) => s.state === 'online')
   const { data, isLoading } = useMembers()
-  const list = [...(data ?? [])].sort((a, b) => ORDER[a.presence] - ORDER[b.presence] || a.name.localeCompare(b.name))
+  const list = [...(data ?? [])].sort((a, b) => byPresence(a, b) || a.name.localeCompare(b.name))
   const onlineCount = list.filter((m) => m.presence === 'online' || m.presence === 'away').length
   return (
     <Widget title="팀원 현황" icon={Users} right={<span className="text-xs text-muted-foreground">접속 {onlineCount} / {list.length}</span>}>
@@ -150,7 +150,10 @@ function MustReadWidget(): React.JSX.Element | null {
         <button key={d.id} className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted" onClick={() => navigate(`/docs/mustread/${d.id}`)}>
           <span className="size-2 rounded-full bg-urgent" />
           <span className="truncate font-semibold">{d.title}</span>
-          <span className="ml-auto text-xs text-muted-foreground">{d.authorName}</span>
+          <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+            {d.authorName}
+            <RoleMark memberId={d.authorId} />
+          </span>
         </button>
       ))}
     </Widget>

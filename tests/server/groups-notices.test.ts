@@ -245,6 +245,8 @@ describe('notices and urgent alerts (M2-2, M2-3)', () => {
     await sleep(100)
     const count = () => bMsgs.filter((m) => m.type === 'event' && m.name === 'notice.urgent').length
     expect(count()).toBe(1)
+    // the popup knows the author by id (for the 서무 mark next to the name)
+    expect(bMsgs.find((m) => m.type === 'event' && m.name === 'notice.urgent')).toMatchObject({ payload: { authorId: s.admin.memberId } })
     runNoticeJobs(s.ctx, Date.now() + 60_000) // 1 min later: not yet
     await sleep(50)
     expect(count()).toBe(1)

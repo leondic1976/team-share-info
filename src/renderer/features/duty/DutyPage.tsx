@@ -1,13 +1,15 @@
 import { sendOrQueue } from '@renderer/lib/outbox'
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addMonths, format, startOfMonth, startOfWeek } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Download, List, MessageSquare, Pencil, Plus, Repeat, Trash2, UserCheck, UserCog, UserPlus } from 'lucide-react'
+import { Building2, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Download, List, MessageSquare, Pencil, Plus, Repeat, Trash2, UserCheck, UserCog, UserPlus } from 'lucide-react'
 import { MemberLink } from '@renderer/components/MemberLink'
 import { useNavigate } from 'react-router-dom'
 import { DUTY_COLORS, DUTY_TYPE_NAMES, dayPart, dutyGroupOf, onDay, type DutyBoardDto, type DutyEntryDto, type DutyMemberDto } from '@shared/schemas/duty'
 import { toCsv } from '@shared/csv'
+import { DEPT_SEP, deptOptions, deptPathText } from '@shared/org'
+import { DUTY_ALL_DEPTS, DUTY_NO_DEPT, dutySections, type DutySection } from '@shared/dutySections'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Select } from '@renderer/components/ui/input'
@@ -22,14 +24,10 @@ import { useDisplayName, useMe } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { cn } from '@renderer/lib/utils'
 import { DateTimeInput } from '@renderer/components/DateTimeInput'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 type Tab = 'day' | 'week' | 'list'
-type Dept = DutyBoardDto['departments'][number]
-interface DeptBlock {
-  dept: Dept | null
-  depth: number
-  members: DutyMemberDto[]
-}
+type Section = DutySection<DutyMemberDto>
 type DialogState = { edit: DutyEntryDto } | { memberId: string; day: number }
 
 function TypeBadge({ type, part, className }: { type: string; part?: string; className?: string }): React.JSX.Element {
@@ -42,22 +40,23 @@ function TypeBadge({ type, part, className }: { type: string; part?: string; cla
   )
 }
 
-/** Departments in tree order with their members; `only` narrows to one department and what is under it. */
-function deptBlocks(board: DutyBoardDto, only: string): DeptBlock[] {
-  const out: DeptBlock[] = []
-  const walk = (parent: string | null, depth: number, inside: boolean): void => {
-    for (const d of board.departments.filter((x) => x.parentId === parent)) {
-      const show = inside || only === 'all' || d.id === only
-      if (show) out.push({ dept: d, depth: only === 'all' ? depth : 0, members: board.members.filter((m) => m.deptId === d.id) })
-      walk(d.id, depth + 1, show && only !== 'all')
-    }
-  }
-  walk(null, 0, false)
-  if (only === 'all') {
-    const none = board.members.filter((m) => !m.deptId || !board.departments.some((d) => d.id === m.deptId))
-    if (none.length) out.push({ dept: null, depth: 0, members: none })
-  }
-  return out.filter((b) => b.members.length)
+const sectionName = (s: Section): string => s.dept?.name ?? '부서 미지정'
+const sectionPath = (s: Section): string => deptPathText(s.path) || '부서 미지정'
+
+/** A 소속 heading: the levels above in muted text, then the department itself ("본부 > 총무과 > 인사팀"). */
+function SectionTitle({ s, suffix }: { s: Section; suffix?: string }): React.JSX.Element {
+  return (
+    <span title={sectionPath(s)}>
+      {s.path.length > 1 && (
+        <span className="font-normal text-muted-foreground">
+          {deptPathText(s.path.slice(0, -1))}
+          {DEPT_SEP}
+        </span>
+      )}
+      {sectionName(s)}
+      {suffix && <span className="ml-1 font-normal text-muted-foreground">{suffix}</span>}
+    </span>
+  )
 }
 
 function DutyDialog({ board, meId, state, onClose }: { board: DutyBoardDto; meId: string; state: DialogState; onClose: () => void }): React.JSX.Element {
@@ -135,13 +134,20 @@ function DutyDialog({ board, meId, state, onClose }: { board: DutyBoardDto; meId
         ) : (
           <Field label="대상" hint="최종관리자·서무와 대리 등록자는 다른 사람의 근무상황을 대신 올릴 수 있습니다.">
             <Select aria-label="대상" value={memberId} onChange={(e) => setMemberId(e.target.value)}>
-              {board.members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {dn(m)}
-                  {m.title ? ` ${m.title}` : ''}
-                  {m.id === meId ? ' (나)' : ''} · {board.departments.find((d) => d.id === m.deptId)?.name ?? '부서 미지정'}
-                </option>
-              ))}
+              {/* grouped by 소속 in the order of the org chart, like the rest of the screen */}
+              {dutySections(board.departments, board.members)
+                .filter((s) => s.members.length)
+                .map((s) => (
+                  <optgroup key={s.dept?.id ?? 'none'} label={sectionPath(s)}>
+                    {s.members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {dn(m)}
+                        {m.title ? ` ${m.title}` : ''}
+                        {m.id === meId ? ' (나)' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
             </Select>
           </Field>
         )}
@@ -285,7 +291,9 @@ export function DutyPage(): React.JSX.Element {
     }
   })
 
-  const blocks = useMemo(() => (board ? deptBlocks(board, dept) : []), [board, dept])
+  // every tab shows the people by 소속: the department tree from the top down, as in the org chart
+  const sections = useMemo(() => (board ? dutySections(board.departments, board.members, dept) : []), [board, dept])
+  const unassigned = useMemo(() => !!board?.members.some((m) => !m.deptId || !board.departments.some((d) => d.id === m.deptId)), [board])
   const byMember = useMemo(() => {
     const m = new Map<string, DutyEntryDto[]>()
     for (const e of board?.entries ?? []) m.set(e.memberId, [...(m.get(e.memberId) ?? []), e])
@@ -323,7 +331,7 @@ export function DutyPage(): React.JSX.Element {
    */
   const dayView = (): React.JSX.Element => {
     const d1 = day + DAY
-    const shown = blocks.flatMap((b) => b.members)
+    const shown = sections.flatMap((s) => s.members)
     const awayOf = (m: DutyMemberDto): DutyEntryDto[] => (byMember.get(m.id) ?? []).filter((e) => onDay(e, day, d1))
     /** People away per reason; someone with two reasons that day is listed under each, but counted once in 사고. */
     const stat = (members: DutyMemberDto[]): { total: number; away: DutyMemberDto[]; byType: Map<string, { m: DutyMemberDto; e: DutyEntryDto }[]> } => {
@@ -336,6 +344,43 @@ export function DutyPage(): React.JSX.Element {
     const types = [...all.byType.keys()]
     const people = (list: { m: DutyMemberDto }[]): number => new Set(list.map((x) => x.m.id)).size
     const num = 'px-2 py-1.5 text-center tabular-nums'
+    /** One line of the 총괄표; a 소속 with departments below it counts them all (소계). */
+    const totalRow = (key: string, label: React.ReactNode, depth: number, members: DutyMemberDto[], subtotal: boolean): React.JSX.Element => {
+      const st = stat(members)
+      return (
+        <tr key={key} className={cn('border-b border-border last:border-0', subtotal && 'bg-muted/30 font-semibold')} data-testid="duty-total-row">
+          <td className="px-3 py-1.5" style={{ paddingLeft: 12 + depth * 14 }}>
+            {label}
+          </td>
+          <td className={num}>{st.total}</td>
+          <td className={num}>{st.total - st.away.length}</td>
+          <td className={cn(num, 'border-l border-border', st.away.length > 0 && 'font-semibold text-urgent')}>{st.away.length}</td>
+          {types.map((t) => {
+            const n = people(st.byType.get(t) ?? [])
+            return (
+              <td key={t} className={cn(num, !n && 'font-normal text-muted-foreground/50')}>
+                {n || '·'}
+              </td>
+            )
+          })}
+        </tr>
+      )
+    }
+    const counts = (total: number, away: number): React.JSX.Element[] =>
+      (
+        [
+          ['총원', total, ''],
+          ['현재원', total - away, 'text-primary'],
+          ['사고', away, away ? 'text-urgent' : '']
+        ] as const
+      ).map(([k, v, c]) => (
+        <span key={k} className="flex min-w-[4.5rem] flex-col items-center rounded-md border border-border bg-card px-2.5 py-1 leading-tight">
+          <span className="text-[0.7rem] text-muted-foreground">{k}</span>
+          <span className="text-sm">
+            <b className={cn('text-base tabular-nums', c)}>{v}</b>명
+          </span>
+        </span>
+      ))
     return (
       <div className="space-y-4">
         <div className="rounded-lg border border-border bg-card" data-testid="duty-summary">
@@ -390,53 +435,41 @@ export function DutyPage(): React.JSX.Element {
                     </td>
                   ))}
                 </tr>
-                {blocks.map((b) => {
-                  const st = stat(b.members)
-                  return (
-                    <tr key={b.dept?.id ?? 'none'} className="border-b border-border last:border-0">
-                      <td className="px-3 py-1.5" style={{ paddingLeft: 12 + b.depth * 14 }}>
-                        {b.dept?.name ?? '부서 미지정'}
-                      </td>
-                      <td className={num}>{st.total}</td>
-                      <td className={num}>{st.total - st.away.length}</td>
-                      <td className={cn(num, 'border-l border-border', st.away.length > 0 && 'font-semibold text-urgent')}>{st.away.length}</td>
-                      {types.map((t) => {
-                        const n = people(st.byType.get(t) ?? [])
-                        return (
-                          <td key={t} className={cn(num, !n && 'text-muted-foreground/50')}>
-                            {n || '·'}
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  )
-                })}
+                {sections.map((s) => (
+                  <Fragment key={s.dept?.id ?? 'none'}>
+                    {totalRow(s.dept?.id ?? 'none', s.depth === 0 ? <SectionTitle s={s} /> : <span title={sectionPath(s)}>{sectionName(s)}</span>, s.depth, s.all, s.childCount > 0)}
+                    {/* the people of a 소속 itself, next to the departments below it, so the lines add up */}
+                    {s.childCount > 0 && s.members.length > 0 && totalRow(`${s.dept?.id}:own`, <span className="text-muted-foreground">직속</span>, s.depth + 1, s.members, false)}
+                  </Fragment>
+                ))}
               </tbody>
             </table>
           </div>
         </div>
-        {!blocks.length && <EmptyState icon={UserCheck} title="구성원이 없습니다" />}
-        {blocks.map((b) => {
-          const st = stat(b.members)
-          const inOffice = b.members.filter((m) => !awayOf(m).length)
+        {!sections.length && <EmptyState icon={UserCheck} title="구성원이 없습니다" />}
+        {sections.map((s) => {
+          const st = stat(s.members)
+          const inOffice = s.members.filter((m) => !awayOf(m).length)
+          const sub = s.childCount > 0 ? stat(s.all) : null
           return (
-            <section key={b.dept?.id ?? 'none'} style={{ marginLeft: b.depth * 16 }} className="rounded-lg border border-border bg-card" data-testid="duty-dept">
+            <Fragment key={s.dept?.id ?? 'none'}>
+              {/* a 소속 with departments below it: its heading with the numbers of everyone under it */}
+              {sub && (
+                <div style={{ marginLeft: s.depth * 16 }} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border bg-muted/50 px-4 py-2" data-testid="duty-group">
+                  <h2 className="mr-auto flex items-center gap-1.5 text-sm font-bold">
+                    <Building2 className="size-4 shrink-0 text-muted-foreground" />
+                    <SectionTitle s={s} suffix="소계" />
+                  </h2>
+                  {counts(sub.total, sub.away.length)}
+                </div>
+              )}
+              {s.members.length > 0 && (
+            <section style={{ marginLeft: (s.depth + (sub ? 1 : 0)) * 16 }} className="rounded-lg border border-border bg-card" data-testid="duty-dept">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-2.5">
-                <h2 className="mr-auto text-sm font-bold">{b.dept?.name ?? '부서 미지정'}</h2>
-                {(
-                  [
-                    ['총원', st.total, ''],
-                    ['현재원', st.total - st.away.length, 'text-primary'],
-                    ['사고', st.away.length, st.away.length ? 'text-urgent' : '']
-                  ] as const
-                ).map(([k, v, c]) => (
-                  <span key={k} className="flex min-w-[4.5rem] flex-col items-center rounded-md border border-border px-2.5 py-1 leading-tight">
-                    <span className="text-[0.7rem] text-muted-foreground">{k}</span>
-                    <span className="text-sm">
-                      <b className={cn('text-base tabular-nums', c)}>{v}</b>명
-                    </span>
-                  </span>
-                ))}
+                <h2 className="mr-auto text-sm font-bold">
+                  <SectionTitle s={s} suffix={sub ? '직속' : undefined} />
+                </h2>
+                {counts(st.total, st.away.length)}
               </div>
               <div className="divide-y divide-border">
                 {[...st.byType].map(([t, list]) => (
@@ -472,17 +505,19 @@ export function DutyPage(): React.JSX.Element {
                       <span key={m.id} className="inline-flex items-center gap-0.5">
                         <button className="cursor-pointer rounded bg-muted px-1.5 py-0.5 text-xs hover:bg-primary/15" title="눌러서 사고 신청" onClick={() => setDialog({ memberId: m.id, day })}>
                           {dn(m)}
+                          <RoleMark memberId={m.id} />
                         </button>
                         {/* the name itself registers an absence here, so the messenger gets its own small button */}
                         {m.id !== meId && (
-                          <MemberLink memberId={m.id} name={m.name} className="rounded p-0.5 text-muted-foreground hover:bg-primary/15 hover:text-primary">
+                          <MemberLink memberId={m.id} name={m.name} noMark className="rounded p-0.5 text-muted-foreground hover:bg-primary/15 hover:text-primary">
                             <MessageSquare className="size-3" aria-label={`${m.name} 메신저 열기`} />
                           </MemberLink>
                         )}
                       </span>
                     ) : (
-                      <MemberLink key={m.id} memberId={m.id} name={m.name} className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                      <MemberLink key={m.id} memberId={m.id} name={m.name} noMark className="rounded bg-muted px-1.5 py-0.5 text-xs">
                         {dn(m)}
+                        <RoleMark memberId={m.id} />
                       </MemberLink>
                     )
                   )}
@@ -490,6 +525,8 @@ export function DutyPage(): React.JSX.Element {
                 </div>
               </div>
             </section>
+              )}
+            </Fragment>
           )
         })}
       </div>
@@ -512,15 +549,15 @@ export function DutyPage(): React.JSX.Element {
             </tr>
           </thead>
           <tbody>
-            {blocks.map((b) => [
-              <tr key={`h${b.dept?.id ?? 'none'}`} className="border-b border-border bg-muted/50">
-                <td colSpan={8} className="px-3 py-1 text-xs font-semibold">
-                  {b.dept?.name ?? '부서 미지정'} <span className="font-normal text-muted-foreground">({b.members.length})</span>
+            {sections.map((s) => [
+              <tr key={`h${s.dept?.id ?? 'none'}`} className="border-b border-border bg-muted/50" data-testid="duty-week-dept">
+                <td colSpan={8} className="py-1 pr-3 text-xs font-semibold" style={{ paddingLeft: 12 + s.depth * 14 }}>
+                  <SectionTitle s={s} /> <span className="font-normal text-muted-foreground">({s.childCount > 0 ? `${s.all.length}명, 직속 ${s.members.length}명` : `${s.members.length}명`})</span>
                 </td>
               </tr>,
-              ...b.members.map((m) => (
+              ...s.members.map((m) => (
                 <tr key={m.id} className="border-b border-border last:border-0">
-                  <td className="truncate px-3 py-1.5">
+                  <td className="truncate py-1.5 pr-3" style={{ paddingLeft: 20 + s.depth * 14 }}>
                     <MemberLink memberId={m.id} name={m.name}>{dn(m)}</MemberLink> <span className="text-xs text-muted-foreground">{m.title}</span>
                   </td>
                   {days.map((d, i) => {
@@ -553,15 +590,9 @@ export function DutyPage(): React.JSX.Element {
 
   const listView = (): React.JSX.Element => {
     if (!board) return <></>
-    // 소속 순서(조직 관리의 부서 트리 순서, 부서 안에서는 정한 구성원 순서)로, 같은 사람은 날짜순
-    const byId = new Map(board.departments.map((d) => [d.id, d]))
-    const pathOf = (id: string | undefined): string => {
-      const names: string[] = []
-      for (let d = id ? byId.get(id) : undefined; d && names.length < 8; d = d.parentId ? byId.get(d.parentId) : undefined) names.unshift(d.name)
-      return names.join(' > ')
-    }
+    // by 소속 (the department tree order, inside a department the member order an admin set); one person's lines by date
     let order = 0
-    const shown = new Map(blocks.flatMap((b) => b.members.map((m) => [m.id, { m, dept: pathOf(b.dept?.id), rank: order++ }] as const)))
+    const shown = new Map(sections.flatMap((s) => s.members.map((m) => [m.id, { m, dept: deptPathText(s.path), rank: order++ }] as const)))
     const rows = board.entries
       .filter((e) => shown.has(e.memberId))
       .map((e) => ({ e, ...shown.get(e.memberId)! }))
@@ -640,7 +671,7 @@ export function DutyPage(): React.JSX.Element {
     <div className="flex h-full flex-col">
       <PageHeader
         title="근무현황"
-        description="오늘 누가 자리에 없는지 부서별로 봅니다. 여기 올린 내용은 일정과 팀원 현황(부재)에도 나타납니다."
+        description="오늘 누가 자리에 없는지 소속별로 봅니다. 여기 올린 내용은 일정과 팀원 현황(부재)에도 나타납니다."
         actions={
           <>
             {me?.role === 'admin' && board && (
@@ -682,13 +713,15 @@ export function DutyPage(): React.JSX.Element {
           </Button>
           <Input aria-label="날짜 고르기" type="date" className="w-40" value={toInputValue(day, true)} onChange={(e) => e.target.value && setDay(fromInputValue(e.target.value))} />
         </div>
-        <Select aria-label="부서" className="ml-auto w-44" value={dept} onChange={(e) => setDept(e.target.value)}>
-          <option value="all">전체 부서</option>
-          {board?.departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
+        <Select aria-label="부서" className="ml-auto w-48" value={dept} onChange={(e) => setDept(e.target.value)}>
+          <option value={DUTY_ALL_DEPTS}>전체 부서</option>
+          {/* the department tree, indented, as in the org chart */}
+          {deptOptions(board?.departments ?? []).map((d) => (
+            <option key={d.id} value={d.id} title={deptPathText(d.path)}>
+              {d.label}
             </option>
           ))}
+          {(unassigned || dept === DUTY_NO_DEPT) && <option value={DUTY_NO_DEPT}>부서 미지정</option>}
         </Select>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-5">

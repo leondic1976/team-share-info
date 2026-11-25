@@ -44,7 +44,9 @@ export const ALARM_PENDING_MS = 24 * 3600_000
 const firePayload = (r: SentAlarmRow): AlarmFirePayload => ({ id: r.id, fromName: r.from_name, title: r.title, body: r.body, fireAt: r.fire_at })
 const alarmDto = (r: SentAlarmRow): SentAlarmDto => ({
   id: r.id,
+  fromId: r.from_id,
   fromName: r.from_name,
+  toId: r.to_id,
   toName: r.to_name,
   fireAt: r.fire_at,
   title: r.title,

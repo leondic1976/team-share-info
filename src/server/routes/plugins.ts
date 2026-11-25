@@ -1,7 +1,7 @@
 import type { FastifyInstance, preHandlerAsyncHookHandler } from 'fastify'
 import { z } from 'zod'
 import { newId, parseJson } from '../../node/sqlite'
-import { PLUGIN_ID_RE, PLUGIN_STATE_MAX, pluginRoomInputSchema, type PluginInvitePayload, type PluginRoomDto } from '../../shared/schemas/plugins'
+import { PLUGIN_ID_RE, PLUGIN_STATE_MAX, PLUGIN_USE_DAYS, pluginInventorySchema, pluginRoomInputSchema, type PluginInstallsDto, type PluginInvitePayload, type PluginRoomDto } from '../../shared/schemas/plugins'
 import type { ServerContext } from '../context'
 import { badRequest, conflict, forbidden, notFound } from '../errors'
 import { parse, ok } from '../validate'
@@ -65,6 +65,61 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ServerContext, g
     if (!r) throw notFound('방')
     return r
   }
+  // ---------- who has which extension (지시 92): each PC reports, the server PC keeps it ----------
+  /** The list of this PC replaces what it reported before. */
+  app.put('/api/plugins/installed', auth, async (req) => {
+    const { plugins } = parse(pluginInventorySchema, req.body)
+    const t = Date.now()
+    db.tx(() => {
+      const ids = plugins.map((p) => p.id)
+      db.run(`DELETE FROM plugin_installs WHERE device_id = ?${ids.length ? ` AND plugin_id NOT IN (${ids.map(() => '?').join(',')})` : ''}`, [req.device.id, ...ids])
+      for (const p of plugins) {
+        db.run(
+          `INSERT INTO plugin_installs (device_id, member_id, plugin_id, version, enabled, installed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (device_id, plugin_id) DO UPDATE SET member_id = excluded.member_id, version = excluded.version, enabled = excluded.enabled, updated_at = excluded.updated_at`,
+          [req.device.id, req.member.id, p.id, p.version, p.enabled ? 1 : 0, t, t]
+        )
+      }
+    })
+    return ok({ count: plugins.length })
+  })
+
+  /** An extension was opened on this PC. */
+  app.post('/api/plugins/:pluginId/used', auth, async (req) => {
+    const { pluginId } = parse(pid, req.params)
+    const t = Date.now()
+    db.run(
+      `INSERT INTO plugin_installs (device_id, member_id, plugin_id, version, enabled, installed_at, updated_at, last_used_at) VALUES (?, ?, ?, '', 1, ?, ?, ?)
+       ON CONFLICT (device_id, plugin_id) DO UPDATE SET last_used_at = excluded.last_used_at, member_id = excluded.member_id`,
+      [req.device.id, req.member.id, pluginId, t, t, t]
+    )
+    return ok({ at: t })
+  })
+
+  /** Per extension: how many PCs have it, how many used it lately, and who (members still active, PCs not blocked). */
+  app.get('/api/plugins/installs', auth, async (req) => {
+    const since = Date.now() - PLUGIN_USE_DAYS * 86400000
+    const rows = db.all<{ plugin_id: string; device_id: string; member_id: string; name: string; pc_name: string; enabled: number; last_used_at: number | null }>(
+      `SELECT i.plugin_id, i.device_id, i.member_id, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS name, d.pc_name, i.enabled, i.last_used_at
+         FROM plugin_installs i JOIN members m ON m.id = i.member_id AND m.status = 'active' JOIN devices d ON d.id = i.device_id AND d.revoked_at IS NULL
+        ORDER BY m.name`
+    )
+    const out: PluginInstallsDto = { totals: { installed: 0, used: 0, pcs: 0 }, plugins: {} }
+    const anyPc = new Set<string>()
+    const usedPc = new Set<string>()
+    for (const r of rows) {
+      const s = (out.plugins[r.plugin_id] ??= { installed: 0, used: 0, people: [] })
+      const using = !!r.last_used_at && r.last_used_at >= since
+      s.installed++
+      if (using) s.used++
+      anyPc.add(r.device_id)
+      if (using) usedPc.add(r.device_id)
+      s.people.push({ memberId: r.member_id, name: r.name, pcName: r.pc_name, enabled: !!r.enabled, lastUsedAt: r.last_used_at, using, me: r.member_id === req.member.id })
+    }
+    out.totals = { installed: anyPc.size, used: usedPc.size, pcs: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM devices d JOIN members m ON m.id = d.member_id AND m.status = 'active' WHERE d.revoked_at IS NULL`)?.n ?? 0 }
+    return ok(out)
+  })
+
   const changed = (r: Row): void => ctx.hub.sendTo(audienceOf(db, 'plugin_rooms', 'plugin_room', r.id), 'plugin.room', { pluginId: r.plugin_id, roomId: r.id })
   const bump = (id: string): void => {
     db.run('UPDATE plugin_rooms SET version = version + 1, updated_at = ? WHERE id = ?', [Date.now(), id])

@@ -1,7 +1,7 @@
 {
   "id": "copilot",
   "name": "AI 도우미 (Copilot)",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Windows에 들어 있는 무료 Copilot에게 일을 시키기 쉽게 도와줍니다. 요약·초안·다듬기·번역 등 업무별 질문을 만들어 복사하고 Copilot을 엽니다.",
   "author": "TeamHub",
   "icon": "A",
@@ -13,7 +13,7 @@
     "clipboard"
   ],
   "minAppVersion": "1.4.0",
-  "updated": "2026-11-24",
+  "updated": "2026-11-25",
   "features": [
     "업무별 질문 만들기: 요약, 보고서·공문 초안, 문장 다듬기·맞춤법, 쉬운 말로, 번역, 회의록 정리, 답장 초안, 엑셀 수식, 아이디어",
     "말투·분량·형식을 고르면 잘 통하는 질문으로 다듬어 줍니다",

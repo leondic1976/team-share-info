@@ -83,7 +83,8 @@ export interface DutyMemberDto {
 }
 
 export interface DutyBoardDto {
-  departments: { id: string; name: string; parentId: string | null; sort: number }[]
+  /** the server's departments as listed for the org chart (headId: 부서장, shown first in a department) */
+  departments: { id: string; name: string; parentId: string | null; sort: number; headId?: string | null }[]
   members: DutyMemberDto[]
   entries: DutyEntryDto[]
   /** members who may record for others besides the admins (서무) */

@@ -122,6 +122,16 @@ export function runBackup(ctx: ServerContext, root = backupRoot(ctx.db, ctx.data
     mkdirSync(folder)
     const dbFile = join(folder, 'teamhub.db')
     ctx.db.exec(`VACUUM INTO '${dbFile.replace(/'/g, "''")}'`)
+    // 긴급구조지휘대 keeps its data in a file of its own next to teamhub.db
+    const cmdSrc = join(ctx.dataDir, 'command.db')
+    if (existsSync(cmdSrc)) {
+      const cmd = new DatabaseSync(cmdSrc)
+      try {
+        cmd.exec(`VACUUM INTO '${join(folder, 'command.db').replace(/'/g, "''")}'`)
+      } finally {
+        cmd.close()
+      }
+    }
     const { count, bytes } = copyBlobs(dbFile, join(ctx.dataDir, 'files'), join(root, 'blobs'))
     const info = { createdAt: Date.now(), version: ctx.version, dbBytes: statSync(dbFile).size, fileCount: count, fileBytes: bytes }
     writeFileSync(join(folder, MANIFEST), JSON.stringify(info, null, 2))
@@ -167,6 +177,16 @@ export function installBackup(backupPath: string, dataDir: string): void {
   }
   for (const ext of ['-wal', '-shm']) rmSync(dbPath + ext, { force: true })
   copyFileSync(join(backupPath, 'teamhub.db'), dbPath)
+  // 긴급구조지휘대 (command.db): the backup's copy, the current one kept aside like teamhub.db
+  const cmdPath = join(dataDir, 'command.db')
+  if (existsSync(join(backupPath, 'command.db'))) {
+    if (existsSync(cmdPath)) {
+      mkdirSync(join(dataDir, 'backups'), { recursive: true })
+      renameSync(cmdPath, join(dataDir, 'backups', `before-restore-${stamp()}-command.db`))
+    }
+    for (const ext of ['-wal', '-shm']) rmSync(cmdPath + ext, { force: true })
+    copyFileSync(join(backupPath, 'command.db'), cmdPath)
+  }
   // files: from the shared store next to the backup folder
   copyBlobs(dbPath, join(dirname(backupPath), 'blobs'), join(dataDir, 'files'))
 }

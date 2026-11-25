@@ -19,6 +19,7 @@ import type { FileDto, FolderDto, FolderView, TrashItemDto } from '@shared/schem
 import type { ScopeInput } from '@shared/schemas/scope'
 import { FileDetail } from './FileDetail'
 import { cn } from '@renderer/lib/utils'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 type Mode = 'browse' | 'recent' | 'search' | 'trash'
 
@@ -210,7 +211,10 @@ export function FilesPage(): React.JSX.Element {
       </td>
       <td className="text-right text-muted-foreground">{formatSize(f.size)}</td>
       <td className="text-center text-muted-foreground">v{f.versionCount}</td>
-      <td className="text-muted-foreground">{f.updatedByName ?? f.createdByName}</td>
+      <td className="text-muted-foreground">
+        {f.updatedByName ?? f.createdByName}
+        <RoleMark memberId={f.updatedByName ? f.updatedBy : f.createdBy} />
+      </td>
       <td className="text-muted-foreground">{format(f.updatedAt, 'yyyy-MM-dd HH:mm')}</td>
       <td className="pr-2">
         <RowMenu items={fileMenu(f)} />

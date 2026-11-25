@@ -6,6 +6,9 @@ import { useMe, useMembers } from '@renderer/lib/queries'
 import { Input } from './ui/input'
 import { cn } from '@renderer/lib/utils'
 import { affiliationText } from '@shared/org'
+import { RoleMark } from './RoleMark'
+import { PresenceDot, PRESENCE_LABEL } from './PresenceDot'
+import { byPresence } from '@shared/presence'
 
 export function defaultScope(space: string): ScopeInput {
   return space === 'team' ? { type: 'team', groupIds: [], memberIds: [] } : { type: 'group', groupIds: [space], memberIds: [] }
@@ -79,17 +82,32 @@ export function ScopePicker({ value, onChange, initial }: { value: ScopeInput; o
   )
 }
 
-export function MemberPicker({ value, onChange, excludeSelf, selectAll }: { value: string[]; onChange: (ids: string[]) => void; excludeSelf?: boolean; selectAll?: boolean }): React.JSX.Element {
+/**
+ * `presence`: show each person's state (dot + label, as on 홈 팀원 현황) and list the ones here
+ * first, as the messenger's pickers do (새 대화, 쪽지 쓰기, 대화 상대 추가).
+ */
+export function MemberPicker({
+  value,
+  onChange,
+  excludeSelf,
+  selectAll,
+  presence
+}: {
+  value: string[]
+  onChange: (ids: string[]) => void
+  excludeSelf?: boolean
+  selectAll?: boolean
+  presence?: boolean
+}): React.JSX.Element {
   const { data: members } = useMembers()
   const { data: me } = useMe()
   const [q, setQ] = useState('')
-  const list = useMemo(
-    () =>
-      (members ?? [])
-        .filter((m) => !excludeSelf || m.id !== me?.id)
-        .filter((m) => !q.trim() || `${m.name} ${m.nickname ?? ''} ${affiliationText(m)}`.includes(q.trim())),
-    [members, me, q, excludeSelf]
-  )
+  const list = useMemo(() => {
+    const shown = (members ?? [])
+      .filter((m) => !excludeSelf || m.id !== me?.id)
+      .filter((m) => !q.trim() || `${m.name} ${m.nickname ?? ''} ${affiliationText(m)}`.includes(q.trim()))
+    return presence ? [...shown].sort(byPresence) : shown
+  }, [members, me, q, excludeSelf, presence])
   const selected = (members ?? []).filter((m) => value.includes(m.id))
   return (
     <div className="space-y-1.5">
@@ -97,7 +115,9 @@ export function MemberPicker({ value, onChange, excludeSelf, selectAll }: { valu
         <div className="flex flex-wrap gap-1">
           {selected.map((m) => (
             <span key={m.id} className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+              {presence && <PresenceDot presence={m.presence} className="size-2" />}
               {displayName(m)}
+              <RoleMark role={m.role} isOwner={m.isOwner} className="-ml-0.5" />
               <button type="button" aria-label={`${m.name} 빼기`} className="cursor-pointer" onClick={() => onChange(value.filter((x) => x !== m.id))}>
                 <X className="size-3" />
               </button>
@@ -133,10 +153,19 @@ export function MemberPicker({ value, onChange, excludeSelf, selectAll }: { valu
         {list.map((m) => (
           <label key={m.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-sm hover:bg-muted">
             <input type="checkbox" checked={value.includes(m.id)} onChange={(e) => onChange(e.target.checked ? [...value, m.id] : value.filter((x) => x !== m.id))} aria-label={m.name} />
-            {displayName(m)}
+            {presence && <PresenceDot presence={m.presence} />}
+            <span>
+              {displayName(m)}
+              <RoleMark role={m.role} isOwner={m.isOwner} />
+            </span>
             <span className="text-xs text-muted-foreground" title={affiliationText(m) || undefined}>
               {m.deptName}
             </span>
+            {presence && (
+              <span className="ml-auto shrink-0 text-xs text-muted-foreground" data-testid={`picker-presence-${m.name}`} data-presence={m.presence}>
+                {PRESENCE_LABEL[m.presence]}
+              </span>
+            )}
           </label>
         ))}
         {list.length === 0 && <p className="px-2.5 py-2 text-xs text-muted-foreground">구성원이 없습니다.</p>}

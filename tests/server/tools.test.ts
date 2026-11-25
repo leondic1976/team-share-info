@@ -51,7 +51,7 @@ describe('shared memos and team alarms (M6-8)', () => {
     expect((await s.req(s.admin, { method: 'POST', url: `/api/alarms/${ids[0]}/dismiss` })).statusCode).toBe(404)
     expect((await s.req(b, { method: 'POST', url: `/api/alarms/${ids[0]}/dismiss`, ip: IP })).statusCode).toBe(200)
     const sentList = (await s.req(s.admin, { method: 'GET', url: '/api/alarms/sent' })).json().data
-    expect(sentList[0]).toMatchObject({ toName: 'B' })
+    expect(sentList[0]).toMatchObject({ toName: 'B', toId: b.memberId, fromId: s.admin.memberId })
     expect(sentList[0].dismissedAt).not.toBeNull()
   })
 

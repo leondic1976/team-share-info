@@ -909,5 +909,25 @@ CREATE INDEX idx_departments_parent ON departments(parent_id);
 -- A deleted message (deleted_at) stays in its place as "삭제된 메시지입니다.".
 ALTER TABLE messages ADD COLUMN edited_at INTEGER;
 `
+  },
+  {
+    id: 24,
+    name: 'plugin-installs',
+    sql: `
+-- 확장 기능: which PC has which extension installed (and turned on), and when it was last
+-- opened there. Each PC reports its own list; the 확장 기능 page shows who uses what (지시 92).
+CREATE TABLE plugin_installs (
+  device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  plugin_id TEXT NOT NULL,
+  version TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  installed_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  last_used_at INTEGER,
+  PRIMARY KEY (device_id, plugin_id)
+);
+CREATE INDEX idx_plugin_installs_plugin ON plugin_installs(plugin_id);
+`
   }
 ]

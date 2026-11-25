@@ -335,7 +335,6 @@
   }
 
   // an older TeamHub does not give extension frames its look (__ui.css): say so
-  window.addEventListener('load', () => ($('oldApp').hidden = !!getComputedStyle(document.documentElement).getPropertyValue('--th-ui').trim()))
 
   async function init() {
     $('bResults').innerHTML = Object.keys(S.RESULTS).map((k) => `<option value="${k}">${esc(S.RESULTS[k])}</option>`).join('')

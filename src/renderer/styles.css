@@ -1,6 +1,8 @@
 @import 'tailwindcss';
 @import 'pretendard/dist/web/variable/pretendardvariable.css';
 @import '@fontsource/do-hyeon/400.css';
+/* the 긴급구조지휘대 module lives outside src/ (command/) and uses the same classes */
+@source '../../command';
 
 @custom-variant dark (&:where(.dark, .dark *));
 

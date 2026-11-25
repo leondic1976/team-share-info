@@ -8,7 +8,7 @@ import { Download, ExternalLink, FileUp, Loader2, Play, Puzzle, ShieldCheck, Tra
 import { DOWNLOAD_SITE } from '@shared/constants'
 import { compareVersions } from '@shared/semver'
 import { PLUGIN_SORTS, sortCatalog, type PluginSort } from '@shared/plugin-stats'
-import { PLUGIN_PERMISSIONS, type CatalogPlugin, type PluginManifest, type PluginPermission } from '@shared/schemas/plugins'
+import { PLUGIN_PERMISSIONS, PLUGIN_USE_DAYS, type CatalogPlugin, type PluginInstallStats, type PluginInstallsDto, type PluginManifest, type PluginPermission } from '@shared/schemas/plugins'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Switch } from '@renderer/components/ui/switch'
@@ -17,6 +17,8 @@ import { Dialog, confirmDialog } from '@renderer/components/Dialog'
 import { EmptyState } from '@renderer/components/EmptyState'
 import { NamedIcon, PluginIcon } from '@renderer/components/NamedIcon'
 import { invoke, onMain } from '@renderer/lib/bridge'
+import { api } from '@renderer/lib/api'
+import { useConn } from '@renderer/app/conn-store'
 
 const SORT_KEY = 'teamhub.plugins.sort'
 
@@ -39,6 +41,33 @@ function Permissions({ list }: { list: PluginPermission[] }): React.JSX.Element 
 }
 
 /** 확장 기능: installed plugins, the catalog of the download site, install from a file. */
+/**
+ * Under the install button: how many PCs have it, how many used it lately, and who (지시 92).
+ * The list comes from the server PC, which every PC tells what it has installed.
+ */
+function InstallLine({ stats }: { stats: PluginInstallStats | undefined }): React.JSX.Element {
+  if (!stats || !stats.installed) return <p className="text-[0.7rem] text-muted-foreground" data-testid="install-line">아직 설치한 PC가 없습니다</p>
+  const shown = stats.people.slice(0, 6)
+  const title = stats.people
+    .map((p) => `${p.name} (${p.pcName}) — ${p.using ? '사용 중' : p.enabled ? '설치됨' : '꺼 둠'}${p.lastUsedAt ? ` · 마지막 사용 ${format(p.lastUsedAt, 'M/d HH:mm')}` : ''}`)
+    .join('\n')
+  return (
+    <p className="text-[0.7rem] leading-snug text-muted-foreground" title={title} data-testid="install-line">
+      <b className="font-semibold text-foreground">설치 {stats.installed}대</b> · 최근 {PLUGIN_USE_DAYS}일 사용 <b className="font-semibold text-foreground">{stats.used}대</b>
+      <span className="mx-1">·</span>
+      {shown.map((p, i) => (
+        <span key={`${p.memberId}-${p.pcName}`} className={p.using ? 'text-foreground' : undefined}>
+          {i > 0 && ', '}
+          {p.name}
+          {p.me && ' (나)'}
+          {!p.enabled && ' (꺼 둠)'}
+        </span>
+      ))}
+      {stats.people.length > shown.length && ` 외 ${stats.people.length - shown.length}명`}
+    </p>
+  )
+}
+
 export function PluginsPage(): React.JSX.Element {
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -51,6 +80,8 @@ export function PluginsPage(): React.JSX.Element {
   // Download counts come from an external counter and are optional: without the internet the
   // result is empty, nothing is shown and installing works the same.
   const catalogIds = (catalog.data?.data ?? []).map((c) => c.id)
+  const online = useConn((s) => s.state === 'online')
+  const installs = useQuery({ queryKey: ['plugins', 'installs'], queryFn: () => api.get<PluginInstallsDto>('/api/plugins/installs'), enabled: online, refetchOnMount: 'always', placeholderData: (p) => p })
   const counts = useQuery({
     queryKey: ['local', 'plugin-counts', catalogIds.join(',')],
     queryFn: () => invoke('plugins:downloadCounts', { ids: catalogIds }).catch(() => ({}) as Record<string, number>),
@@ -244,6 +275,11 @@ export function PluginsPage(): React.JSX.Element {
           <div className="mb-2 flex items-center gap-2">
             <h2 className="text-sm font-semibold text-muted-foreground">확장 기능 모음</h2>
             <span className="text-xs text-muted-foreground">기본 제공은 인터넷 없이 바로 설치됩니다.</span>
+            {installs.data && (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground" data-testid="install-totals" title="각 PC가 서버 PC에 알린 설치 목록으로 셉니다">
+                확장 기능 설치 PC <b className="text-foreground">{installs.data.totals.installed}</b>/{installs.data.totals.pcs}대 · 최근 {PLUGIN_USE_DAYS}일 사용 <b className="text-foreground">{installs.data.totals.used}</b>대
+              </span>
+            )}
             <span className="ml-auto" />
             <label className="flex items-center gap-1 text-xs text-muted-foreground">
               정렬
@@ -310,6 +346,7 @@ export function PluginsPage(): React.JSX.Element {
                           </Button>
                         )}
                       </div>
+                      {installs.data && <InstallLine stats={installs.data.plugins[c.id]} />}
                     </div>
                   </CardContent>
                 </Card>

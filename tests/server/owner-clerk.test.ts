@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { createTestServer, type Cred, type TestServer } from './helpers'
 import { ensureServerOwner, serverDeviceId } from '../../src/server/repos/devices'
+import { isClerk } from '../../src/shared/schemas/auth'
 
 let s: TestServer | null = null
 afterEach(async () => {
@@ -37,6 +38,8 @@ describe('two admin tiers: 최종관리자 (server PC) and 서무', () => {
       const list = (await s.req(c, { method: 'GET', url, ip: IP })).json().data as { id: string; role: string; isOwner: boolean }[]
       expect(list.filter((x) => x.isOwner).map((x) => x.id)).toEqual([s.admin.memberId])
       expect(list.find((x) => x.id === c.memberId)).toMatchObject({ role: 'admin', isOwner: false })
+      // the client marks exactly the 서무 next to their names: not the 최종관리자, not ordinary members
+      expect(list.filter((x) => isClerk(x as Parameters<typeof isClerk>[0])).map((x) => x.id)).toEqual([c.memberId])
     }
   })
 

@@ -24,6 +24,8 @@ export interface Prefs {
   msgSound: boolean
   /** new message: a card near the tray instead of a Windows notification (지시 83) */
   msgPreview: boolean
+  /** where the cards show (지시 106) */
+  previewCorner: 'bottom-right' | 'top-right'
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -41,7 +43,8 @@ const DEFAULT_PREFS: Prefs = {
   wallpaperStrength: 60,
   wallpaperBlur: 0,
   msgSound: true,
-  msgPreview: true
+  msgPreview: true,
+  previewCorner: 'bottom-right'
 }
 const KEY = 'prefs'
 
@@ -88,7 +91,8 @@ export const usePrefs = create<PrefsState>((set, get) => ({
       wallpaperStrength: Math.min(100, Math.max(0, patch.wallpaperStrength ?? cur.wallpaperStrength)),
       wallpaperBlur: Math.min(20, Math.max(0, patch.wallpaperBlur ?? cur.wallpaperBlur)),
       msgSound: patch.msgSound ?? cur.msgSound,
-      msgPreview: patch.msgPreview ?? cur.msgPreview
+      msgPreview: patch.msgPreview ?? cur.msgPreview,
+      previewCorner: patch.previewCorner === 'top-right' || patch.previewCorner === 'bottom-right' ? patch.previewCorner : cur.previewCorner
     }
     if (patch.theme) {
       applyTheme(next.theme)

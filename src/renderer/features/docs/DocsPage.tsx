@@ -19,6 +19,7 @@ import { DocEditor, type DocDraft } from './DocEditor'
 import { AnnualCalendar } from './AnnualCalendar'
 import { cn } from '@renderer/lib/utils'
 import { FavoriteStar } from '@renderer/features/memos/widgets'
+import { RoleMark } from '@renderer/components/RoleMark'
 
 const SECTIONS: (DocKind | 'annual')[] = ['mustread', 'manual', 'handover', 'minutes', 'faq', 'annual']
 const SECTION_LABEL = { ...DOC_KIND_LABEL, annual: '연간 업무 달력' }
@@ -64,7 +65,9 @@ function DocView({ id, onEdit, onDeleted }: { id: string; onEdit: (d: DocDto) =>
           <FavoriteStar itemType="doc" itemId={d.id} title={d.title} route={`/docs/${d.kind}/${d.id}`} />
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          작성 {d.authorName} · 마지막 수정 {d.updatedByName ?? d.authorName} {format(d.updatedAt, 'yyyy-MM-dd HH:mm')}
+          작성 {d.authorName}
+          <RoleMark memberId={d.authorId} /> · 마지막 수정 {d.updatedByName ?? d.authorName}
+          <RoleMark memberId={d.updatedByName ? d.updatedById : d.authorId} /> {format(d.updatedAt, 'yyyy-MM-dd HH:mm')}
         </p>
       </div>
       <div className="no-print flex flex-wrap gap-2">
@@ -107,7 +110,8 @@ function DocView({ id, onEdit, onDeleted }: { id: string; onEdit: (d: DocDto) =>
           <div className="flex flex-wrap gap-1.5">
             {reads.data?.map((r) => (
               <span key={r.memberId} className={cn('rounded-full px-2 py-0.5 text-xs', r.readAt ? 'bg-success/15 text-success' : 'bg-muted text-muted-foreground')}>
-                {r.name} {r.readAt ? format(r.readAt, 'M/d HH:mm') : '안 읽음'}
+                {r.name}
+                <RoleMark memberId={r.memberId} className="bg-background/60" /> {r.readAt ? format(r.readAt, 'M/d HH:mm') : '안 읽음'}
               </span>
             ))}
           </div>
@@ -237,7 +241,10 @@ export function DocsPage(): React.JSX.Element {
                         {d.stale && <AlertTriangle className="size-3.5 shrink-0 text-important" aria-label="내용 확인 필요" />}
                       </div>
                       <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                        {format(d.updatedAt, 'M/d')} · {d.updatedByName ?? d.authorName}
+                        <span>
+                          {format(d.updatedAt, 'M/d')} · {d.updatedByName ?? d.authorName}
+                          <RoleMark memberId={d.updatedByName ? d.updatedById : d.authorId} />
+                        </span>
                         {d.readStats && <span className="ml-auto">읽음 {d.readStats.read}/{d.readStats.total}</span>}
                       </div>
                     </button>

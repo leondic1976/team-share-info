@@ -1,0 +1,219 @@
+import { describe, it, expect, afterEach } from 'vitest'
+import { createTestServer, type TestServer, type Cred } from './helpers'
+
+let s: TestServer | null = null
+afterEach(async () => {
+  await s?.close()
+  s = null
+})
+const IP = '192.168.10.20'
+
+type Body = Record<string, unknown>
+const call = async (who: Cred, method: string, url: string, payload?: Body) => {
+  const r = await s!.req(who, { method: method as 'GET', url, ip: IP, payload })
+  return { status: r.statusCode, data: r.json().data, error: r.json().error?.message as string | undefined }
+}
+
+describe('긴급구조지휘대 (command module through TeamHub)', () => {
+  it('편성: 지휘대담당, 근무 유형, 조, 순환, 분류, 배치, 공통업무, 예외자, 임시 인원', async () => {
+    s = await createTestServer()
+    const admin = s.admin
+    const a = await s.join('김지휘')
+    const b = await s.join('이조사')
+    const c = await s.join('박통신')
+
+    let st = (await call(a, 'GET', '/api/command')).data
+    expect(st.modes.map((m: { name: string }) => m.name)).toEqual(['긴급구조지휘대', '긴급구조통제단', '풍수해 비상상황근무'])
+    expect(st.me).toMatchObject({ isManager: false, isOwner: false })
+    // only those in charge change things; only the server PC names them
+    expect((await call(a, 'POST', '/api/command/teams', { name: 'A조' })).status).toBe(403)
+    expect((await call(a, 'PUT', '/api/command/managers', { memberIds: [a.memberId] })).status).toBe(403)
+    expect((await call(admin, 'PUT', '/api/command/managers', { memberIds: ['1', '2', '3', '4'] })).status).toBe(400)
+    expect((await call(admin, 'PUT', '/api/command/managers', { memberIds: [a.memberId] })).status).toBe(200)
+    st = (await call(a, 'GET', '/api/command')).data
+    expect(st.me.isManager).toBe(true)
+    expect(st.managers.map((m: { name: string }) => m.name)).toEqual(['김지휘'])
+
+    const mode = st.modes[0].id
+    const mode2 = st.modes[1].id
+    const tA = (await call(a, 'POST', '/api/command/teams', { name: 'A조' })).data.id
+    const tB = (await call(a, 'POST', '/api/command/teams', { name: 'B조' })).data.id
+    expect((await call(a, 'PUT', `/api/command/teams/${tA}/members`, { personIds: [a.memberId, b.memberId, c.memberId] })).status).toBe(200)
+    // one person, one 조: putting 박통신 in B조 takes them out of A조
+    await call(a, 'PUT', `/api/command/teams/${tB}/members`, { personIds: [c.memberId] })
+    st = (await call(a, 'GET', '/api/command')).data
+    expect(st.teams.find((t: { id: string }) => t.id === tA).members).toEqual([a.memberId, b.memberId])
+    await call(a, 'PUT', `/api/command/teams/${tA}/members`, { personIds: [a.memberId, b.memberId, c.memberId] })
+
+    // the rotation: A조 from a Monday, a week each
+    expect((await call(a, 'PUT', '/api/command/rotation', { baseDate: '2026-11-02', shiftTime: '09:00', periodDays: 7, order: [tA, tB, 'nope'] })).data.order).toEqual([tA, tB])
+
+    // roles of the first mode
+    const r1 = (await call(a, 'POST', '/api/command/roles', { modeId: mode, name: '조장' })).data.id
+    const r2 = (await call(a, 'POST', '/api/command/roles', { modeId: mode, name: '현장지휘팀' })).data.id
+    const r3 = (await call(a, 'POST', '/api/command/roles', { modeId: mode, parentId: r2, name: '통신지원요원' })).data.id
+    expect((await call(a, 'PATCH', `/api/command/roles/${r2}`, { parentId: r3 })).status).toBe(400)
+    await call(a, 'PATCH', `/api/command/roles/${r3}`, { dutyHtml: '<p>무전 운용<script>x</script></p>' })
+    expect((await call(c, 'GET', `/api/command/roles/${r3}`)).data).toMatchObject({ dutyHtml: '<p>무전 운용</p>', path: '현장지휘팀 > 통신지원요원' })
+
+    // placing: members of the 조 only, one role per 조 and mode
+    expect((await call(a, 'PUT', '/api/command/assignments', { modeId: mode, teamId: tA, roleId: r1, personIds: [a.memberId] })).status).toBe(200)
+    expect((await call(a, 'PUT', '/api/command/assignments', { modeId: mode, teamId: tA, roleId: r3, personIds: [b.memberId, c.memberId] })).status).toBe(200)
+    const twice = await call(a, 'PUT', '/api/command/assignments', { modeId: mode, teamId: tA, roleId: r1, personIds: [a.memberId, b.memberId] })
+    expect([twice.status, twice.error]).toEqual([400, '이조사은(는) 이미 "현장지휘팀 > 통신지원요원"에 배치되어 있습니다. 한 조에서는 한 분류만 맡습니다.'])
+    expect((await call(a, 'PUT', '/api/command/assignments', { modeId: mode, teamId: tB, roleId: r1, personIds: [a.memberId] })).status).toBe(400)
+
+    // another mode: its own roles; copying by the same path
+    const m2r = (await call(a, 'POST', '/api/command/roles', { modeId: mode2, name: '조장' })).data.id
+    expect((await call(a, 'POST', '/api/command/assignments/copy', { fromModeId: mode, toModeId: mode2 })).data.copied).toBe(1)
+    st = (await call(a, 'GET', '/api/command')).data
+    expect(st.assignments.filter((x: { roleId: string }) => x.roleId === m2r)).toEqual([{ roleId: m2r, teamId: tA, personId: a.memberId }])
+
+    // 공통업무: fixed or per 조
+    const cm = (await call(a, 'POST', '/api/command/common', { name: '장비운반차 운전', perTeam: false })).data.id
+    expect((await call(a, 'PUT', `/api/command/common/${cm}/assign`, { personIds: [c.memberId] })).status).toBe(200)
+    const cm2 = (await call(a, 'POST', '/api/command/common', { name: '콤비버스 운전', perTeam: true })).data.id
+    expect((await call(a, 'PUT', `/api/command/common/${cm2}/assign`, { teamId: tB, personIds: [c.memberId] })).status).toBe(400)
+
+    // 임시 인원: placed, then merged into a member who joined later
+    const tmp = (await call(a, 'POST', '/api/command/people', { name: '최미등', title: '소방위' })).data.id
+    expect(tmp.startsWith('x:')).toBe(true)
+    await call(a, 'PUT', `/api/command/teams/${tB}/members`, [tmp].length ? { personIds: [tmp] } : {})
+    await call(a, 'PUT', '/api/command/assignments', { modeId: mode, teamId: tB, roleId: r1, personIds: [tmp] })
+    const d = await s.join('최미등')
+    expect((await call(a, 'POST', `/api/command/people/${encodeURIComponent(tmp)}/merge`, { memberId: d.memberId })).status).toBe(200)
+    st = (await call(a, 'GET', '/api/command')).data
+    expect(st.teams.find((t: { id: string }) => t.id === tB).members).toEqual([d.memberId])
+    expect(st.assignments).toContainEqual({ roleId: r1, teamId: tB, personId: d.memberId })
+    expect(st.people.some((p: { id: string }) => p.id === tmp)).toBe(false)
+
+    // 예외자: in force now takes them out of their 조
+    expect((await call(a, 'POST', '/api/command/exceptions', { personId: d.memberId, reason: '장기교육', fromDate: '2020-01-01', toDate: null })).status).toBe(200)
+    st = (await call(a, 'GET', '/api/command')).data
+    expect(st.teams.find((t: { id: string }) => t.id === tB).members).toEqual([])
+    expect((await call(a, 'PUT', `/api/command/teams/${tB}/members`, { personIds: [d.memberId] })).error).toContain('예외자')
+  })
+
+  it('공지·자료: those in charge write, everybody reads; unread count', async () => {
+    s = await createTestServer()
+    const b = await s.join('팀원')
+    expect((await call(b, 'POST', '/api/command/notices', { title: 'x' })).status).toBe(403)
+    expect((await call(s.admin, 'POST', '/api/command/notices', { title: '11월 훈련 안내', bodyHtml: '<p>목요일 14시</p>' })).status).toBe(200)
+    expect((await call(b, 'GET', '/api/command')).data.unreadNotices).toBe(1)
+    const list = (await call(b, 'GET', '/api/command/notices')).data
+    expect(list[0]).toMatchObject({ title: '11월 훈련 안내', read: false })
+    await call(b, 'POST', `/api/command/notices/${list[0].id}/read`)
+    expect((await call(b, 'GET', '/api/command')).data.unreadNotices).toBe(0)
+    expect((await call(s.admin, 'POST', '/api/command/materials', { category: '매뉴얼', title: '통제단 운영 매뉴얼' })).status).toBe(200)
+    expect((await call(b, 'GET', '/api/command/materials')).data[0]).toMatchObject({ category: '매뉴얼', title: '통제단 운영 매뉴얼', file: null })
+  })
+
+  it('훈련: scenario hidden from participants, messages on time, answers by the way of handling, grades, the map live', async () => {
+    s = await createTestServer()
+    const admin = s.admin
+    const b = await s.join('상황조사')
+    const c = await s.join('통신')
+    const outsider = await s.join('비참가')
+    const st = (await call(admin, 'GET', '/api/command')).data
+    const mode = st.modes[0].id
+    const t = (await call(admin, 'POST', '/api/command/teams', { name: 'A조' })).data.id
+    await call(admin, 'PUT', `/api/command/teams/${t}/members`, { personIds: [b.memberId, c.memberId] })
+    const rB = (await call(admin, 'POST', '/api/command/roles', { modeId: mode, name: '상황조사요원' })).data.id
+    const rC = (await call(admin, 'POST', '/api/command/roles', { modeId: mode, name: '통신지원요원' })).data.id
+    await call(admin, 'PUT', '/api/command/assignments', { modeId: mode, teamId: t, roleId: rB, personIds: [b.memberId] })
+    await call(admin, 'PUT', '/api/command/assignments', { modeId: mode, teamId: t, roleId: rC, personIds: [c.memberId] })
+
+    const sc = await call(admin, 'POST', '/api/command/scenarios', {
+      modeId: mode,
+      title: '공장 화재',
+      targetHtml: '<p>3층 공장</p>',
+      map: { imageId: null, width: 800, height: 600, marks: [{ key: 'fire1', kind: 'pin', icon: 'fire', color: '#dc2626', label: '화점', points: [[0.5, 0.5]] }] },
+      messages: [
+        { offsetMin: 0, title: '최초 신고', targetKind: 'role', targetIds: [rB], handling: 'assigned', limitMin: 5 },
+        { offsetMin: 5, title: '통신 두절', targetKind: 'role', targetIds: [rC], handling: 'assigned', answerKind: 'choice', choices: ['무전 중계', '전령'], correctIndex: 0, mapChanges: [{ op: 'move', key: 'fire1', points: [[0.6, 0.5]] }] },
+        { offsetMin: 10, title: '전원 보고', handling: 'all' }
+      ]
+    })
+    expect(sc.status).toBe(200)
+    expect((await call(b, 'GET', `/api/command/scenarios/${sc.data.id}`)).status).toBe(403)
+
+    const drillId = (await call(admin, 'POST', '/api/command/drills', { scenarioId: sc.data.id, modeId: mode, title: '11월 공장 화재 훈련', teamIds: [t] })).data.id
+    let dB = (await call(b, 'GET', `/api/command/drills/${drillId}`)).data
+    expect(dB.state).toBe('running')
+    expect(dB.members.map((m: { name: string }) => m.name).sort()).toEqual(['상황조사', '통신'])
+    // only what was sent shows; the right answer of a choice question stays hidden
+    expect(dB.messages.map((m: { title: string }) => m.title)).toEqual(['최초 신고'])
+    expect(dB.messages[0].targets).toEqual([b.memberId])
+    expect(dB.marks.filter((m: { removedAt: number | null }) => m.removedAt == null).map((m: { label: string }) => m.label)).toEqual(['화점'])
+    const m1 = dB.messages[0].id
+
+    // answers: only the one it is for; not an outsider
+    expect((await call(c, 'POST', `/api/command/drills/${drillId}/messages/${m1}/answer`, { body: '확인' })).error).toContain('처리 담당이 아닙니다')
+    expect((await call(outsider, 'POST', `/api/command/drills/${drillId}/messages/${m1}/answer`, { body: '확인' })).error).toContain('참가자가 아닙니다')
+    expect((await call(b, 'POST', `/api/command/drills/${drillId}/messages/${m1}/answer`, {})).status).toBe(400)
+    expect((await call(b, 'POST', `/api/command/drills/${drillId}/messages/${m1}/answer`, { body: '현장 도착, 연기 확인' })).data.late).toBe(false)
+
+    // five minutes on: the next message goes, with its map change
+    s.command.runJobs(Date.now() + 5 * 60_000 + 1000)
+    dB = (await call(b, 'GET', `/api/command/drills/${drillId}`)).data
+    expect(dB.messages.map((m: { title: string }) => m.title)).toEqual(['최초 신고', '통신 두절'])
+    expect(dB.messages[1].correctIndex).toBeNull()
+    const live = dB.marks.filter((m: { removedAt: number | null }) => m.removedAt == null)
+    expect(live.map((m: { points: number[][] }) => m.points[0])).toEqual([[0.6, 0.5]])
+    expect(dB.marks).toHaveLength(2)
+    const m2 = dB.messages[1].id
+    expect((await call(c, 'POST', `/api/command/drills/${drillId}/messages/${m2}/answer`, { body: 'x' })).error).toBe('선택지를 고르세요.')
+    expect((await call(c, 'POST', `/api/command/drills/${drillId}/messages/${m2}/answer`, { choiceIndex: 0 })).status).toBe(200)
+
+    // those in charge: the whole drill (also what is still to come), skip, ad hoc, the map live, notes
+    const dA = (await call(admin, 'GET', `/api/command/drills/${drillId}`)).data
+    expect(dA.messages).toHaveLength(3)
+    expect(dA.messages[1].correctIndex).toBe(0)
+    expect((await call(admin, 'POST', `/api/command/drills/${drillId}/messages/${dA.messages[2].id}/skip`)).status).toBe(200)
+    expect((await call(admin, 'POST', `/api/command/drills/${drillId}/messages`, { title: '즉석: 2차 폭발', handling: 'first', targetKind: 'all' })).status).toBe(200)
+    expect((await call(b, 'POST', `/api/command/drills/${drillId}/marks`, { key: 'cmd1', kind: 'pin', icon: 'command', color: '#2563eb', label: '지휘소', points: [[0.1, 0.1]] })).status).toBe(403)
+    expect((await call(admin, 'POST', `/api/command/drills/${drillId}/marks`, { key: 'cmd1', kind: 'pin', icon: 'command', color: '#2563eb', label: '지휘소', points: [[0.1, 0.1]] })).status).toBe(200)
+    expect((await call(admin, 'PATCH', `/api/command/drills/${drillId}/marks/cmd1`, { kind: 'pin', icon: 'command', color: '#2563eb', label: '지휘소(이동)', points: [[0.2, 0.1]] })).status).toBe(200)
+    expect((await call(admin, 'DELETE', `/api/command/drills/${drillId}/marks/fire1`)).status).toBe(200)
+    dB = (await call(b, 'GET', `/api/command/drills/${drillId}`)).data
+    expect(dB.marks.filter((m: { removedAt: number | null }) => m.removedAt == null).map((m: { label: string }) => m.label)).toEqual(['지휘소(이동)'])
+    const adHoc = dB.messages.find((m: { title: string }) => m.title === '즉석: 2차 폭발')
+    expect(adHoc.adHoc).toBe(true)
+    // anybody first: one answer settles it
+    expect((await call(c, 'POST', `/api/command/drills/${drillId}/messages/${adHoc.id}/answer`, { body: '대피 지시' })).status).toBe(200)
+    expect((await call(b, 'POST', `/api/command/drills/${drillId}/messages/${adHoc.id}/answer`, { body: '나도' })).error).toContain('이미 처리')
+
+    // grade, note, end: then the right answer shows to everybody
+    const ans = (await call(admin, 'GET', `/api/command/drills/${drillId}`)).data.messages[0].answers[0]
+    expect((await call(b, 'PUT', `/api/command/drills/${drillId}/answers/${ans.id}/grade`, { grade: 'good' })).status).toBe(403)
+    expect((await call(admin, 'PUT', `/api/command/drills/${drillId}/answers/${ans.id}/grade`, { grade: 'good', comment: '신속' })).status).toBe(200)
+    expect((await call(admin, 'POST', `/api/command/drills/${drillId}/notes`, { body: '통신 두절 상황 부여' })).status).toBe(200)
+    expect((await call(admin, 'POST', `/api/command/drills/${drillId}/end`)).status).toBe(200)
+    dB = (await call(b, 'GET', `/api/command/drills/${drillId}`)).data
+    expect(dB.state).toBe('ended')
+    expect(dB.messages.find((m: { title: string }) => m.title === '통신 두절').correctIndex).toBe(0)
+    expect(dB.messages[0].answers[0]).toMatchObject({ grade: 'good', comment: '신속' })
+    expect(dB.notes).toEqual([])
+    expect((await call(admin, 'GET', `/api/command/drills/${drillId}`)).data.notes[0].body).toBe('통신 두절 상황 부여')
+    expect((await call(c, 'POST', `/api/command/drills/${drillId}/messages/${m1}/answer`, { body: 'late' })).error).toBe('끝난 훈련입니다.')
+  })
+
+  it('a drill scheduled for later starts by itself; pause holds the clock', async () => {
+    s = await createTestServer()
+    const b = await s.join('대원')
+    const mode = (await call(s.admin, 'GET', '/api/command')).data.modes[0].id
+    const t = (await call(s.admin, 'POST', '/api/command/teams', { name: 'A조' })).data.id
+    await call(s.admin, 'PUT', `/api/command/teams/${t}/members`, { personIds: [b.memberId] })
+    const start = Date.now() + 60_000
+    const id = (await call(s.admin, 'POST', '/api/command/drills', { modeId: mode, title: '예약 훈련', teamIds: [t], startAt: start })).data.id
+    expect((await call(b, 'GET', `/api/command/drills/${id}`)).data.state).toBe('scheduled')
+    s.command.runJobs(start + 1)
+    expect((await call(b, 'GET', `/api/command/drills/${id}`)).data.state).toBe('running')
+    await call(s.admin, 'POST', `/api/command/drills/${id}/pause`)
+    expect((await call(b, 'GET', `/api/command/drills/${id}`)).data.state).toBe('paused')
+    await call(s.admin, 'POST', `/api/command/drills/${id}/resume`)
+    expect((await call(s.admin, 'POST', `/api/command/drills/${id}/delete`)).status).toBe(400)
+    await call(s.admin, 'POST', `/api/command/drills/${id}/end`)
+    expect((await call(s.admin, 'POST', `/api/command/drills/${id}/delete`)).status).toBe(200)
+  })
+})
