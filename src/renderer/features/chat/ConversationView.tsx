@@ -15,6 +15,7 @@ import { realtime } from '@renderer/lib/realtime'
 import { invoke } from '@renderer/lib/bridge'
 import { useMe, useMembers } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
+import { CHAT_FONT_MAX, CHAT_FONT_MIN, usePrefs } from '@renderer/app/prefs-store'
 import { MESSAGE_EDIT_WINDOW_MS, type ConversationChangedPayload, type MessageChangedPayload, type MessageDto, type MessageNewPayload } from '@shared/schemas/chat'
 import { useChatUi } from './chat-store'
 import { GROUP_LEAVE_HINT, leaveConversation } from './leave'
@@ -34,6 +35,39 @@ const PAGE = 50
 const KEEP = 200
 /** pasted images waiting to be sent (shown above the input until Enter or 보내기) */
 const STAGE_MAX = 10
+
+/** The message text is text-sm of the app's 글자 크기 until the person picks a size of their own. */
+const chatBasePx = (appPx: number): number => Math.round(appPx * 0.875)
+
+/** 가- / size / 가+ for the message text of every conversation (a personal preference, 지시 108). */
+function ChatFontControl(): React.JSX.Element {
+  const chat = usePrefs((s) => s.chatFontSize)
+  const base = chatBasePx(usePrefs((s) => s.fontSize))
+  const update = usePrefs((s) => s.update)
+  const px = chat || base
+  return (
+    // a click here keeps the "…" menu of a small window open
+    <div role="group" aria-label="메시지 글자 크기" className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()} data-testid="chat-font">
+      <Button size="icon-sm" variant="outline" aria-label="메시지 글자 작게" title={`메시지 글자 작게 (지금 ${px}px)`} disabled={px <= CHAT_FONT_MIN} onClick={() => update({ chatFontSize: px - 1 })}>
+        가-
+      </Button>
+      <button
+        type="button"
+        className="h-8 min-w-11 cursor-pointer rounded-md px-1 text-center text-xs tabular-nums text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+        aria-label="메시지 글자 기본 크기로"
+        title={chat ? `메시지 글자 ${px}px · 누르면 기본 크기(${base}px)로` : `메시지 글자 ${px}px (기본)`}
+        disabled={!chat}
+        onClick={() => update({ chatFontSize: 0 })}
+        data-testid="chat-font-size"
+      >
+        {px}px
+      </button>
+      <Button size="icon-sm" variant="outline" aria-label="메시지 글자 크게" title={`메시지 글자 크게 (지금 ${px}px)`} disabled={px >= CHAT_FONT_MAX} onClick={() => update({ chatFontSize: px + 1 })}>
+        가+
+      </Button>
+    </div>
+  )
+}
 
 /** A pasted screen capture gets a name that says when it was taken. */
 const pastedName = (f: File, i: number): File => (f.name && f.name !== 'image.png' ? f : new File([f], `캡처_${format(new Date(), 'yyyyMMdd_HHmmss')}${i ? `_${i}` : ''}.png`, { type: f.type }))
@@ -59,6 +93,7 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
   const { data: me } = useMe()
   const { data: team } = useMembers()
   const online = useConn((s) => s.state === 'online')
+  const chatFontSize = usePrefs((s) => s.chatFontSize)
   const view = useChatUi((s) => s.view)
   const unview = useChatUi((s) => s.unview)
   const [messages, setMessages] = useState<MessageDto[]>([])
@@ -435,7 +470,11 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
             </Button>
             {controls}
             {menu && (
-              <div role="menu" className="absolute right-1 top-full z-10 mt-0.5 w-48 rounded-md border border-border bg-card py-1 shadow-lg" data-testid="conv-menu">
+              <div role="menu" className="absolute right-1 top-full z-10 mt-0.5 w-56 rounded-md border border-border bg-card py-1 shadow-lg" data-testid="conv-menu">
+                <div className="flex items-center cursor-default justify-between gap-2 border-b border-border px-3 pb-1.5 pt-0.5 text-sm">
+                  글자 크기
+                  <ChatFontControl />
+                </div>
                 <button type="button" role="menuitem" className={menuItem} disabled={!c} onClick={() => setPeople(true)}>
                   <Users /> 참가자
                 </button>
@@ -468,7 +507,9 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
             )}
           </div>
         ) : (
-          <div className="ml-auto flex gap-1">
+          <div className="ml-auto flex items-center gap-1">
+            <ChatFontControl />
+            <span className="mx-1 h-5 w-px bg-border" aria-hidden />
             {c && (
               <Button size="icon-sm" variant="ghost" aria-label="이 대화방에서 회의 시작" title="이 대화방에서 회의 시작" onClick={meet}>
                 <Video />
@@ -495,7 +536,8 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
       </div>
       <div
         ref={listRef}
-        className={cn('selectable min-h-0 flex-1 space-y-1 overflow-y-auto', compact ? 'px-3 py-2' : 'px-4 py-3')}
+        className={cn('selectable min-h-0 flex-1 space-y-1 overflow-y-auto text-sm leading-[1.43]', compact ? 'px-3 py-2' : 'px-4 py-3')}
+        style={chatFontSize ? { fontSize: chatFontSize } : undefined}
         data-testid="message-list"
         onScroll={(e) => {
           const el = e.currentTarget
@@ -504,7 +546,7 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
         }}
       >
         {loadingOlder && <Loader2 className="mx-auto size-4 animate-spin text-muted-foreground" />}
-        {!hasMore && messages.length > 0 && <p className="py-2 text-center text-xs text-muted-foreground">대화의 시작입니다</p>}
+        {!hasMore && messages.length > 0 && <p className="py-2 text-center text-[0.86em] text-muted-foreground">대화의 시작입니다</p>}
         {messages.map((m, i) => {
           const prev = messages[i - 1]
           const newDay = !prev || !isSameDay(prev.createdAt, m.createdAt)
@@ -512,27 +554,27 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
           const grouped = prev && prev.senderId === m.senderId && !newDay && m.createdAt - prev.createdAt < 120000 && prev.kind !== 'system'
           return (
             <div key={m.id}>
-              {newDay && <div className="my-3 text-center text-xs text-muted-foreground">{format(m.createdAt, 'yyyy년 M월 d일 EEEE', { locale: ko })}</div>}
+              {newDay && <div className="my-3 text-center text-[0.86em] text-muted-foreground">{format(m.createdAt, 'yyyy년 M월 d일 EEEE', { locale: ko })}</div>}
               {m.kind === 'system' ? (
-                <p className="my-1 text-center text-xs text-muted-foreground">{m.body}</p>
+                <p className="my-1 text-center text-[0.86em] text-muted-foreground">{m.body}</p>
               ) : (
                 <div className={cn('group flex items-end gap-1.5', mine ? 'flex-row-reverse' : '', !grouped && 'mt-2')} data-testid="message">
                   <div className={cn(compact ? 'max-w-[78%]' : 'max-w-[70%]', mine ? 'items-end' : 'items-start', 'flex flex-col')}>
                     {!mine && !grouped && (
-                      <span className="mb-0.5 text-xs font-semibold">
+                      <span className="mb-0.5 text-[0.86em] font-semibold">
                         <span>{m.senderName}</span>
                         <RoleMark memberId={m.senderId} />
                       </span>
                     )}
                     {m.deleted ? (
-                      <div className="flex items-center gap-1.5 rounded-2xl border border-dashed border-border px-3 py-1.5 text-sm text-muted-foreground italic" data-testid="message-deleted">
+                      <div className="flex items-center gap-1.5 rounded-2xl border border-dashed border-border px-3 py-1.5 text-muted-foreground italic" data-testid="message-deleted">
                         <Ban className="size-3.5 shrink-0" aria-hidden /> 삭제된 메시지입니다.
                       </div>
                     ) : editing?.id === m.id ? (
                       <div className={cn('flex flex-col gap-1', compact ? 'w-60' : 'w-80')} data-testid="message-edit">
                         <Textarea
                           aria-label="메시지 고치기"
-                          className="min-h-16 resize-none text-sm"
+                          className="min-h-16 resize-none text-[1em]"
                           autoFocus
                           value={editing.text}
                           onChange={(e) => setEditing({ id: m.id, text: e.target.value })}
@@ -556,7 +598,7 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
                         </div>
                       </div>
                     ) : m.kind === 'text' && emojiOnly(m.body) ? (
-                      <div className="text-4xl leading-tight" data-testid="message-emoticon">
+                      <div className="text-[2.57em] leading-tight" data-testid="message-emoticon">
                         {m.body.trim()}
                       </div>
                     ) : m.kind === 'image' && m.attachments[0] ? (
@@ -564,10 +606,12 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
                     ) : m.kind === 'file' && m.attachments[0] ? (
                       <FileChip id={m.attachments[0].id} name={m.attachments[0].name} size={m.attachments[0].size} className={compact ? 'w-60' : 'w-80'} />
                     ) : (
-                      <div className={cn('rounded-2xl px-3 py-1.5 text-sm whitespace-pre-wrap break-words', mine ? 'rounded-br-sm bg-primary text-primary-foreground' : 'rounded-bl-sm bg-muted')}>{m.body}</div>
+                      <div className={cn('rounded-2xl px-3 py-1.5 whitespace-pre-wrap break-words', mine ? 'rounded-br-sm bg-primary text-primary-foreground' : 'rounded-bl-sm bg-muted')} data-testid="message-body">
+                        {m.body}
+                      </div>
                     )}
                   </div>
-                  <div className={cn('flex shrink-0 flex-col text-[0.68rem] leading-tight', mine ? 'items-end' : 'items-start')}>
+                  <div className={cn('flex shrink-0 flex-col text-[0.78em] leading-tight', mine ? 'items-end' : 'items-start')}>
                     {m.unreadBy > 0 && (
                       <span className="font-bold text-important" title="아직 읽지 않은 사람 수" data-testid="unread-by">
                         {m.unreadBy}
@@ -599,8 +643,8 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
         })}
         {waiting.map((w) => (
           <div key={w.id} className="mt-2 flex flex-row-reverse items-end gap-1.5" data-testid="message-waiting">
-            <div className="max-w-[70%] rounded-2xl rounded-br-sm border border-dashed border-primary/60 bg-primary/10 px-3 py-1.5 text-sm whitespace-pre-wrap break-words">{(w.body as { body: string }).body}</div>
-            <span className={cn('shrink-0 text-[0.68rem]', w.state === 'failed' ? 'text-urgent' : 'text-muted-foreground')}>{w.state === 'failed' ? '보내지 못함' : '서버 연결 시 전송'}</span>
+            <div className="max-w-[70%] rounded-2xl rounded-br-sm border border-dashed border-primary/60 bg-primary/10 px-3 py-1.5 whitespace-pre-wrap break-words">{(w.body as { body: string }).body}</div>
+            <span className={cn('shrink-0 text-[0.78em]', w.state === 'failed' ? 'text-urgent' : 'text-muted-foreground')}>{w.state === 'failed' ? '보내지 못함' : '서버 연결 시 전송'}</span>
           </div>
         ))}
       </div>
