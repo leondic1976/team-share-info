@@ -88,8 +88,8 @@
       holidays: c.holidays === undefined ? true : !!c.holidays,
       // 식수서무: may change the settings, register menus and request for others (the owner names them)
       stewards: Array.from(new Set((Array.isArray(c.stewards) ? c.stewards : []).filter(isId))).slice(0, LIMITS.stewardsMax),
-      // before 1.2.0: members who may request for somebody else. Kept (for that only) until the
-      // owner saves the settings again, which replaces them by the 식수서무.
+      // before 1.2.0: members who could request for somebody else (since 1.4.0 everybody can).
+      // Offered as 식수서무 until the owner saves the settings again, which drops them.
       clerks: Array.from(new Set((Array.isArray(c.clerks) ? c.clerks : []).filter(isId))).slice(0, LIMITS.clerksMax),
       // how many days ahead a request may be made (1 = today only)
       ahead: ahead >= 1 && ahead <= LIMITS.aheadMax ? ahead : 7,
@@ -231,10 +231,16 @@
 
   /** In charge of meals: the admin who made the settings (the owner) and the 식수서무 they named. */
   const canManage = (room, id) => !!room && !!id && (room.createdBy === id || cleanConfig(room.shared).stewards.includes(id))
-  /** Who may request for somebody else: those in charge, and the clerks named before 1.2.0. */
-  const canProxy = (room, id) => canManage(room, id) || (!!room && !!id && cleanConfig(room.shared).clerks.includes(id))
+  /**
+   * Who may request for somebody else: every member (1.4.0; before, only those in charge and
+   * the clerks named before 1.2.0). A record made for another is written into the entry of the
+   * one who made it, so every screen shows who did it ("○○○ 대신"), and the member can change it
+   * again until the deadline (the newest counts).
+   */
+  const canProxy = (room, id) => !!room && isId(id)
   /**
    * Request or cancel for another member (target = { id, name }), under the same deadline.
+   * Anybody may (see canProxy).
    * It is written into the entry of the one who does it (`value`); the newest of the member's
    * own request and the ones made for them counts, so the member can still change it.
    */
@@ -297,10 +303,15 @@
     }
     for (const id of Object.keys(entries)) {
       if (!clean[id].for || !canProxy(room, id)) continue
+      // anybody may request for others, but only for somebody who exists: a member, one with
+      // their own entry, or a person registered by hand. Those in charge are trusted as before
+      // (a member who has since left keeps the meals they were given).
+      const trusted = canManage(room, id)
       for (const raw of Object.keys(clean[id].for)) {
         if (raw === id) continue
         const tid = alias(raw)
         const m = info.get(tid)
+        if (!trusted && !m && !entries[tid] && !(isManualId(tid) && hand[tid])) continue
         put(person(tid, (m && m.name) || (tid === raw ? clean[id].for[raw].name : '')), clean[id].for[raw].days, tid === id ? '' : id, tid === id ? '' : entries[id].name || '')
       }
     }
@@ -715,7 +726,7 @@
     return out
   }
 
-  // ---------- requests for many people at once (those in charge) ----------
+  // ---------- requests for many people at once (anybody, see canProxy) ----------
   const NO_DEPT = '부서 미지정'
   /**
    * Members by department for the pick list: [{ dept, own, members }]. Departments and the

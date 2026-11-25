@@ -90,11 +90,6 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     const fb = frame(b.page)
     const dinnerA = fa.locator('[data-status="dinner"]')
     const dinner = fb.locator('.day.today [data-tile$=":dinner"]')
-    // a member who is not a clerk has no such control
-    await fb.locator('nav [data-tab="status"]').click()
-    await fb.locator('[data-status="dinner"]').waitFor({ timeout: 10000 })
-    expect(await fb.locator('.proxy').count()).toBe(0)
-    await fb.locator('nav [data-tab="apply"]').click()
 
     // cancel for 팀원B, then request again for them
     await dinnerA.locator('button[data-unproxy]').click()
@@ -111,6 +106,32 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     // the member's own later change wins
     await dinner.getByRole('button', { name: '취소' }).click()
     await expect.poll(() => dinnerA.textContent(), { timeout: 15000 }).toContain('0명')
+  }, 90000)
+
+  it('a member who is not in charge requests and cancels for somebody else too (1.4.0)', async () => {
+    const fa = frame(a.page)
+    const fb = frame(b.page)
+    const wait = { timeout: 15000 }
+    const mineA = fa.locator('.day.today [data-tile$=":dinner"]')
+    await fa.locator('nav [data-tab="apply"]').click()
+    await mineA.waitFor(wait)
+    await fb.locator('nav [data-tab="status"]').click()
+    const dinnerB = fb.locator('[data-status="dinner"]')
+    await dinnerB.locator('.proxy select').waitFor(wait)
+    // 팀원B picks the admin (the only other one) and requests their dinner
+    await dinnerB.locator('.proxy select').selectOption({ index: 1 })
+    await dinnerB.getByRole('button', { name: '대신 신청', exact: true }).click()
+    await expect.poll(() => dinnerB.textContent(), wait).toContain('1명')
+    expect(await dinnerB.locator('.who').textContent()).toContain('대신')
+    // the admin's own tile says who did it
+    await expect.poll(() => mineA.textContent(), wait).toContain('신청함')
+    expect(await mineA.textContent()).toContain('팀원B 대신')
+    // and 팀원B cancels it again for them
+    await dinnerB.locator('button[data-unproxy]').click()
+    await expect.poll(() => dinnerB.textContent(), wait).toContain('0명')
+    await expect.poll(() => mineA.textContent(), wait).toContain('신청 안 함')
+    await fb.locator('nav [data-tab="apply"]').click()
+    await fa.locator('nav [data-tab="status"]').click()
   }, 90000)
 
   it('a 식수서무 named by the admin registers the menu and changes a deadline; everybody sees it at once', async () => {
@@ -176,8 +197,11 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     const fa = frame(a.page)
     const fb = frame(b.page)
     const wait = { timeout: 15000 }
-    // a member who is not in charge has neither the button nor the list of people
-    expect(await fb.locator('#bulkOpen').count()).toBe(0)
+    // a member who is not in charge has the button too, but cannot register people by hand
+    await fb.locator('#bulkOpen').click()
+    await fb.locator('#bulkPeople .bulk-group').first().waitFor(wait)
+    expect(await fb.locator('#bulkAddPerson').isVisible()).toBe(false)
+    await fb.locator('#bulkClose').click()
 
     // the admin registers a colleague who does not use TeamHub
     await fa.locator('#settingsTab').click()

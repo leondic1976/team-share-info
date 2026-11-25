@@ -229,6 +229,59 @@ describe('messenger (M5)', () => {
     expect((await s.req(a, { method: 'GET', url: '/api/notes?box=sent', ip: IP })).json().data).toHaveLength(2)
   })
 
+  it('the sender edits (text, 24 hours) and deletes; both are shown to everybody, others cannot', async () => {
+    s = await createTestServer()
+    const a = await s.join('A')
+    const b = await s.join('B')
+    const conv = (await s.req(a, { method: 'POST', url: '/api/conversations', ip: IP, payload: { memberIds: [b.memberId] } })).json().data
+    const url = `/api/conversations/${conv.id}/messages`
+    await s.req(a, { method: 'POST', url, ip: IP, payload: { body: '처음 글' } })
+    await s.req(a, { method: 'POST', url, ip: IP, payload: { body: '둘째 글' } })
+    let msgs = (await s.req(b, { method: 'GET', url, ip: IP })).json().data
+    const [first, second] = msgs
+    expect([first.editedAt, first.deleted]).toEqual([null, false])
+    // only the sender, never empty
+    expect((await s.req(b, { method: 'PATCH', url: `/api/messages/${first.id}`, ip: IP, payload: { body: '남의 글' } })).statusCode).toBe(403)
+    expect((await s.req(a, { method: 'PATCH', url: `/api/messages/${first.id}`, ip: IP, payload: { body: '   ' } })).statusCode).toBe(400)
+    expect((await s.req(a, { method: 'PATCH', url: `/api/messages/${first.id}`, ip: IP, payload: { body: '고친 글' } })).statusCode).toBe(200)
+    msgs = (await s.req(b, { method: 'GET', url, ip: IP })).json().data
+    expect(msgs[0].body).toBe('고친 글')
+    expect(msgs[0].editedAt).toBeGreaterThan(0)
+    // the search finds the new text, not the old
+    expect((await s.req(b, { method: 'GET', url: '/api/messages/search?q=처음', ip: IP })).json().data).toEqual([])
+    expect((await s.req(b, { method: 'GET', url: '/api/messages/search?q=고친', ip: IP })).json().data).toHaveLength(1)
+    // older than 24 hours: no more changes
+    s.ctx.db.run('UPDATE messages SET created_at = ? WHERE id = ?', [Date.now() - 25 * 3600_000, second.id])
+    const late = await s.req(a, { method: 'PATCH', url: `/api/messages/${second.id}`, ip: IP, payload: { body: '늦은 수정' } })
+    expect([late.statusCode, late.json().error?.message]).toEqual([400, '보낸 지 24시간이 지난 메시지는 고칠 수 없습니다.'])
+    // delete: only the sender; the place stays, the text and the edit time go
+    expect((await s.req(b, { method: 'DELETE', url: `/api/messages/${first.id}`, ip: IP })).statusCode).toBe(403)
+    expect((await s.req(a, { method: 'DELETE', url: `/api/messages/${first.id}`, ip: IP })).statusCode).toBe(200)
+    msgs = (await s.req(b, { method: 'GET', url, ip: IP })).json().data
+    expect(msgs).toHaveLength(2)
+    expect(msgs[0]).toMatchObject({ id: first.id, deleted: true, body: '삭제된 메시지입니다.', attachments: [], editedAt: null, unreadBy: 0 })
+    expect(s.ctx.db.get<{ body: string }>('SELECT body FROM messages WHERE id = ?', [first.id])!.body).toBe('')
+    expect((await s.req(b, { method: 'GET', url: '/api/messages/search?q=고친', ip: IP })).json().data).toEqual([])
+    // a deleted message cannot be changed or deleted again
+    expect((await s.req(a, { method: 'PATCH', url: `/api/messages/${first.id}`, ip: IP, payload: { body: '되살리기' } })).statusCode).toBe(404)
+    expect((await s.req(a, { method: 'DELETE', url: `/api/messages/${first.id}`, ip: IP })).statusCode).toBe(404)
+    // the list of conversations shows the last message that is still there
+    expect((await s.req(b, { method: 'GET', url: '/api/conversations', ip: IP })).json().data[0].lastPreview).toBe('둘째 글')
+  })
+
+  it('a file message cannot be edited, only deleted', async () => {
+    s = await createTestServer()
+    const a = await s.join('A')
+    const b = await s.join('B')
+    const conv = (await s.req(a, { method: 'POST', url: '/api/conversations', ip: IP, payload: { memberIds: [b.memberId] } })).json().data
+    const url = `/api/conversations/${conv.id}/messages`
+    await s.req(a, { method: 'POST', url, ip: IP, payload: { body: '글' } })
+    const id = (await s.req(a, { method: 'GET', url, ip: IP })).json().data[0].id
+    s.ctx.db.run("UPDATE messages SET kind = 'file' WHERE id = ?", [id])
+    expect((await s.req(a, { method: 'PATCH', url: `/api/messages/${id}`, ip: IP, payload: { body: '바꿈' } })).statusCode).toBe(400)
+    expect((await s.req(a, { method: 'DELETE', url: `/api/messages/${id}`, ip: IP })).statusCode).toBe(200)
+  })
+
   it('retention job removes old messages', async () => {
     s = await createTestServer()
     const a = await s.join('A')

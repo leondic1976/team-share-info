@@ -1,8 +1,14 @@
 import { useEffect, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
 
-/** Minimal modal dialog: Esc and backdrop click close it; focus moves inside. */
+/**
+ * Minimal modal dialog: Esc and backdrop click close it; focus moves inside.
+ * It is put on the document body (a portal) and marked no-drag: opened from the top bar, it
+ * would otherwise sit inside the window's drag region, where Windows takes every real mouse
+ * click as "move the window" and no button works (긴급공지 보내기, 2026-11-25).
+ */
 export function Dialog({
   open,
   onClose,
@@ -30,8 +36,8 @@ export function Dialog({
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
   if (!open) return null
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+  return createPortal(
+    <div className="no-drag fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()} data-testid="dialog-backdrop">
       <div ref={ref} role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined} className={cn('flex max-h-[90vh] w-full flex-col rounded-xl bg-card shadow-xl', width)}>
         <div className="flex items-center gap-2 border-b border-border px-5 py-3">
           <h2 className="flex-1 text-base font-bold">{title}</h2>
@@ -42,7 +48,8 @@ export function Dialog({
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
         {footer && <div className="flex justify-end gap-2 border-t border-border px-5 py-3">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

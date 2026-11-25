@@ -55,6 +55,25 @@ export interface MessageDto {
   createdAt: number
   /** members (other than the sender) who have not read it yet */
   unreadBy: number
+  /** when the sender last changed the text (shown as "수정됨"); null: never */
+  editedAt?: number | null
+  /** deleted by the sender: shown as "삭제된 메시지입니다." (body and attachments are gone) */
+  deleted?: boolean
+}
+
+/** A sender may change the text of a message for this long after sending it (like KakaoTalk). */
+export const MESSAGE_EDIT_WINDOW_MS = 24 * 3600_000
+/** The text an older program shows for a deleted message (a newer one draws its own). */
+export const DELETED_MESSAGE_TEXT = '삭제된 메시지입니다.'
+
+export const messageEditSchema = z.object({ body: z.string().max(10_000).refine((b) => b.trim().length > 0, { message: '내용을 입력하세요.' }) })
+
+/** payload of the message.changed realtime event (a message was edited or deleted) */
+export interface MessageChangedPayload {
+  conversationId: string
+  id: string
+  seq: number
+  deleted: boolean
 }
 
 export interface NoteDto {

@@ -102,15 +102,15 @@ describe('meal plugin: public holidays', () => {
   })
 })
 
-describe('meal plugin: a clerk requests for somebody else', () => {
+describe('meal plugin: anybody requests for somebody else', () => {
   const shared = M.cleanConfig({ ...config, clerks: ['clerk', 'clerk', 5] })
   const members = [{ id: 'adm', name: '관리자', deptName: '' }, { id: 'clerk', name: '서무', deptName: '행정팀' }, { id: 'kim', name: '김주무', deptName: '행정팀' }, { id: 'lee', name: '이주무', deptName: '민원팀' }]
   const room = (entries: Record<string, any>) => ({ createdBy: 'adm', shared, entries })
   const names = (r: any, meal = 'lunch') => M.dayList(r, MON, meal, members).map((p: any) => p.name + (p.by ? `(${p.byName})` : ''))
 
-  it('only the admin who made the settings and the chosen clerks may', () => {
+  it('every member may (1.4.0), not without the settings or an id', () => {
     expect(Array.from(shared.clerks)).toEqual(['clerk'])
-    expect([M.canProxy(room({}), 'adm'), M.canProxy(room({}), 'clerk'), M.canProxy(room({}), 'kim'), M.canProxy(null, 'adm')]).toEqual([true, true, false, false])
+    expect([M.canProxy(room({}), 'adm'), M.canProxy(room({}), 'clerk'), M.canProxy(room({}), 'kim'), M.canProxy(null, 'adm'), M.canProxy(room({}), ''), M.canProxy(room({}), undefined)]).toEqual([true, true, true, false, false, false])
   })
 
   it('requests and cancels for a member, under the same deadline', () => {
@@ -137,11 +137,30 @@ describe('meal plugin: a clerk requests for somebody else', () => {
     expect(M.monthTally(r, '2026-11', members, at(MON, 11), false).rows.map((x: any) => [x.deptName, x.name, x.lunch])).toEqual([['행정팀', '김주무', 1]])
   })
 
-  it('ignores requests made for others by somebody who may not', () => {
-    const forged = M.applyFor(null, shared, { id: 'kim', name: '김주무' }, MON, 'lunch', true, at(MON, 9)).entry
-    expect(names(room({ lee: { name: '이주무', value: forged } }))).toEqual([])
-    // and by a clerk who is no longer one
-    expect(names({ createdBy: 'adm', shared: M.cleanConfig(config), entries: { clerk: { name: '서무', value: forged } } })).toEqual([])
+  it('counts what a member who is not in charge requested for another, shown as made by them', () => {
+    const byLee = M.applyFor(null, shared, { id: 'kim', name: '김주무' }, MON, 'lunch', true, at(MON, 9)).entry
+    const r = room({ lee: { name: '이주무', value: byLee } })
+    expect(names(r)).toEqual(['김주무(이주무)'])
+    expect(M.recordOf(r, members, 'kim', MON, 'lunch')).toMatchObject({ on: true, by: 'lee', byName: '이주무' })
+    // a clerk who is no longer one, too
+    expect(names({ createdBy: 'adm', shared: M.cleanConfig(config), entries: { clerk: { name: '서무', value: byLee } } })).toEqual(['김주무(서무)'])
+    // a member cancels the meal of another: the newest counts, and the member can take it back
+    const cancel = M.applyFor(null, shared, { id: 'kim', name: '김주무' }, MON, 'lunch', false, at(MON, 9, 10)).entry
+    const kimOwn = { name: '김주무', value: M.apply(null, shared, MON, 'lunch', true, at(MON, 9, 5)).entry }
+    expect(names(room({ kim: kimOwn, lee: { name: '이주무', value: cancel } }))).toEqual([])
+    const again = { name: '김주무', value: M.apply(null, shared, MON, 'lunch', true, at(MON, 9, 20)).entry }
+    expect(names(room({ kim: again, lee: { name: '이주무', value: cancel } }))).toEqual(['김주무'])
+  })
+
+  it('ignores a record made by a member for somebody who does not exist; those in charge are trusted as before', () => {
+    const ghost = M.applyFor(null, shared, { id: 'ghost', name: '가짜' }, MON, 'lunch', true, at(MON, 9)).entry
+    expect(names(room({ lee: { name: '이주무', value: ghost } }))).toEqual([])
+    expect(M.monthTally(room({ lee: { name: '이주무', value: ghost } }), '2026-11', members, at(MON, 11), false).rows).toEqual([])
+    // somebody with an entry of their own (a member who has left keeps their meals) does count
+    const own = { name: '박전임', value: M.apply(null, shared, '2026-11-24', 'lunch', true, at(MON, 9)).entry }
+    expect(names(room({ ghost: own, lee: { name: '이주무', value: ghost } }))).toEqual(['박전임(이주무)'])
+    // the owner's record for somebody no longer on the list still counts
+    expect(names(room({ adm: { name: '관리자', value: ghost } }))).toEqual(['가짜(관리자)'])
   })
 
   it('keeps requests made for others for a shorter time', () => {
@@ -236,16 +255,16 @@ describe('meal plugin: 식수서무 (at most two) share the settings and the men
   const late = { ...config, meals: { lunch: { on: true, cutoff: '11:00' }, dinner: { on: true, cutoff: '15:30' } } }
   const plain = (v: unknown) => JSON.parse(JSON.stringify(v))
 
-  it('names at most two, never the owner, and keeps the clerks of before only for requests made for others', () => {
+  it('names at most two, never the owner; the clerks of before are only offered as 식수서무', () => {
     expect(Array.from(M.cleanConfig({ stewards: ['a', 'a', 'b', 'c', 7] }).stewards)).toEqual(['a', 'b'])
     const old = room(M.cleanConfig({ ...config, clerks: ['c1', 'c2', 'c3'] }))
-    expect(['adm', 'c1', 'c3', 'kim'].map((id) => [M.canManage(old, id), M.canProxy(old, id)])).toEqual([[true, true], [false, true], [false, true], [false, false]])
+    expect(['adm', 'c1', 'c3', 'kim'].map((id) => [M.canManage(old, id), M.canProxy(old, id)])).toEqual([[true, true], [false, true], [false, true], [false, true]])
     // the owner saves the settings with two 식수서무: the old clerks are replaced
     const saved = M.saveAs(old, 'adm', at(MON, 9), { settings: config, stewards: ['c1', 'c2', 'c3', 'adm'] }).shared
     expect([Array.from(saved.stewards), Array.from(saved.clerks)]).toEqual([['c1', 'c2'], []])
     expect(plain(saved.since)).toEqual({ c1: at(MON, 9), c2: at(MON, 9) })
     const now = room(saved)
-    expect(['c1', 'c2', 'c3'].map((id) => [M.canManage(now, id), M.canProxy(now, id)])).toEqual([[true, true], [true, true], [false, false]])
+    expect(['c1', 'c2', 'c3'].map((id) => [M.canManage(now, id), M.canProxy(now, id)])).toEqual([[true, true], [true, true], [false, true]])
     expect(plain(M.effective(room({ ...saved, stewards: ['adm', 'c1'] })).stewards)).toEqual(['c1'])
   })
 
@@ -505,17 +524,21 @@ describe('meal plugin: requests for many people at once (by department)', () => 
     expect([none.result.applied, none.result.closed, none.entry.for]).toEqual([0, 1, undefined])
   })
 
-  it('only those who may request for others can, and a pick is needed', () => {
-    expect(M.applyBulk(room(), 'kim', config, who(['lee']), [{ date: MON, meal: 'lunch' }], true, at(MON, 9), members).error).toContain('권한')
+  it('anybody can, and a pick is needed', () => {
+    // a member who is not in charge (1.4.0)
+    const byKim = M.applyBulk(room(), 'kim', config, who(['lee', 'choi']), [{ date: MON, meal: 'lunch' }], true, at(MON, 9), members)
+    expect(byKim.result.applied).toBe(2)
+    expect(names(room({ kim: { name: '김주무', value: byKim.entry } }))).toEqual(['이주무(김주무)', '최주무(김주무)'])
+    expect(M.applyBulk(null, 'kim', config, who(['lee']), [{ date: MON, meal: 'lunch' }], true, at(MON, 9), members).error).toContain('권한')
     expect(M.applyBulk(room(), 's1', config, [], [{ date: MON, meal: 'lunch' }], true, at(MON, 9), members).error).toContain('사람')
     expect(M.applyBulk(room(), 's1', config, who(['lee']), [{ date: 'x', meal: 'lunch' }, { date: MON, meal: 'tea' }], true, at(MON, 9), members).error).toContain('날짜')
     expect(M.applyBulk(room(), 'adm', config, who(['lee']), [{ date: MON, meal: 'lunch' }], true, at(MON, 9), members).result.applied).toBe(1)
     // a clerk named before 1.2.0 still may
     const old = { createdBy: 'adm', shared: M.cleanConfig({ ...config, clerks: ['han'] }), entries: {} }
     expect(M.applyBulk(old, 'han', config, who(['lee']), [{ date: MON, meal: 'lunch' }], true, at(MON, 9), members).result.applied).toBe(1)
-    // made by somebody who may not, it does not count
-    const forged = M.applyBulk(room(), 's1', config, who(['lee']), [{ date: MON, meal: 'lunch' }], true, at(MON, 9), members).entry
-    expect(names(room({ kim: { name: '김주무', value: forged } }))).toEqual([])
+    // made by anybody, it counts as theirs
+    const byS1 = M.applyBulk(room(), 's1', config, who(['lee']), [{ date: MON, meal: 'lunch' }], true, at(MON, 9), members).entry
+    expect(names(room({ kim: { name: '김주무', value: byS1 } }))).toEqual(['이주무(김주무)'])
   })
 
   it('too big for the server: old records made for others go first, own requests never, the rest is counted', () => {

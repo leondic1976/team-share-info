@@ -156,23 +156,3 @@ export function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () 
     </Dialog>
   )
 }
-
-/** The red button of the top bar; only for those who may send one. */
-export function EmergencyButton(): React.JSX.Element | null {
-  const can = useCanSendEmergency()
-  const [open, setOpen] = useState(false)
-  if (!can) return null
-  return (
-    <>
-      <button
-        className="no-drag flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-urgent bg-urgent/10 px-2.5 text-xs font-bold text-urgent hover:bg-urgent hover:text-white"
-        onClick={() => setOpen(true)}
-        title="아주 급한 일을 팀 전체 PC 화면에 바로 띄웁니다"
-        data-testid="emergency-button"
-      >
-        <Siren className="size-3.5" aria-hidden /> 긴급공지
-      </button>
-      <EmergencyDialog open={open} onClose={() => setOpen(false)} />
-    </>
-  )
-}

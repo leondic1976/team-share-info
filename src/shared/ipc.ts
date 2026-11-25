@@ -870,6 +870,8 @@ export interface MainEventMap {
   'update:state': UpdateState
   'popup:refresh': { id: string }
   'popup:closed': { id: string }
+  /** the title-bar X of an urgent window that needs a confirmation: the window decides what it means */
+  'popup:closeRequest': { id: string }
   'transfer:update': TransferItem[]
   'transfer:edited': { fileId: string; folderId: string; name: string; path: string }
   'memos:changed': { id: string | null }
@@ -886,7 +888,7 @@ export interface MainEventMap {
   'lock:changed': LockState
 }
 export type MainEvent = keyof MainEventMap
-export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed', 'storage:progress', 'lock:changed']
+export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'popup:closeRequest', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed', 'storage:progress', 'lock:changed']
 
 export interface TeamhubBridge {
   /** Absolute path of a dropped/selected File (Electron webUtils). */

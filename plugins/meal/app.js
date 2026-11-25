@@ -108,7 +108,7 @@
   function mealTile(c, date, meal) {
     const st = M.stateOf(c, date, meal, now())
     if (st === 'off') return ''
-    // the newest of my own request and one somebody in charge made for me
+    // the newest of my own request and one somebody made for me
     const rec = M.recordOf(room, members, me.id, date, meal)
     const on = !!(rec && rec.on)
     const at = rec ? rec.at : 0
@@ -181,7 +181,7 @@
     return `<div class="stack">
       ${summaryCard(c, today)}
       ${c.notice ? `<div class="th-notice notice">${esc(c.notice)}</div>` : ''}
-      ${legacy.length ? `<div class="th-notice" id="legacyNote">예전에 정한 서무 ${legacy.length}명(${esc(legacy.map(nameOf).join(', '))})은 지금 대신 신청만 할 수 있습니다. [설정]에서 식수서무를 2명까지 정해 저장하세요. 저장한 뒤에는 식수서무만 대신 신청을 할 수 있습니다.</div>` : ''}
+      ${legacy.length ? `<div class="th-notice" id="legacyNote">예전에 정한 서무 ${legacy.length}명(${esc(legacy.map(nameOf).join(', '))})은 아직 식수서무가 아닙니다. 대신 신청은 이제 누구나 할 수 있습니다. 설정 변경·메뉴 등록을 함께 맡기려면 [설정]에서 식수서무를 2명까지 정해 저장하세요.</div>` : ''}
       <div class="cols">
         <div class="stack tight">
           ${list.length ? list.map((x) => x.html).join('') : `<section class="th-card">${empty('utensils', '신청을 받는 날이 없습니다', '관리자와 식수서무가 설정에서 받는 식사와 요일을 정합니다.')}</section>`}
@@ -191,7 +191,7 @@
       </div>
     </div>`
   }
-  /** target = { id, name }: request or cancel for that member (those in charge). */
+  /** target = { id, name }: request or cancel for that member (anybody may). */
   async function change(date, meal, on, target) {
     if (busy) return
     busy = true
@@ -417,8 +417,8 @@
         <div><label class="th-check"><input type="checkbox" id="holidays" ${c.holidays ? 'checked' : ''} ${off} /> 공휴일에는 받지 않기</label><p class="th-hint">공휴일 목록은 관리 → 공휴일에서 정합니다.</p></div>
       </div></section>
       <section class="th-card"><div class="th-card-header"><h2 class="th-card-title">식수서무</h2><span class="th-xs th-muted">2명까지</span></div><div class="th-card-body stack tight">
-        <p class="th-hint">식사 신청을 맡는 사람입니다. 이 설정을 바꾸고, 메뉴를 등록하고, 다른 사람의 식사를 대신 신청·취소할 수 있습니다. 식수서무는 설정을 만든 관리자(${esc(room ? room.createdByName : me.name)})만 정합니다.</p>
-        ${legacy.length ? `<div class="th-notice" id="legacySet">예전에 정한 서무 ${legacy.length}명(${esc(legacy.map(nameOf).join(', '))}) 가운데 앞의 ${Math.min(legacy.length, M.LIMITS.stewardsMax)}명을 식수서무로 골라 두었습니다. 바꿀 수 있습니다. 저장하면 고른 사람만 식수서무가 되고, 나머지는 대신 신청을 할 수 없게 됩니다.</div>` : ''}
+        <p class="th-hint">식사 신청을 맡는 사람입니다. 이 설정을 바꾸고, 메뉴를 등록하고, 직접 등록한 사람을 관리합니다. 식수서무는 설정을 만든 관리자(${esc(room ? room.createdByName : me.name)})만 정합니다. 다른 사람의 식사를 대신 신청·취소하는 일은 모든 구성원이 할 수 있습니다.</p>
+        ${legacy.length ? `<div class="th-notice" id="legacySet">예전에 정한 서무 ${legacy.length}명(${esc(legacy.map(nameOf).join(', '))}) 가운데 앞의 ${Math.min(legacy.length, M.LIMITS.stewardsMax)}명을 식수서무로 골라 두었습니다. 바꿀 수 있습니다. 저장하면 고른 사람이 식수서무가 됩니다(대신 신청은 누구나 계속 할 수 있습니다).</div>` : ''}
         <div class="members" id="stewards">${
           members
             .filter((m) => m.id !== ownerId)
@@ -551,7 +551,7 @@
     if (await saveAs({ people: [patch] }, done)) redrawPeople()
   }
 
-  // ---------- 여러 명 대신 신청 (those who may request for others) ----------
+  // ---------- 여러 명 대신 신청 (anybody) ----------
   const bulk = { on: true, slots: new Set(), sel: new Set(), open: new Set(), filter: '', dates: [] }
   const slotKey = (s) => `${s.date}|${s.meal}`
   const bulkChosen = () => M.bulkSlots(config(), bulk.dates, now()).filter((s) => s.open && bulk.slots.has(slotKey(s)))

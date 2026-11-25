@@ -6,7 +6,6 @@ import { TopBar } from './TopBar'
 import { UpdateChip } from './UpdateChip'
 import { OrgBadge } from './OrgBadge'
 import { ConnChip } from './ConnChip'
-import { EmergencyButton } from '@renderer/features/notices/Emergency'
 import { clearQueryPersist } from '@renderer/lib/query-persist'
 import { SearchPalette } from './SearchPalette'
 import { Search } from 'lucide-react'
@@ -154,7 +153,6 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
               <Search className="size-4" aria-hidden />
               <span>검색 (Ctrl+K)</span>
             </button>
-            <EmergencyButton />
             <UpdateChip />
           </div>
         }

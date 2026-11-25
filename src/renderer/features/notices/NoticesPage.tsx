@@ -256,7 +256,7 @@ export function NoticesPage(): React.JSX.Element {
         actions={
           <>
             {canEmergency && (
-              <Button variant="destructive" onClick={() => setEmergency(true)}>
+              <Button variant="destructive" onClick={() => setEmergency(true)} data-testid="emergency-button">
                 <Siren /> 긴급공지
               </Button>
             )}

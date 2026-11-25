@@ -7,8 +7,10 @@ const PORT = '47934'
 const popupOf = (l: Launched): Page | undefined => l.app.windows().find((w) => w.url().includes('/popup/urgent/') && !w.isClosed())
 const popupCount = (l: Launched): number => l.app.windows().filter((w) => w.url().includes('/popup/urgent/') && !w.isClosed()).length
 
-/** Sender: the red top-bar button, two-step send. Ends on the notice's page (receipts). */
+/** Sender: the red 긴급공지 button of the 공지 page, two-step send. Ends on the notice's page (receipts). */
 async function sendEmergency(p: Page, title: string, opts: { ack?: boolean } = {}): Promise<void> {
+  // the button is on the 공지 page (not in the top bar any more)
+  await go(p, '/notices')
   await p.getByTestId('emergency-button').click()
   await p.getByLabel('긴급공지 제목').fill(title)
   await p.getByLabel('긴급공지 내용').fill('동쪽 계단으로 이동하세요.')
@@ -41,6 +43,35 @@ describe('긴급공지: the red window goes away when it should', () => {
     await joinAndApprove(a.page, b.page, PORT, '팀원B')
   }, 120000)
 
+  it('the send dialog is outside the window drag region: 취소 and X close it', async () => {
+    // A real mouse click on anything inside -webkit-app-region: drag moves the window instead
+    // (Playwright's clicks do not go through that, so the region itself is checked).
+    const inDrag = (sel: string): Promise<boolean> =>
+      a.page.evaluate((s) => {
+        for (let el = document.querySelector(s); el; el = el.parentElement) {
+          const r = getComputedStyle(el).getPropertyValue('-webkit-app-region').trim()
+          if (r === 'drag') return true
+          if (r === 'no-drag') return false
+        }
+        return false
+      }, sel)
+    // not in the top bar any more: only on the 공지 page
+    expect(await a.page.locator('header [data-testid="emergency-button"]').count()).toBe(0)
+    await go(a.page, '/notices')
+    expect(await inDrag('[data-testid="emergency-button"]')).toBe(false)
+    for (const how of ['cancel', 'x', 'esc'] as const) {
+      await a.page.getByTestId('emergency-button').click()
+      const dlg = a.page.getByRole('dialog')
+      await dlg.waitFor({ timeout: 10000 })
+      expect(await inDrag('[role="dialog"] button[data-close]')).toBe(false)
+      expect(await inDrag('[role="dialog"] input')).toBe(false)
+      if (how === 'cancel') await dlg.getByRole('button', { name: '취소' }).click()
+      else if (how === 'x') await dlg.getByRole('button', { name: '닫기' }).click()
+      else await a.page.keyboard.press('Escape')
+      await expect.poll(() => a.page.getByRole('dialog').count(), { timeout: 5000 }).toBe(0)
+    }
+  }, 60000)
+
   it('confirming in the window closes it, the sender sees the confirmation, and no window opens on the sender PC', async () => {
     await sendEmergency(a.page, '화재 대피E2E')
     const w = await waitPopup(b, '화재 대피E2E')
@@ -53,6 +84,24 @@ describe('긴급공지: the red window goes away when it should', () => {
     await b.page.waitForTimeout(3000)
     expect(popupCount(b)).toBe(0)
   }, 90000)
+
+  it('the title-bar X closes the window as 확인; without 확인 required, 읽음 · 닫기 closes it', async () => {
+    await sendEmergency(a.page, '닫기 단추E2E')
+    await waitPopup(b, '닫기 단추E2E')
+    // what the X of the window does (BrowserWindow.close fires the same 'close' event)
+    await b.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('/popup/urgent/'))?.close())
+    await expect.poll(() => popupCount(b), { timeout: 15000 }).toBe(0)
+    // it counts as confirmed on the sender's board
+    await a.page.getByRole('button', { name: /^확인함/ }).click()
+    await expect.poll(() => a.page.getByTestId('receipt-팀원B').count(), { timeout: 15000 }).toBe(1)
+    await b.page.waitForTimeout(3000)
+    expect(popupCount(b)).toBe(0)
+
+    await sendEmergency(a.page, '읽음 닫기E2E', { ack: false })
+    const w = await waitPopup(b, '읽음 닫기E2E')
+    await w.getByRole('button', { name: '읽음 · 닫기' }).click()
+    await expect.poll(() => popupCount(b), { timeout: 15000 }).toBe(0)
+  }, 120000)
 
   it('confirming in the 공지 screen instead closes the window too', async () => {
     await sendEmergency(a.page, '정전 안내E2E')

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { format } from 'date-fns'
-import { CheckCircle2, ExternalLink, Loader2, Siren } from 'lucide-react'
+import { CheckCircle2, ExternalLink, Loader2, Siren, X } from 'lucide-react'
 import type { UrgentPayload } from '@shared/schemas/notices'
 import { Button } from '@renderer/components/ui/button'
 import { RichView } from '@renderer/components/Editor'
@@ -108,6 +108,23 @@ export function UrgentPopup({ id }: { id: string }): React.JSX.Element {
     }
   }
 
+  // 닫기 (the button at the top right, and the title-bar X, which the main process holds while a
+  // confirmation is needed). It always closes the window:
+  //  - a notice to be confirmed is confirmed (read, for one that is not), as with 확인;
+  //  - one with answers to choose from closes without an answer: it stays unconfirmed and comes
+  //    back with the next reminder (or when the program starts again);
+  //  - one that cannot be confirmed (over, or the server cannot be reached) is put away.
+  const closeRequest = useRef<() => void>(() => undefined)
+  closeRequest.current = () => {
+    if (!p || stuck || (p.requireAck && p.replyOptions.length)) {
+      void invoke('notify:closeUrgent', { id: p?.id ?? id })
+      return
+    }
+    if (busy) return
+    void done()
+  }
+  useEffect(() => onMain('popup:closeRequest', () => closeRequest.current()), [])
+
   // A window without its notice (the program was restarted underneath it) has nothing to show.
   useEffect(() => {
     if (p) return
@@ -124,6 +141,16 @@ export function UrgentPopup({ id }: { id: string }): React.JSX.Element {
         <span className="ml-auto text-sm opacity-90">
           {p.authorName} · {format(p.publishedAt, 'M/d HH:mm')}
         </span>
+        <button
+          type="button"
+          className="-mr-2 ml-1 flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-sm font-semibold hover:bg-white/15 disabled:cursor-default disabled:opacity-60"
+          onClick={() => closeRequest.current()}
+          disabled={busy}
+          title={p.requireAck && p.replyOptions.length ? '답하지 않고 닫습니다. 다시 알림 때 다시 뜹니다.' : p.requireAck ? '확인한 것으로 기록하고 닫습니다' : '읽음으로 표시하고 닫습니다'}
+          data-testid="urgent-close"
+        >
+          <X className="size-5" aria-hidden /> 닫기
+        </button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-8 py-5 text-center">
         <h1 className="selectable break-keep text-3xl font-extrabold leading-snug">{p.title}</h1>
@@ -160,7 +187,7 @@ export function UrgentPopup({ id }: { id: string }): React.JSX.Element {
             ))
           ) : (
             <Button size="lg" className="bg-white px-8 text-base font-extrabold text-urgent hover:bg-white/90" onClick={() => void done()} disabled={busy || stuck === 'gone'} autoFocus>
-              <CheckCircle2 /> {p.requireAck ? '확인' : '읽음 · 닫기'}
+              <CheckCircle2 /> {p.requireAck ? '확인 · 닫기' : '읽음 · 닫기'}
             </Button>
           )}
         </div>

@@ -23,6 +23,7 @@ const INVALIDATE: Partial<Record<EventName, string[][]>> = {
   'file.changed': [['files']],
   'folder.changed': [['files']],
   'message.new': [['chat']],
+  'message.changed': [['chat']],
   'conversation.changed': [['chat']],
   'conversation.read': [['chat']],
   'note.new': [['chat']],

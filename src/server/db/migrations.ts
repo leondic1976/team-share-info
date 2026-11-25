@@ -900,5 +900,14 @@ ALTER TABLE departments ADD COLUMN entered_at INTEGER;
 ALTER TABLE join_requests ADD COLUMN dept_path TEXT;
 CREATE INDEX idx_departments_parent ON departments(parent_id);
 `
+  },
+  {
+    id: 23,
+    name: 'message-edit',
+    sql: `
+-- 메신저: the sender may change the text of a message (shown as "수정됨" with this time).
+-- A deleted message (deleted_at) stays in its place as "삭제된 메시지입니다.".
+ALTER TABLE messages ADD COLUMN edited_at INTEGER;
+`
   }
 ]

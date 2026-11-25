@@ -34,6 +34,7 @@ export type EventName =
   | 'file.changed'
   | 'folder.changed'
   | 'message.new'
+  | 'message.changed'
   | 'conversation.changed'
   | 'conversation.read'
   | 'note.new'

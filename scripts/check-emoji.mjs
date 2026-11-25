@@ -11,6 +11,8 @@ export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const SCAN_DIRS = ['src', 'plugins', 'resources/ledger', 'site', 'docs/manual'];
 const TEXT_EXT = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs', '.css', '.html', '.json', '.md', '.svg', '.txt']);
 const SKIP_DIRS = new Set(['node_modules', 'out', 'dist', '.git']);
+// The one file where emoji belong: the messenger's emoticon set (user decision 2026-11-25, 지시 62).
+export const EMOJI_FILES = ['src/renderer/features/chat/emoticons.ts'];
 
 // Emoji proper. The copyright, registered and trademark signs are Extended_Pictographic too,
 // but they are plain typography.
@@ -46,6 +48,7 @@ export function scanEmoji({ root = ROOT, dirs = SCAN_DIRS, symbols = false } = {
       continue;
     }
     for (const f of files) {
+      if (EMOJI_FILES.includes(relative(root, f).split('\\').join('/'))) continue;
       const lines = readFileSync(f, 'utf8').split(/\r?\n/);
       lines.forEach((text, i) => {
         const chars = [...(text.match(EMOJI_RE_G) ?? []), ...(symbols ? (text.match(SYMBOL_RE_G) ?? []) : [])];

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -19,6 +20,7 @@ interface Scanner {
   scanEmoji: (o?: { root?: string; dirs?: string[]; symbols?: boolean }) => Hit[]
   EMOJI_RE: RegExp
   SCAN_DIRS: string[]
+  EMOJI_FILES: string[]
 }
 
 const root = resolve(__dirname, '..', '..')
@@ -54,6 +56,12 @@ describe('no emoji in the program', () => {
     const { scanEmoji } = await load()
     const hits = scanEmoji().filter((h) => !ALLOWED.some((a) => a.file === h.file && a.pattern.test(h.text)))
     expect(hits.map((h) => `${h.file}:${h.line}: ${h.chars.join(' ')}`)).toEqual([])
+  })
+
+  it('leaves out only the messenger emoticon set (user decision 2026-11-25), which does hold emoji', async () => {
+    const { EMOJI_FILES, EMOJI_RE } = await load()
+    expect(EMOJI_FILES).toEqual(['src/renderer/features/chat/emoticons.ts'])
+    expect(EMOJI_RE.test(readFileSync(join(root, EMOJI_FILES[0]!), 'utf8'))).toBe(true)
   })
 
   it('keeps the allowlist tight: every entry is still needed, once', async () => {

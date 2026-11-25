@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format, isSameDay } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { Paperclip, Send, Bell, BellOff, Users, LogOut, Pencil, Loader2, Trash2, Video, MoreHorizontal, TriangleAlert } from 'lucide-react'
+import { Paperclip, Send, Bell, BellOff, Users, LogOut, Pencil, Loader2, Trash2, Video, MoreHorizontal, TriangleAlert, Smile, Ban, X } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Textarea } from '@renderer/components/ui/input'
 import { Dialog } from '@renderer/components/Dialog'
@@ -14,7 +14,7 @@ import { api, ApiError, errorMessage } from '@renderer/lib/api'
 import { realtime } from '@renderer/lib/realtime'
 import { useMe, useMembers } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
-import type { ConversationChangedPayload, MessageDto, MessageNewPayload } from '@shared/schemas/chat'
+import { MESSAGE_EDIT_WINDOW_MS, type ConversationChangedPayload, type MessageChangedPayload, type MessageDto, type MessageNewPayload } from '@shared/schemas/chat'
 import { useChatUi } from './chat-store'
 import { GROUP_LEAVE_HINT, leaveConversation } from './leave'
 import { convTitle } from './title'
@@ -24,10 +24,17 @@ import { cn } from '@renderer/lib/utils'
 import { startMeeting } from '@renderer/features/meetings/MeetingsPage'
 import { confirmPii } from '@renderer/lib/pii'
 import { sendOrQueue, useOutbox } from '@renderer/lib/outbox'
+import { EmoticonPicker } from './EmoticonPicker'
+import { emojiOnly } from './emoticons'
 
 const PAGE = 50
 /** messages of a conversation kept for reading while the server is off */
 const KEEP = 200
+/** pasted images waiting to be sent (shown above the input until Enter or 보내기) */
+const STAGE_MAX = 10
+
+/** A pasted screen capture gets a name that says when it was taken. */
+const pastedName = (f: File, i: number): File => (f.name && f.name !== 'image.png' ? f : new File([f], `캡처_${format(new Date(), 'yyyyMMdd_HHmmss')}${i ? `_${i}` : ''}.png`, { type: f.type }))
 
 export interface ConversationViewProps {
   id: string
@@ -61,6 +68,12 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
   const [people, setPeople] = useState(false)
   const [menu, setMenu] = useState(false)
   const [viewer, setViewer] = useState<string | null>(null)
+  /** my message whose text is being changed */
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
+  /** pasted files waiting for Enter / 보내기 (url: a preview of an image) */
+  const [staged, setStaged] = useState<{ file: File; url: string | null }[]>([])
+  const [picker, setPicker] = useState(false)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const msgRef = useRef<MessageDto[]>([])
   msgRef.current = messages
@@ -132,6 +145,22 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
     const off2 = realtime.on('conversation.read', (p) => {
       if ((p as { id: string }).id === id) newer()
     })
+    const offChanged = realtime.on('message.changed', (raw) => {
+      const p = raw as MessageChangedPayload
+      if (p.conversationId !== id || !msgRef.current.some((m) => m.id === p.id)) return
+      void api
+        .get<MessageDto[]>(`/api/conversations/${id}/messages`, { after: p.seq - 1, limit: 1 })
+        .then((list) => {
+          const fresh = list.find((m) => m.id === p.id)
+          if (!fresh) return
+          setMessages((cur) => {
+            const next = cur.map((m) => (m.id === fresh.id ? fresh : m))
+            keep(next)
+            return next
+          })
+        })
+        .catch(() => undefined)
+    })
     const off3 = realtime.on('conversation.changed', (raw) => {
       const p = raw as ConversationChangedPayload
       if (p.id !== id) return
@@ -146,10 +175,11 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
       off1()
       off2()
       off3()
+      offChanged()
       offRe()
       window.removeEventListener('focus', onFocus)
     }
-  }, [id, loadLatest, refresh, markRead, qc, gone])
+  }, [id, loadLatest, refresh, markRead, qc, gone, keep])
 
   // "Being looked at" (no alert, messages count as read) only while shown: a minimised small window is not.
   useEffect(() => {
@@ -185,6 +215,67 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
     } else if (stickBottom.current) el.scrollTop = el.scrollHeight
   }, [messages])
 
+  // previews of pasted images are released when they leave (sent, removed, or the view closes)
+  const stagedRef = useRef(staged)
+  stagedRef.current = staged
+  useEffect(() => () => stagedRef.current.forEach((x) => x.url && URL.revokeObjectURL(x.url)), [])
+  const unstage = (i: number): void =>
+    setStaged((cur) => {
+      const x = cur[i]
+      if (x?.url) URL.revokeObjectURL(x.url)
+      return cur.filter((_, j) => j !== i)
+    })
+  const stage = (files: File[]): void => {
+    if (!files.length) return
+    setErr('')
+    setStaged((cur) => {
+      const room = STAGE_MAX - cur.length
+      if (files.length > room) setErr(`한 번에 ${STAGE_MAX}개까지 보낼 수 있습니다.`)
+      return [...cur, ...files.slice(0, Math.max(0, room)).map((f, i) => ({ file: pastedName(f, cur.length + i), url: f.type.startsWith('image/') ? URL.createObjectURL(f) : null }))]
+    })
+    inputRef.current?.focus()
+  }
+
+  /** The emoticon goes where the cursor is in the message being written. */
+  const insertEmoticon = (e: string): void => {
+    const el = inputRef.current
+    const at = el ? el.selectionStart : text.length
+    const end = el ? el.selectionEnd : text.length
+    const next = text.slice(0, at) + e + text.slice(end)
+    setText(next)
+    requestAnimationFrame(() => {
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(at + e.length, at + e.length)
+    })
+  }
+
+  const saveEdit = async (): Promise<void> => {
+    if (!editing) return
+    const body = editing.text
+    if (!body.trim()) return setErr('내용을 입력하세요. 지우려면 삭제를 누르세요.')
+    if (!confirmPii([body], '이 대화방의 모든 사람이 보게 되며,')) return
+    try {
+      await api.patch(`/api/messages/${editing.id}`, { body })
+      setMessages((cur) => cur.map((m) => (m.id === editing.id ? { ...m, body, editedAt: Date.now() } : m)))
+      setEditing(null)
+      setErr('')
+    } catch (e) {
+      setErr(errorMessage(e))
+    }
+  }
+  const removeMessage = async (m: MessageDto): Promise<void> => {
+    if (!window.confirm('이 메시지를 지울까요? 대화방의 모든 사람에게서 지워지고 "삭제된 메시지입니다."로 보입니다.')) return
+    try {
+      await api.del(`/api/messages/${m.id}`)
+      setMessages((cur) => cur.map((x) => (x.id === m.id ? { ...x, deleted: true, body: '', attachments: [], kind: 'text', editedAt: null, unreadBy: 0 } : x)))
+      if (editing?.id === m.id) setEditing(null)
+      void qc.invalidateQueries({ queryKey: ['chat', 'list'] })
+    } catch (e) {
+      setErr(errorMessage(e))
+    }
+  }
+
   const loadOlder = async (): Promise<void> => {
     if (!hasMore || loadingOlder || !messages.length) return
     setLoadingOlder(true)
@@ -198,11 +289,26 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
 
   const send = async (attachmentIds: string[] = []): Promise<void> => {
     const body = text
-    if (!body.trim() && !attachmentIds.length) return
+    const files = staged
+    if (!body.trim() && !attachmentIds.length && !files.length) return
     if (!confirmPii([body], '이 대화방의 모든 사람이 보게 되며,')) return
+    if (files.length && !online) return setErr('사진·파일은 서버에 연결되어 있을 때 보낼 수 있습니다.')
     setSending(true)
     setErr('')
     try {
+      if (files.length) {
+        // the pasted images go first (each its own message), then the text, in one send
+        const ids = [...attachmentIds]
+        for (const x of files) ids.push((await uploadAttachment(x.file)).id)
+        await api.post(`/api/conversations/${id}/messages`, { body, attachmentIds: ids })
+        files.forEach((x) => x.url && URL.revokeObjectURL(x.url))
+        setStaged([])
+        setText('')
+        stickBottom.current = true
+        await refresh()
+        void qc.invalidateQueries({ queryKey: ['chat', 'list'] })
+        return
+      }
       // text can wait for the server on this PC; files cannot (they are stored on the server)
       const r = attachmentIds.length
         ? await api.post(`/api/conversations/${id}/messages`, { body, attachmentIds }).then(() => ({ queued: false }))
@@ -400,7 +506,42 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
                 <div className={cn('group flex items-end gap-1.5', mine ? 'flex-row-reverse' : '', !grouped && 'mt-2')} data-testid="message">
                   <div className={cn(compact ? 'max-w-[78%]' : 'max-w-[70%]', mine ? 'items-end' : 'items-start', 'flex flex-col')}>
                     {!mine && !grouped && <span className="mb-0.5 text-xs font-semibold">{m.senderName}</span>}
-                    {m.kind === 'image' && m.attachments[0] ? (
+                    {m.deleted ? (
+                      <div className="flex items-center gap-1.5 rounded-2xl border border-dashed border-border px-3 py-1.5 text-sm text-muted-foreground italic" data-testid="message-deleted">
+                        <Ban className="size-3.5 shrink-0" aria-hidden /> 삭제된 메시지입니다.
+                      </div>
+                    ) : editing?.id === m.id ? (
+                      <div className={cn('flex flex-col gap-1', compact ? 'w-60' : 'w-80')} data-testid="message-edit">
+                        <Textarea
+                          aria-label="메시지 고치기"
+                          className="min-h-16 resize-none text-sm"
+                          autoFocus
+                          value={editing.text}
+                          onChange={(e) => setEditing({ id: m.id, text: e.target.value })}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                              e.preventDefault()
+                              void saveEdit()
+                            } else if (e.key === 'Escape') {
+                              e.stopPropagation()
+                              setEditing(null)
+                            }
+                          }}
+                        />
+                        <div className="flex justify-end gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                            취소
+                          </Button>
+                          <Button size="sm" onClick={() => void saveEdit()} disabled={!editing.text.trim() || !online}>
+                            고치기
+                          </Button>
+                        </div>
+                      </div>
+                    ) : m.kind === 'text' && emojiOnly(m.body) ? (
+                      <div className="text-4xl leading-tight" data-testid="message-emoticon">
+                        {m.body.trim()}
+                      </div>
+                    ) : m.kind === 'image' && m.attachments[0] ? (
                       <AuthImage path={`/api/attachments/${m.attachments[0].id}`} alt={m.body} className="max-h-60 cursor-zoom-in rounded-lg border border-border" onClick={() => setViewer(m.attachments[0].id)} />
                     ) : m.kind === 'file' && m.attachments[0] ? (
                       <FileChip id={m.attachments[0].id} name={m.attachments[0].name} size={m.attachments[0].size} className={compact ? 'w-60' : 'w-80'} />
@@ -414,20 +555,24 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
                         {m.unreadBy}
                       </span>
                     )}
+                    {m.editedAt && !m.deleted && (
+                      <span className="text-muted-foreground" title={`${format(m.editedAt, 'M월 d일 a h:mm', { locale: ko })}에 수정함`} data-testid="message-edited">
+                        수정됨
+                      </span>
+                    )}
                     <span className="text-muted-foreground">{format(m.createdAt, 'a h:mm', { locale: ko })}</span>
                   </div>
-                  {mine && (
-                    <button
-                      className="invisible cursor-pointer text-muted-foreground group-hover:visible"
-                      aria-label="메시지 삭제"
-                      onClick={async () => {
-                        if (!window.confirm('이 메시지를 지울까요?')) return
-                        await api.del(`/api/messages/${m.id}`)
-                        void loadLatest()
-                      }}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
+                  {mine && !m.deleted && editing?.id !== m.id && (
+                    <div className="invisible flex shrink-0 items-center gap-0.5 self-center text-muted-foreground group-hover:visible group-focus-within:visible">
+                      {m.kind === 'text' && Date.now() - m.createdAt < MESSAGE_EDIT_WINDOW_MS && (
+                        <button className="cursor-pointer rounded p-0.5 hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-40" aria-label="메시지 고치기" title="고치기 (보낸 뒤 24시간까지)" disabled={!online} onClick={() => setEditing({ id: m.id, text: m.body })}>
+                          <Pencil className="size-3.5" />
+                        </button>
+                      )}
+                      <button className="cursor-pointer rounded p-0.5 hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-40" aria-label="메시지 삭제" title="삭제 (모든 사람에게서)" disabled={!online} onClick={() => void removeMessage(m)}>
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
@@ -442,12 +587,34 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
         ))}
       </div>
       {err && <p className="px-4 text-xs text-urgent">{err}</p>}
-      <div className={cn('flex shrink-0 items-end border-t border-border', compact ? 'gap-1 p-2' : 'gap-2 p-3')}>
+      {staged.length > 0 && (
+        <div className={cn('flex shrink-0 flex-wrap items-end gap-2 border-t border-border bg-muted/40', compact ? 'px-2 py-1.5' : 'px-3 py-2')} data-testid="staged-files">
+          {staged.map((x, i) => (
+            <div key={`${x.file.name}-${i}`} className="relative" title={x.file.name}>
+              {x.url ? (
+                <img src={x.url} alt={x.file.name} className={cn('rounded-md border border-border object-cover', compact ? 'size-14' : 'size-20')} />
+              ) : (
+                <div className={cn('flex items-center justify-center rounded-md border border-border bg-card p-1 text-center text-[0.65rem] break-all', compact ? 'size-14' : 'size-20')}>{x.file.name}</div>
+              )}
+              <button type="button" className="absolute -right-1.5 -top-1.5 flex size-5 cursor-pointer items-center justify-center rounded-full border border-border bg-card shadow hover:bg-muted" aria-label={`${x.file.name} 빼기`} title="빼기" onClick={() => unstage(i)}>
+                <X className="size-3" />
+              </button>
+            </div>
+          ))}
+          <span className="ml-1 self-center text-xs text-muted-foreground">Enter 또는 보내기를 누르면 보냅니다</span>
+        </div>
+      )}
+      <div className={cn('relative flex shrink-0 items-end border-t border-border', compact ? 'gap-1 p-2' : 'gap-2 p-3')}>
+        {picker && <EmoticonPicker compact={compact} onClose={() => setPicker(false)} onPick={insertEmoticon} />}
         <Button size="icon" variant="ghost" aria-label="파일 보내기" onClick={() => fileInput.current?.click()} disabled={!online || sending}>
           <Paperclip />
         </Button>
+        <Button size="icon" variant="ghost" aria-label="이모티콘" title="이모티콘" aria-expanded={picker} data-emoticon-toggle onClick={() => setPicker((v) => !v)}>
+          <Smile />
+        </Button>
         <input ref={fileInput} type="file" multiple className="hidden" aria-label="보낼 파일" onChange={(e) => void sendFiles([...(e.target.files ?? [])]).then(() => fileInput.current && (fileInput.current.value = ''))} />
         <Textarea
+          ref={inputRef}
           aria-label="메시지 입력"
           className="max-h-40 min-h-10 flex-1 resize-none"
           rows={1}
@@ -469,14 +636,15 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
             }
           }}
           onPaste={(e) => {
+            // a pasted image (or file) is shown above the input first; Enter or 보내기 sends it
             const files = [...e.clipboardData.files]
             if (files.length) {
               e.preventDefault()
-              void sendFiles(files.map((f, i) => (f.name && f.name !== 'image.png' ? f : new File([f], `캡처_${format(new Date(), 'yyyyMMdd_HHmmss')}${i ? `_${i}` : ''}.png`, { type: f.type }))))
+              stage(files)
             }
           }}
         />
-        <Button size="icon" aria-label="보내기" onClick={() => void send()} disabled={sending || !text.trim()}>
+        <Button size="icon" aria-label="보내기" onClick={() => void send()} disabled={sending || (!text.trim() && !staged.length)}>
           {sending ? <Loader2 className="animate-spin" /> : <Send />}
         </Button>
       </div>

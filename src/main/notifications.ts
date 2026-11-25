@@ -67,11 +67,14 @@ export function showUrgentPopup(p: UrgentPayload): void {
     win.focus()
     win.flashFrame(true)
   })
-  // Urgent notices that require acknowledgement can only be closed by confirming (6.3).
+  // Urgent notices that require acknowledgement are closed by confirming (6.3). The title-bar X
+  // is not ignored: the window treats it as 확인 (or, with answers to choose, asks for one; when
+  // the server cannot be reached, it puts the window away until it can).
   win.on('close', (e) => {
-    if (payloads.get(p.id)?.requireAck && !isQuitting()) {
+    // a window whose page is gone cannot answer: let it close
+    if (payloads.get(p.id)?.requireAck && !isQuitting() && !win.webContents.isCrashed()) {
       e.preventDefault()
-      win.webContents.send('popup:refresh', { id: p.id })
+      win.webContents.send('popup:closeRequest', { id: p.id })
     }
   })
   win.on('closed', () => {
@@ -120,12 +123,15 @@ export function setToastGate(fn: (o: ToastOptions) => boolean): void {
 
 export function showToast(opts: ToastOptions, force = false): void {
   if (!force && !toastGate(opts)) return
+  // timeoutType 'never': the notification stays on the screen until it is clicked or closed,
+  // instead of going away after a few seconds (사용자 요청 2026-11-25, 지시 63)
+  const options: Electron.NotificationConstructorOptions = { title: opts.title, body: opts.body, icon: resourcePath('icon.png'), silent: opts.silent ?? false, timeoutType: 'never' }
   if (process.env.TEAMHUB_E2E) {
-    const g = globalThis as unknown as { __teamhubToasts?: ToastOptions[] }
-    ;(g.__teamhubToasts ??= []).push(opts)
+    const g = globalThis as unknown as { __teamhubToasts?: (ToastOptions & { timeoutType?: string })[] }
+    ;(g.__teamhubToasts ??= []).push({ ...opts, timeoutType: options.timeoutType })
   }
   if (!Notification.isSupported()) return
-  const n = new Notification({ title: opts.title, body: opts.body, icon: resourcePath('icon.png'), silent: opts.silent ?? false })
+  const n = new Notification(options)
   n.on('click', () => {
     showMainWindow()
     if (opts.route) getMainWindow()?.webContents.send('app:navigate', { path: opts.route })

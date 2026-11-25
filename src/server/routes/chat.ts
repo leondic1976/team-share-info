@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from
 import { z } from 'zod'
 import { newId } from '../../node/sqlite'
 import type { Db } from '../../node/sqlite'
-import { conversationCreateSchema, messageCreateSchema, noteCreateSchema, type ConversationDto, type MessageDto, type MessageNewPayload, type NoteDto } from '../../shared/schemas/chat'
+import { conversationCreateSchema, DELETED_MESSAGE_TEXT, MESSAGE_EDIT_WINDOW_MS, messageCreateSchema, messageEditSchema, noteCreateSchema, type ConversationDto, type MessageChangedPayload, type MessageDto, type MessageNewPayload, type NoteDto } from '../../shared/schemas/chat'
 import type { ServerContext } from '../context'
 import { badRequest, forbidden, notFound } from '../errors'
 import { parse, ok } from '../validate'
@@ -126,25 +126,33 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
     }
   }
 
-  const messageDtos = (c: ConvRow, rows: { id: string; seq: number; sender_id: string | null; sender_name: string | null; kind: MessageDto['kind']; body: string; created_at: number }[]): MessageDto[] => {
+  const messageDtos = (c: ConvRow, rows: { id: string; seq: number; sender_id: string | null; sender_name: string | null; kind: MessageDto['kind']; body: string; created_at: number; edited_at?: number | null; deleted_at?: number | null }[]): MessageDto[] => {
     const ids = conversationMemberIds(db, c)
     const reads = new Map(
       db
         .all<{ member_id: string; last_read_seq: number }>('SELECT member_id, last_read_seq FROM conversation_members WHERE conversation_id = ?', [c.id])
         .map((r) => [r.member_id, r.last_read_seq])
     )
-    return rows.map((m) => ({
-      id: m.id,
-      conversationId: c.id,
-      seq: m.seq,
-      senderId: m.sender_id,
-      senderName: m.sender_name,
-      kind: m.kind,
-      body: m.body,
-      attachments: db.all<{ id: string; name: string; size: number }>(`SELECT id, name, size FROM attachments WHERE owner_type = 'message' AND owner_id = ?`, [m.id]),
-      createdAt: m.created_at,
-      unreadBy: m.kind === 'system' ? 0 : ids.filter((id) => id !== m.sender_id && (reads.get(id) ?? 0) < m.seq).length
-    }))
+    return rows.map((m): MessageDto => {
+      // a deleted message keeps its place: no text, no file (an older program shows the text below)
+      if (m.deleted_at) {
+        return { id: m.id, conversationId: c.id, seq: m.seq, senderId: m.sender_id, senderName: m.sender_name, kind: 'text', body: DELETED_MESSAGE_TEXT, attachments: [], createdAt: m.created_at, unreadBy: 0, editedAt: null, deleted: true }
+      }
+      return {
+        id: m.id,
+        conversationId: c.id,
+        seq: m.seq,
+        senderId: m.sender_id,
+        senderName: m.sender_name,
+        kind: m.kind,
+        body: m.body,
+        attachments: db.all<{ id: string; name: string; size: number }>(`SELECT id, name, size FROM attachments WHERE owner_type = 'message' AND owner_id = ?`, [m.id]),
+        createdAt: m.created_at,
+        unreadBy: m.kind === 'system' ? 0 : ids.filter((id) => id !== m.sender_id && (reads.get(id) ?? 0) < m.seq).length,
+        editedAt: m.edited_at ?? null,
+        deleted: false
+      }
+    })
   }
 
   app.get('/api/conversations', auth, async (req) => {
@@ -319,7 +327,8 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
   app.get('/api/conversations/:id/messages', auth, async (req) => {
     const c = load(req, (req.params as { id: string }).id)
     const q = parse(z.object({ before: z.coerce.number().int().optional(), after: z.coerce.number().int().optional(), limit: z.coerce.number().int().min(1).max(200).default(50) }), req.query)
-    const where = ['x.conversation_id = ?', 'x.deleted_at IS NULL']
+    // deleted messages are listed too (as "삭제된 메시지입니다.", see messageDtos)
+    const where = ['x.conversation_id = ?']
     const params: (string | number)[] = [c.id]
     if (q.before !== undefined) {
       where.push('x.seq < ?')
@@ -329,8 +338,8 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
       where.push('x.seq > ?')
       params.push(q.after)
     }
-    const rows = db.all<{ id: string; seq: number; sender_id: string | null; sender_name: string | null; kind: MessageDto['kind']; body: string; created_at: number }>(
-      `SELECT x.id, x.seq, x.sender_id, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS sender_name, x.kind, x.body, x.created_at FROM messages x LEFT JOIN members m ON m.id = x.sender_id
+    const rows = db.all<{ id: string; seq: number; sender_id: string | null; sender_name: string | null; kind: MessageDto['kind']; body: string; created_at: number; edited_at: number | null; deleted_at: number | null }>(
+      `SELECT x.id, x.seq, x.sender_id, CASE WHEN IFNULL(LENGTH(m.nickname), 0) = 0 THEN m.name ELSE m.name || char(40) || m.nickname || char(41) END AS sender_name, x.kind, x.body, x.created_at, x.edited_at, x.deleted_at FROM messages x LEFT JOIN members m ON m.id = x.sender_id
        WHERE ${where.join(' AND ')} ORDER BY x.seq ${q.after !== undefined ? 'ASC' : 'DESC'} LIMIT ?`,
       [...params, q.limit]
     )
@@ -393,14 +402,36 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
     return ok({ id: c.id })
   })
 
+  /** Change the text of my own message (text messages, within MESSAGE_EDIT_WINDOW_MS of sending). */
+  app.patch('/api/messages/:id', auth, async (req) => {
+    const { id } = req.params as { id: string }
+    const { body } = parse(messageEditSchema, req.body)
+    const m = db.get<{ conversation_id: string; sender_id: string | null; seq: number; kind: string; body: string; created_at: number }>('SELECT conversation_id, sender_id, seq, kind, body, created_at FROM messages WHERE id = ? AND deleted_at IS NULL', [id])
+    if (!m) throw notFound('메시지')
+    const c = load(req, m.conversation_id)
+    if (m.sender_id !== req.member.id) throw forbidden('내가 보낸 메시지만 고칠 수 있습니다.')
+    if (m.kind !== 'text') throw badRequest('글 메시지만 고칠 수 있습니다.')
+    if (Date.now() - m.created_at > MESSAGE_EDIT_WINDOW_MS) throw badRequest('보낸 지 24시간이 지난 메시지는 고칠 수 없습니다.')
+    if (body === m.body) return ok({ id })
+    const t = Date.now()
+    db.run('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?', [body, t, id])
+    const payload: MessageChangedPayload = { conversationId: c.id, id, seq: m.seq, deleted: false }
+    ctx.hub.sendTo(conversationMemberIds(db, c), 'message.changed', payload)
+    return ok({ id, editedAt: t })
+  })
+
   app.delete('/api/messages/:id', auth, async (req) => {
     const { id } = req.params as { id: string }
-    const m = db.get<{ conversation_id: string; sender_id: string | null }>('SELECT conversation_id, sender_id FROM messages WHERE id = ? AND deleted_at IS NULL', [id])
+    const m = db.get<{ conversation_id: string; sender_id: string | null; seq: number }>('SELECT conversation_id, sender_id, seq FROM messages WHERE id = ? AND deleted_at IS NULL', [id])
     if (!m) throw notFound('메시지')
     const c = load(req, m.conversation_id)
     if (m.sender_id !== req.member.id) throw forbidden('내가 보낸 메시지만 지울 수 있습니다.')
-    db.run('UPDATE messages SET deleted_at = ? WHERE id = ?', [Date.now(), id])
+    // the text goes too: what stays is the place of the message ("삭제된 메시지입니다.")
+    db.run("UPDATE messages SET deleted_at = ?, body = '' WHERE id = ?", [Date.now(), id])
     deleteAttachmentsOf(ctx, 'message', id)
+    const payload: MessageChangedPayload = { conversationId: c.id, id, seq: m.seq, deleted: true }
+    ctx.hub.sendTo(conversationMemberIds(db, c), 'message.changed', payload)
+    // older programs refresh on this one (and the list of conversations shows the new last message)
     ctx.hub.sendTo(conversationMemberIds(db, c), 'conversation.changed', { id: c.id })
     return ok({ id })
   })
