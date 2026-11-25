@@ -78,7 +78,10 @@ export function UpdateCard(): React.JSX.Element {
         </div>
         {cfg && (
           <div className="flex flex-wrap items-center gap-4">
-            <Switch checked={cfg.auto} onCheckedChange={(v) => save({ ...cfg, auto: v })} label="자동 업데이트(새 버전을 알아서 내려받고 다음 실행 때 설치)" />
+            <label className="flex cursor-pointer items-center gap-2">
+              <Switch checked={cfg.auto} onCheckedChange={(v) => save({ ...cfg, auto: v })} label="자동 업데이트(새 버전을 알아서 내려받고 다음 실행 때 설치)" />
+              자동 업데이트 <span className="text-xs text-muted-foreground">(새 버전을 알아서 내려받고 다음 실행 때 설치)</span>
+            </label>
             <label className="flex items-center gap-2">
               <span className="text-muted-foreground">받는 곳</span>
               <Select aria-label="업데이트 받는 곳" className="w-56" value={cfg.source} onChange={(e) => save({ ...cfg, source: e.target.value as UpdateSettings['source'] })}>

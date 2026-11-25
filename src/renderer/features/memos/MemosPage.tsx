@@ -301,8 +301,14 @@ function ClipboardTab({ notify }: { notify: (s: string) => void }): React.JSX.El
     <div className="min-h-0 flex-1 overflow-y-auto p-5">
       <Card className="mb-4">
         <CardContent className="flex flex-wrap items-center gap-4 p-3">
-          <Switch checked={s.enabled} onCheckedChange={(v) => void set({ enabled: v })} label="클립보드 기록 사용" />
-          <Switch checked={s.clearOnExit} onCheckedChange={(v) => void set({ clearOnExit: v })} label="프로그램 종료 시 기록 삭제" />
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Switch checked={s.enabled} onCheckedChange={(v) => void set({ enabled: v })} label="클립보드 기록 사용" />
+            클립보드 기록 사용
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Switch checked={s.clearOnExit} onCheckedChange={(v) => void set({ clearOnExit: v })} label="프로그램 종료 시 기록 삭제" />
+            프로그램 종료 시 기록 삭제
+          </label>
           <Button
             size="sm"
             variant="outline"

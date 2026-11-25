@@ -10,7 +10,7 @@ import { SpaceSwitcher } from './SpaceSwitcher'
 import { PluginIcon } from '@renderer/components/NamedIcon'
 
 // Items under "확장 기능": full text colour, and a long name wraps to a second line instead of being cut off.
-const SUB_ITEM = 'relative flex min-h-8 items-center gap-2 rounded-r-md py-1 text-sm'
+const SUB_ITEM = 'relative flex min-h-8 items-center gap-2 rounded-r-md py-1 text-sm font-semibold'
 const SUB_LABEL = 'line-clamp-2 min-w-0 break-keep leading-tight'
 
 interface SidebarProps {
@@ -43,7 +43,14 @@ export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps
         className={({ isActive }) =>
           cn(
             'group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors',
-            isActive ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground/80 hover:bg-muted'
+            // 확장 기능 stands out (bold, accent colour, light tint) so it is found and used often (지시 68·77)
+            m.key === 'plugins'
+              ? isActive
+                ? 'bg-primary/15 font-bold text-primary'
+                : 'bg-primary/5 font-bold text-primary hover:bg-primary/10'
+              : isActive
+                ? 'bg-primary/10 font-semibold text-primary'
+                : 'text-foreground/80 hover:bg-muted'
           )
         }
       >
@@ -102,7 +109,7 @@ export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps
                 to={m.path}
                 title={m.label}
                 aria-label={count > 0 ? `${m.label} (${count})` : m.label}
-                className={({ isActive }) => cn(SUB_ITEM, collapsed ? 'px-2.5' : 'ml-3.5 border-l border-border pl-2.5 pr-2', isActive ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground hover:bg-muted')}
+                className={({ isActive }) => cn(SUB_ITEM, collapsed ? 'px-2.5' : 'ml-3.5 border-l-2 border-primary/40 pl-2.5 pr-2', isActive ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground hover:bg-muted')}
               >
                 <m.icon className="size-[1.15rem] shrink-0" aria-hidden />
                 {!collapsed && <span className={SUB_LABEL}>{m.label}</span>}
@@ -118,7 +125,7 @@ export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps
               to={`/plugins/${p.manifest.id}`}
               title={p.manifest.name}
               aria-label={p.manifest.name}
-              className={({ isActive }) => cn(SUB_ITEM, collapsed ? 'px-2.5' : 'ml-3.5 border-l border-border pl-2.5 pr-2', isActive ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground hover:bg-muted')}
+              className={({ isActive }) => cn(SUB_ITEM, collapsed ? 'px-2.5' : 'ml-3.5 border-l-2 border-primary/40 pl-2.5 pr-2', isActive ? 'bg-primary/10 font-semibold text-primary' : 'text-foreground hover:bg-muted')}
             >
               <PluginIcon manifest={p.manifest} className="size-[1.15rem]" />
               {!collapsed && <span className={SUB_LABEL}>{p.manifest.name}</span>}

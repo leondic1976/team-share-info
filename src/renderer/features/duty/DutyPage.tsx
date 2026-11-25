@@ -21,6 +21,7 @@ import { confirmPii } from '@renderer/lib/pii'
 import { useDisplayName, useMe } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { cn } from '@renderer/lib/utils'
+import { DateTimeInput } from '@renderer/components/DateTimeInput'
 
 type Tab = 'day' | 'week' | 'list'
 type Dept = DutyBoardDto['departments'][number]
@@ -167,21 +168,27 @@ function DutyDialog({ board, meId, state, onClose }: { board: DutyBoardDto; meId
         </Field>
         <div className="flex flex-wrap items-end gap-3">
           <Field label={allDay ? '시작일' : '시작'}>
-            <Input
-              aria-label="시작"
-              type={allDay ? 'date' : 'datetime-local'}
-              value={toInputValue(start, allDay)}
-              onChange={(e) => {
-                if (!e.target.value) return
-                const s = fromInputValue(e.target.value)
+            {(() => {
+              const move = (v: string): void => {
+                if (!v) return
+                const s = fromInputValue(v)
                 // moving the start keeps the length
                 setEnd(s + Math.max(allDay ? DAY : 0, end - start))
                 setStart(s)
-              }}
-            />
+              }
+              return allDay ? (
+                <Input aria-label="시작" type="date" value={toInputValue(start, true)} onChange={(e) => move(e.target.value)} />
+              ) : (
+                <DateTimeInput label="시작" value={toInputValue(start)} onChange={move} />
+              )
+            })()}
           </Field>
           <Field label={allDay ? '마지막 날' : '끝'}>
-            <Input aria-label="끝" type={allDay ? 'date' : 'datetime-local'} value={toInputValue(allDay ? end - DAY : end, allDay)} onChange={(e) => e.target.value && setEnd(fromInputValue(e.target.value) + (allDay ? DAY : 0))} />
+            {allDay ? (
+              <Input aria-label="끝" type="date" value={toInputValue(end - DAY, true)} onChange={(e) => e.target.value && setEnd(fromInputValue(e.target.value) + DAY)} />
+            ) : (
+              <DateTimeInput label="끝" value={toInputValue(end)} onChange={(v) => v && setEnd(fromInputValue(v))} />
+            )}
           </Field>
           <label className="flex h-9 cursor-pointer items-center gap-1.5 text-sm">
             <input type="checkbox" checked={allDay} onChange={(e) => toggleAllDay(e.target.checked)} /> 종일
@@ -546,11 +553,20 @@ export function DutyPage(): React.JSX.Element {
 
   const listView = (): React.JSX.Element => {
     if (!board) return <></>
-    const shown = new Map(blocks.flatMap((b) => b.members.map((m) => [m.id, { m, dept: b.dept?.name ?? '' }] as const)))
+    // 소속 순서(조직 관리의 부서 트리 순서, 부서 안에서는 정한 구성원 순서)로, 같은 사람은 날짜순
+    const byId = new Map(board.departments.map((d) => [d.id, d]))
+    const pathOf = (id: string | undefined): string => {
+      const names: string[] = []
+      for (let d = id ? byId.get(id) : undefined; d && names.length < 8; d = d.parentId ? byId.get(d.parentId) : undefined) names.unshift(d.name)
+      return names.join(' > ')
+    }
+    let order = 0
+    const shown = new Map(blocks.flatMap((b) => b.members.map((m) => [m.id, { m, dept: pathOf(b.dept?.id), rank: order++ }] as const)))
     const rows = board.entries
       .filter((e) => shown.has(e.memberId))
       .map((e) => ({ e, ...shown.get(e.memberId)! }))
       .filter((r) => !q.trim() || `${r.m.name} ${dn(r.m)} ${r.dept} ${r.e.type} ${r.e.place} ${r.e.note}`.includes(q.trim()))
+      .sort((x, y) => x.rank - y.rank || x.e.start - y.e.start)
     const days = (e: DutyEntryDto): string => (e.allDay ? `${Math.round((e.end - e.start) / DAY)}일` : `${Math.round(((e.end - e.start) / 3600000) * 10) / 10}시간`)
     const exportCsv = (): void => {
       const csv = toCsv([['시작', '끝', '기간', '부서', '이름', '직위', '종류', '행선지', '사유', '대신 올린 사람'], ...rows.map(({ e, m, dept: d }) => [format(e.start, e.allDay ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm'), format(e.allDay ? e.end - DAY : e.end, e.allDay ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm'), days(e), d, m.name, m.title ?? '', e.type, e.place, e.note, e.registeredByName ?? ''])])

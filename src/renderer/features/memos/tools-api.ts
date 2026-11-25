@@ -10,7 +10,12 @@ export function useLocalQuery<T>(key: QueryKey, fn: () => Promise<T>, events: Ma
   const q = useQuery({ queryKey: ['local', ...key], queryFn: fn, networkMode: 'always', refetchOnMount: 'always' })
   const evKey = events.join(',')
   useEffect(() => {
-    const offs = evKey.split(',').map((e) => onMain(e as MainEvent, () => void qc.invalidateQueries({ queryKey: ['local', key[0]] })))
+    // no events (상용구): nothing to listen to. ''.split(',') is [''], and an empty event name is
+    // refused by the bridge, which used to take the whole window down.
+    const offs = evKey
+      .split(',')
+      .filter(Boolean)
+      .map((e) => onMain(e as MainEvent, () => void qc.invalidateQueries({ queryKey: ['local', key[0]] })))
     return () => offs.forEach((o) => o())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qc, evKey, String(key[0])])

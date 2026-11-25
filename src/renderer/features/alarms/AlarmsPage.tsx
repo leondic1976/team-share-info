@@ -20,6 +20,7 @@ import { cn } from '@renderer/lib/utils'
 import { RecurrenceEditor } from '@renderer/features/calendar/RecurrenceEditor'
 import { useAlarms, useFocus } from '@renderer/features/memos/tools-api'
 import { SOURCE_LABEL, todayReminders } from './useTeamAlarms'
+import { DateTimeInput, TimeSelect } from '@renderer/components/DateTimeInput'
 
 const KIND_LABEL: Record<AlarmKind, string> = { once: '한 번', repeat: '반복', deadline: '기한', timer: '타이머' }
 const LEADS = [
@@ -107,14 +108,13 @@ export function AlarmDialog({ open, onClose, initial }: { open: boolean; onClose
         ) : f.kind === 'repeat' ? (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Label htmlFor="al-time">시각</Label>
-              <Input
-                id="al-time"
-                type="time"
-                className="w-32"
+              <Label>시각</Label>
+              <TimeSelect
+                label="시각"
+                minuteStep={1}
                 value={format(f.fireAt, 'HH:mm')}
-                onChange={(e) => {
-                  const [h, m] = e.target.value.split(':').map(Number)
+                onChange={(v) => {
+                  const [h, m] = v.split(':').map(Number)
                   set({ fireAt: at(h || 0, m || 0) })
                 }}
               />
@@ -130,8 +130,8 @@ export function AlarmDialog({ open, onClose, initial }: { open: boolean; onClose
         ) : (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Label htmlFor="al-at">{f.kind === 'deadline' ? '마감 일시' : '울릴 일시'}</Label>
-              <Input id="al-at" type="datetime-local" className="w-56" value={toInputValue(f.fireAt)} onChange={(e) => e.target.value && set({ fireAt: fromInputValue(e.target.value) })} />
+              <Label>{f.kind === 'deadline' ? '마감 일시' : '울릴 일시'}</Label>
+              <DateTimeInput label={f.kind === 'deadline' ? '마감 일시' : '울릴 일시'} minuteStep={1} value={toInputValue(f.fireAt)} onChange={(v) => v && set({ fireAt: fromInputValue(v) })} />
             </div>
             {f.kind === 'deadline' && (
               <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -155,7 +155,10 @@ export function AlarmDialog({ open, onClose, initial }: { open: boolean; onClose
           <Label htmlFor="al-note">메모 (선택)</Label>
           <Textarea id="al-note" rows={2} maxLength={1000} value={f.note ?? ''} onChange={(e) => set({ note: e.target.value })} />
         </div>
-        <Switch checked={f.sound !== false} onCheckedChange={(v) => set({ sound: v })} label="소리" />
+        <label className="flex w-fit cursor-pointer items-center gap-2 text-sm">
+          <Switch checked={f.sound !== false} onCheckedChange={(v) => set({ sound: v })} label="소리" />
+          소리 내기
+        </label>
         {err && <p className="text-sm text-urgent">{err}</p>}
       </div>
     </Dialog>
@@ -214,7 +217,7 @@ function MyAlarmsTab({ onEdit }: { onEdit: (a: Partial<AlarmInput>) => void }): 
         <div className="space-y-1.5" data-testid="alarm-list">
           {alarms.data.map((a) => (
             <div key={a.id} className={cn('flex items-center gap-3 rounded-md border border-border px-3 py-2', !a.enabled && 'opacity-60')} data-testid="alarm-item">
-              <Switch checked={a.enabled} onCheckedChange={(v) => void invoke('local:alarms.setEnabled', { id: a.id, enabled: v })} label="" />
+              <Switch checked={a.enabled} onCheckedChange={(v) => void invoke('local:alarms.setEnabled', { id: a.id, enabled: v })} label={`${a.title} ${a.enabled ? '끄기' : '켜기'}`} />
               <button className="min-w-0 flex-1 cursor-pointer text-left" onClick={() => onEdit({ ...a })}>
                 <div className="flex items-center gap-2">
                   <span className="rounded bg-muted px-1.5 py-0.5 text-xs">{KIND_LABEL[a.kind]}</span>

@@ -26,6 +26,7 @@ import type { ScopeInput } from '@shared/schemas/scope'
 import { cn } from '@renderer/lib/utils'
 import { FavoriteStar } from '@renderer/features/memos/widgets'
 import { confirmPii } from '@renderer/lib/pii'
+import { DateTimeInput } from '@renderer/components/DateTimeInput'
 
 const KIND_LABEL = { free: '자유', work: '업무 공유', qna: '질의응답' } as const
 
@@ -184,9 +185,9 @@ function PostCompose({ board, onClose, onCreated }: { board: BoardDto; onClose: 
               <label className="flex items-center gap-1.5">
                 <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} /> 익명 투표
               </label>
-              <label className="flex items-center gap-1.5">
-                마감 <Input aria-label="투표 마감" type="datetime-local" className="w-52" value={closes} onChange={(e) => setCloses(e.target.value)} />
-              </label>
+              <span className="flex items-center gap-1.5">
+                마감 <DateTimeInput label="투표 마감" clearable defaultTime="18:00" value={closes} onChange={setCloses} />
+              </span>
             </div>
           </div>
         )}

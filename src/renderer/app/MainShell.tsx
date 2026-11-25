@@ -1,4 +1,5 @@
 import { Loading } from '@renderer/components/EmptyState'
+import { PageErrorBoundary } from '@renderer/components/PageErrorBoundary'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
@@ -161,6 +162,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
       <div className="flex min-h-0 flex-1">
         <Sidebar isAdmin={isAdmin} disabledFeatures={disabled} badges={{ notices: unread, chat: chatUnread.messages + chatUnread.notes, meetings: liveMeetings.data?.length ?? 0, admin: me?.pendingJoins ?? 0, ledger: me?.ledgerUnseen ?? 0 }} />
         <main className="min-w-0 flex-1 overflow-hidden">
+          <PageErrorBoundary>
           <Suspense fallback={<Loading />}>
           <Routes>
             <Route path="/" element={<Navigate to="/home" replace />} />
@@ -207,6 +209,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>
           </Suspense>
+          </PageErrorBoundary>
         </main>
       </div>
       <StatusBar />

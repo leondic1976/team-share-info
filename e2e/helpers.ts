@@ -1,4 +1,4 @@
-import { _electron as electron, type ElectronApplication, type Page } from 'playwright-core'
+import { _electron as electron, type ElectronApplication, type Locator, type Page } from 'playwright-core'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -91,4 +91,13 @@ export async function joinAndApprove(admin: Page, member: Page, port: string, na
 
 export async function go(page: Page, hash: string): Promise<void> {
   await page.evaluate((h) => (window.location.hash = h), hash)
+}
+
+/** Sets a date-and-time field (DateTimeInput: a date field and the 시 / 분 lists) to a moment. */
+export async function fillDateTime(scope: Page | Locator, label: string, ms: number): Promise<void> {
+  const d = new Date(ms)
+  const p2 = (n: number): string => String(n).padStart(2, '0')
+  await scope.getByLabel(label, { exact: true }).fill(`${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`)
+  await scope.getByLabel(`${label} 시`, { exact: true }).selectOption(String(d.getHours()))
+  await scope.getByLabel(`${label} 분`, { exact: true }).selectOption(String(d.getMinutes()))
 }

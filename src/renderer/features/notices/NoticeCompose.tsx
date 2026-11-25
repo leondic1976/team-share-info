@@ -15,6 +15,7 @@ import type { NoticeLevel, NoticeSummaryDto } from '@shared/schemas/notices'
 import type { ScopeInput } from '@shared/schemas/scope'
 import { cn } from '@renderer/lib/utils'
 import { confirmPii } from '@renderer/lib/pii'
+import { DateTimeInput } from '@renderer/components/DateTimeInput'
 
 const LEVELS: { v: NoticeLevel; label: string; hint: string; cls: string }[] = [
   { v: 'normal', label: '일반', hint: '목록에만 표시', cls: 'border-border' },
@@ -153,10 +154,10 @@ export function NoticeCompose({ open, onClose, onCreated }: { open: boolean; onC
             </div>
           )}
           <Field label="예약 발송 (선택)">
-            <Input aria-label="예약 발송" type="datetime-local" value={schedule} min={toLocalInput(Date.now())} onChange={(e) => setSchedule(e.target.value)} />
+            <DateTimeInput label="예약 발송" clearable value={schedule} min={toLocalInput(Date.now())} onChange={setSchedule} />
           </Field>
           <Field label="만료 시각 (선택)">
-            <Input aria-label="만료 시각" type="datetime-local" value={expires} min={toLocalInput(Date.now())} onChange={(e) => setExpires(e.target.value)} />
+            <DateTimeInput label="만료 시각" clearable defaultTime="18:00" value={expires} min={toLocalInput(Date.now())} onChange={setExpires} />
           </Field>
           {level === 'urgent' && (
             <Field label="자동 재알림 간격 (분, 선택)" hint="확인하지 않은 사람에게 이 간격으로 다시 띄웁니다.">

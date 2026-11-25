@@ -12,6 +12,7 @@ import { api, errorMessage } from '@renderer/lib/api'
 import { fromInputValue, toInputValue } from '@renderer/lib/dates'
 import { useConn } from '@renderer/app/conn-store'
 import { confirmPii } from '@renderer/lib/pii'
+import { DateTimeInput } from '@renderer/components/DateTimeInput'
 
 /** Alarms sent to other members: they ring on the receiver's PC at the chosen time (6.12 ②). */
 export function TeamAlarmsView(): React.JSX.Element {
@@ -56,8 +57,8 @@ export function TeamAlarmsView(): React.JSX.Element {
           </div>
           <Textarea aria-label="덧붙일 말" rows={2} maxLength={500} value={body} onChange={(e) => setBody(e.target.value)} placeholder="덧붙일 말 (선택)" />
           <div className="flex items-center gap-2">
-            <Label htmlFor="ta-at">울릴 일시</Label>
-            <Input id="ta-at" type="datetime-local" className="w-56" disabled={immediate} value={toInputValue(fireAt)} onChange={(e) => e.target.value && setFireAt(fromInputValue(e.target.value))} />
+            <Label>울릴 일시</Label>
+            <DateTimeInput label="울릴 일시" minuteStep={1} disabled={immediate} value={toInputValue(fireAt)} onChange={(v) => v && setFireAt(fromInputValue(v))} />
             <Button size="sm" variant={immediate ? 'default' : 'outline'} aria-pressed={immediate} onClick={() => setImmediate((v) => !v)}>
               즉시
             </Button>

@@ -1,13 +1,8 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import type { Page } from 'playwright-core'
-import { go, joinAndApprove, launch, runWizard, type Launched } from './helpers'
+import { fillDateTime, go, joinAndApprove, launch, runWizard, type Launched } from './helpers'
 
 const PORT = '47896'
-const pad = (n: number) => String(n).padStart(2, '0')
-const localInput = (ms: number) => {
-  const d = new Date(ms)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 
 async function newEvent(page: Page, o: { kind: '개인 일정' | '공유 일정'; title: string; start: number; end: number; repeat?: string; reminder?: string }): Promise<void> {
   await go(page, '/calendar')
@@ -15,8 +10,8 @@ async function newEvent(page: Page, o: { kind: '개인 일정' | '공유 일정'
   const dlg = page.getByRole('dialog', { name: '새 일정' })
   await dlg.getByRole('radio', { name: new RegExp(o.kind) }).click()
   await dlg.getByLabel('일정 제목').fill(o.title)
-  await dlg.getByLabel('시작').fill(localInput(o.start))
-  await dlg.getByLabel('끝', { exact: true }).fill(localInput(o.end))
+  await fillDateTime(dlg, '시작', o.start)
+  await fillDateTime(dlg, '끝', o.end)
   if (o.repeat) await dlg.getByLabel('반복', { exact: true }).selectOption(o.repeat)
   // default reminder is "10분 전"; switch to the requested one
   if (o.reminder) {

@@ -1,12 +1,7 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { go, joinAndApprove, launch, runWizard, type Launched } from './helpers'
+import { fillDateTime, go, joinAndApprove, launch, runWizard, type Launched } from './helpers'
 
 const PORT = '47901'
-const pad = (n: number) => String(n).padStart(2, '0')
-const localInput = (ms: number) => {
-  const d = new Date(ms)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 
 describe('M6-2 knowledge records', () => {
   let a: Launched
@@ -44,8 +39,8 @@ describe('M6-2 knowledge records', () => {
     const d = a.page.getByRole('dialog', { name: '새 일정' })
     await d.getByRole('radio', { name: /공유 일정/ }).click()
     await d.getByLabel('일정 제목').fill('주간 업무 회의')
-    await d.getByLabel('시작').fill(localInput(start))
-    await d.getByLabel('끝', { exact: true }).fill(localInput(start + 3600000))
+    await fillDateTime(d, '시작', start)
+    await fillDateTime(d, '끝', start + 3600000)
     await d.getByLabel('팀원B').check()
     await d.getByRole('button', { name: '저장' }).click()
     await d.waitFor({ state: 'detached' })

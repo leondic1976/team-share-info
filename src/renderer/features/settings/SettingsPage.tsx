@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Monitor, Sun, Moon, MessageSquarePlus, ExternalLink } from 'lucide-react'
 import { DOWNLOAD_SITE } from '@shared/constants'
-import { Input } from '@renderer/components/ui/input'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
@@ -20,6 +19,7 @@ import { OrgManageCard } from './OrgManageCard'
 import { ProfileTab } from '@renderer/features/directory/DirectoryPage'
 import { useConn } from '@renderer/app/conn-store'
 import type { ReactNode } from 'react'
+import { TimeSelect } from '@renderer/components/DateTimeInput'
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }): React.JSX.Element {
   return (
@@ -125,10 +125,13 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
           <CardContent className="py-1">
             <Row label="방해 금지 시간" hint="이 시간에는 중요·일반 알림을 띄우지 않습니다. 긴급 알림은 항상 표시됩니다.">
               <div className="flex items-center gap-2">
-                <Input aria-label="방해 금지 시작" type="time" className="w-28" value={prefs.dndStart} onChange={(e) => prefs.update({ dndStart: e.target.value })} disabled={!prefs.dndEnabled} />
+                <TimeSelect label="방해 금지 시작" value={prefs.dndStart} onChange={(v) => prefs.update({ dndStart: v })} disabled={!prefs.dndEnabled} />
                 ~
-                <Input aria-label="방해 금지 끝" type="time" className="w-28" value={prefs.dndEnd} onChange={(e) => prefs.update({ dndEnd: e.target.value })} disabled={!prefs.dndEnabled} />
-                <Switch checked={prefs.dndEnabled} label="방해 금지 사용" onCheckedChange={(v) => prefs.update({ dndEnabled: v })} />
+                <TimeSelect label="방해 금지 끝" value={prefs.dndEnd} onChange={(v) => prefs.update({ dndEnd: v })} disabled={!prefs.dndEnabled} />
+                <label className="ml-2 flex cursor-pointer items-center gap-2 text-sm">
+                  <Switch checked={prefs.dndEnabled} label="방해 금지 사용" onCheckedChange={(v) => prefs.update({ dndEnabled: v })} />
+                  사용
+                </label>
               </div>
             </Row>
           </CardContent>

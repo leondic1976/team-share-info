@@ -25,6 +25,7 @@ import type { ScopeInput } from '@shared/schemas/scope'
 import { describeRule } from '@shared/recurrence'
 import { RecurrenceEditor } from './RecurrenceEditor'
 import { cn } from '@renderer/lib/utils'
+import { DateTimeInput } from '@renderer/components/DateTimeInput'
 
 export type EditMode = 'this' | 'following' | 'all'
 type Kind = 'personal' | 'team' | 'absence'
@@ -449,24 +450,35 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
                 종일
               </label>
               <Field label="시작">
-                <Input
-                  aria-label="시작"
-                  type={f.allDay ? 'date' : 'datetime-local'}
-                  value={toInputValue(f.start, f.allDay)}
-                  onChange={(e) => {
-                    if (!e.target.value) return
-                    const s = fromInputValue(e.target.value)
-                    setF((p) => ({ ...p, start: s, end: s + Math.max(p.allDay ? DAY : 0, p.end - p.start) }))
-                  }}
-                />
+                {f.allDay ? (
+                  <Input
+                    aria-label="시작"
+                    type="date"
+                    value={toInputValue(f.start, true)}
+                    onChange={(e) => {
+                      if (!e.target.value) return
+                      const s = fromInputValue(e.target.value)
+                      setF((p) => ({ ...p, start: s, end: s + Math.max(DAY, p.end - p.start) }))
+                    }}
+                  />
+                ) : (
+                  <DateTimeInput
+                    label="시작"
+                    value={toInputValue(f.start)}
+                    onChange={(v) => {
+                      if (!v) return
+                      const s = fromInputValue(v)
+                      setF((p) => ({ ...p, start: s, end: s + Math.max(0, p.end - p.start) }))
+                    }}
+                  />
+                )}
               </Field>
               <Field label={f.allDay ? '마지막 날' : '끝'}>
-                <Input
-                  aria-label="끝"
-                  type={f.allDay ? 'date' : 'datetime-local'}
-                  value={toInputValue(f.allDay ? f.end - DAY : f.end, f.allDay)}
-                  onChange={(e) => e.target.value && set('end', fromInputValue(e.target.value) + (f.allDay ? DAY : 0))}
-                />
+                {f.allDay ? (
+                  <Input aria-label="끝" type="date" value={toInputValue(f.end - DAY, true)} onChange={(e) => e.target.value && set('end', fromInputValue(e.target.value) + DAY)} />
+                ) : (
+                  <DateTimeInput label="끝" value={toInputValue(f.end)} onChange={(v) => v && set('end', fromInputValue(v))} />
+                )}
               </Field>
             </div>
             <Field label="반복">

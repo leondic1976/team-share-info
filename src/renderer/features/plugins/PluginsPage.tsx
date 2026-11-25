@@ -225,7 +225,10 @@ export function PluginsPage(): React.JSX.Element {
                             <Download /> v{latest.version}로 업데이트
                           </Button>
                         )}
-                        <Switch checked={p.enabled} onCheckedChange={(v) => void invoke('plugins:setEnabled', { id: p.manifest.id, enabled: v })} label="사용" />
+                        <label className="flex cursor-pointer items-center gap-1.5 text-sm">
+                          <Switch checked={p.enabled} onCheckedChange={(v) => void invoke('plugins:setEnabled', { id: p.manifest.id, enabled: v })} label="사용" />
+                          사용
+                        </label>
                         <Button size="sm" variant="outline" className="ml-auto text-urgent" disabled={busy} data-testid="plugin-remove" onClick={() => void remove(p.manifest)}>
                           <Trash2 /> 삭제
                         </Button>
