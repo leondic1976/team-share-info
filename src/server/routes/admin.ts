@@ -325,7 +325,7 @@ export function registerAdminRoutes(
   app.get('/api/admin/settings', pre, async () => ok(getAllSettings(ctx.db)))
 
   app.put('/api/admin/settings', pre, async (req) => {
-    const patch = parse(settingsPatchSchema, req.body)
+    const patch = onlySent(parse(settingsPatchSchema, req.body), req.body)
     if (!isOwnerRequest(ctx, req)) {
       // A 서무 may save the form, but only what a 서무 may decide can differ from what is stored
       // (an older client sends every section at once).
@@ -421,4 +421,23 @@ export function registerAdminRoutes(
   // Verify the admin PIN without changing anything (used by the UI before opening admin pages).
   app.post('/api/admin/pin-check', pre, async () => ok({ ok: true }))
 
+}
+
+/**
+ * Zod 4 fills in the defaults of the fields of a `.partial()` section that were not sent, so
+ * `{ ops: { urgentSenders } }` came out as the whole ops section with default values: it would
+ * overwrite what is stored, and a 서무's save of the open fields was refused whenever the stored
+ * values were not the defaults. Keep only the fields that were really in the request.
+ */
+export function onlySent<T extends Record<string, unknown>>(patch: T, body: unknown): T {
+  const raw = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const [section, value] of Object.entries(patch)) {
+    if (!(section in raw)) continue
+    const sent = raw[section]
+    if (value && typeof value === 'object' && !Array.isArray(value) && sent && typeof sent === 'object') {
+      out[section] = Object.fromEntries(Object.entries(value).filter(([k]) => k in (sent as Record<string, unknown>)))
+    } else out[section] = value
+  }
+  return out as T
 }

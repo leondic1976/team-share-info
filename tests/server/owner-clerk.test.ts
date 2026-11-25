@@ -98,6 +98,13 @@ describe('two admin tiers: 최종관리자 (server PC) and 서무', () => {
 
     // the 최종관리자 can
     expect((await put(s.admin, { org: { teamName: '총무팀' }, ops: { disabledFeatures: ['chat'] }, backup: { keep: 3 }, storage: { quotaBytes: 1024 ** 3 } })).statusCode).toBe(200)
+
+    // the fields that were not sent are not filled in with defaults: the owner's choices stay, and
+    // a 서무 can still save the open fields after the owner changed others (Zod 4 .partial() defaults)
+    expect((await put(s.admin, { ops: { messageRetentionDays: 180 } })).statusCode).toBe(200)
+    const again = await put(c, { ops: { urgentSenders: 'everyone', groupCreators: 'everyone' } })
+    expect(again.statusCode).toBe(200)
+    expect(again.json().data).toMatchObject({ org: { teamName: '총무팀' }, backup: { keep: 3 }, ops: { disabledFeatures: ['chat'], messageRetentionDays: 180, urgentSenders: 'everyone', groupCreators: 'everyone' } })
   })
 
   it('data storage is the 최종관리자’s: backups and restore', async () => {
