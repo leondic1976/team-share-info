@@ -524,6 +524,25 @@ describe('meal plugin: requests for many people at once (by department)', () => 
     expect([none.result.applied, none.result.closed, none.entry.for]).toEqual([0, 1, undefined])
   })
 
+  it('marks who requested or cancelled: the person themselves or somebody for them', () => {
+    const lunch = [{ date: MON, meal: 'lunch' }]
+    const kimOwn = e(M.apply(null, config, MON, 'lunch', true, at(MON, 9)).entry)
+    const leeCancelled = e(M.apply(M.apply(null, config, MON, 'lunch', true, at(MON, 8)).entry, config, MON, 'lunch', false, at(MON, 8, 30)).entry)
+    const bySeo = M.applyBulk(room(), 's1', config, who(['choi', 'han']), lunch, true, at(MON, 9), members).entry
+    const bySeo2 = M.applyBulk(room({ s1: { name: '김서무', value: bySeo } }), 's1', config, who(['han']), lunch, false, at(MON, 9, 10), members).entry
+    const r = room({ kim: kimOwn, lee: leeCancelled, s1: { name: '김서무', value: bySeo2 } })
+    const people = M.resolve(r, members)
+    const st = (id: string, slots = lunch) => plain(M.pickStatus(people, id, slots))
+    expect(st('kim')).toEqual({ kind: 'self' })
+    expect(st('lee')).toEqual({ kind: 'cancelSelf' })
+    expect(st('choi')).toEqual({ kind: 'proxy', byName: '김서무' })
+    expect(st('han')).toEqual({ kind: 'cancelProxy', byName: '김서무' })
+    expect(st('s1')).toEqual({ kind: 'none' })
+    // two meals that differ
+    expect(st('kim', [...lunch, { date: MON, meal: 'dinner' }])).toEqual({ kind: 'mixed' })
+    expect(st('kim', [])).toEqual({ kind: 'none' })
+  })
+
   it('anybody can, and a pick is needed', () => {
     // a member who is not in charge (1.4.0)
     const byKim = M.applyBulk(room(), 'kim', config, who(['lee', 'choi']), [{ date: MON, meal: 'lunch' }], true, at(MON, 9), members)

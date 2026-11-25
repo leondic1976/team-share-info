@@ -23,6 +23,7 @@ import {
   UserCheck,
   Network,
   Utensils,
+  Siren,
   type LucideIcon
 } from 'lucide-react'
 import type { FeatureKey } from '@shared/constants'
@@ -37,6 +38,8 @@ export interface MenuItem {
   adminOnly?: boolean
   /** shown as a sub-item of this menu instead of on its own line */
   under?: FeatureKey
+  /** drawn in red (긴급구조지휘대) */
+  danger?: boolean
 }
 
 /** Shared (team) features first, then the personal ones of this PC; the sidebar draws a line between the two. */
@@ -54,6 +57,8 @@ export const MENU: MenuItem[] = [
   // a built-in extension (plugins/meal) shown as a menu of its own; installed by itself when first opened
   { key: 'meal', label: '식사 신청', path: '/meal', icon: Utensils },
   { key: 'docs', label: '기록', path: '/docs', icon: BookOpen },
+  // 긴급구조통제단·긴급구조현장지휘대(지휘반) 운영·훈련·연습·숙지 (지시 79, 내용은 나중에)
+  { key: 'command', label: '긴급구조지휘대', path: '/command', icon: Siren, danger: true },
   { key: 'diary', label: '다이어리', path: '/diary', icon: NotebookPen, personal: true },
   { key: 'memos', label: '메모', path: '/memos', icon: StickyNote, personal: true },
   { key: 'alarms', label: '알람', path: '/alarms', icon: AlarmClock, personal: true },

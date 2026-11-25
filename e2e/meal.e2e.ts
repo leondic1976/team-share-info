@@ -221,6 +221,12 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     await fa.locator('#bulkPeople .bulk-group').first().waitFor(wait)
     expect(await fa.locator('[data-bslot$="|lunch"]').first().isDisabled()).toBe(true)
     expect(await fa.locator('[data-bslot$="|dinner"]').first().isChecked()).toBe(true)
+    // who requested or cancelled today's dinner shows next to the name: 팀원B cancelled their own,
+    // and 팀원B cancelled the admin's for them (지시 78)
+    await expect.poll(() => fa.locator('#bulkPeople [data-bstatus="cancelSelf"]').count(), wait).toBe(1)
+    expect(await fa.locator('#bulkPeople label:has([data-bstatus="cancelSelf"]) > span').first().textContent()).toBe('팀원B')
+    expect(await fa.locator('#bulkPeople [data-bstatus="cancelSelf"]').textContent()).toBe('본인 취소')
+    expect(await fa.locator('#bulkPeople [data-bstatus="cancelProxy"]').textContent()).toBe('팀원B 대신 취소')
     // the hand-registered person sits in their department group, marked
     await fa.locator('[data-btoggle="현장E2E"]').click()
     expect(await fa.locator('.bulk-group[data-bgroup="현장E2E"] .bulk-list').textContent()).toContain('미등록')
@@ -230,6 +236,8 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     expect(await fa.locator('#bulkCount').textContent()).toBe('3명 선택')
     await fa.locator('#bulkGo').click()
     await expect.poll(() => fa.locator('#bulkResult').textContent(), wait).toBe('3명 신청')
+    // now each of them carries the mark of the request made for them
+    await expect.poll(() => fa.locator('#bulkPeople [data-bstatus="proxy"]').count(), wait).toBeGreaterThanOrEqual(1)
     // again: everybody has it already, nobody can be picked
     await fa.locator('#bulkAll').click()
     expect(await fa.locator('#bulkCount').textContent()).toBe('0명 선택')

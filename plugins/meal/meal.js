@@ -772,6 +772,27 @@
     return (slots || []).length > 0 && slots.every((s) => !!(p && p.days[s.date] && p.days[s.date][s.meal] && p.days[s.date][s.meal].on) === !!on)
   }
   /**
+   * What the record that counts says for `id` over the chosen slots, for the marks of the bulk
+   * list (people = resolve()):
+   *  { kind: 'none' }                     nothing recorded
+   *  { kind: 'self' }                     requested by the person themselves
+   *  { kind: 'proxy', byName }            requested for them by somebody else
+   *  { kind: 'cancelSelf' }               requested, then cancelled by themselves
+   *  { kind: 'cancelProxy', byName }      cancelled for them by somebody else
+   *  { kind: 'mixed' }                    the slots differ
+   */
+  function pickStatus(people, id, slots) {
+    const p = people && people.get(id)
+    let out = null
+    for (const s of slots || []) {
+      const r = p && p.days[s.date] && p.days[s.date][s.meal]
+      const one = !r ? { kind: 'none' } : r.on ? (r.by ? { kind: 'proxy', byName: r.byName || '' } : { kind: 'self' }) : r.by ? { kind: 'cancelProxy', byName: r.byName || '' } : { kind: 'cancelSelf' }
+      if (!out) out = one
+      else if (out.kind !== one.kind || (out.byName || '') !== (one.byName || '')) return { kind: 'mixed' }
+    }
+    return out || { kind: 'none' }
+  }
+  /**
    * Request (on) or cancel for many members, days and meals in one save of the entry of the one
    * who acts (`id`): targets = [{ id, name }], slots = [{ date, meal }]. `now` is the server's
    * clock at the moment of saving; `config` the settings with the holidays of that moment.
@@ -894,5 +915,5 @@
     return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n'
   }
 
-  g.Meal = { isManualId, newManualId, cleanPerson, cleanPeople, manualList, roster, nameClash, splitCount, countText, MEALS, MEAL_KEYS, MENU_SLOTS, LIMITS, deptGroups, groupState, bulkSlots, alreadySet, applyBulk, bulkSummary, weekStart, menuWindow, cleanMenuText, cleanMenus, pickSettings, effective, menuOf, menuStamp, weekDays, menuMeals, saveAs, fitMenus, weekText, parseBlock, placeBlock, canManage, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
+  g.Meal = { isManualId, newManualId, cleanPerson, cleanPeople, manualList, roster, nameClash, splitCount, countText, MEALS, MEAL_KEYS, MENU_SLOTS, LIMITS, deptGroups, groupState, bulkSlots, alreadySet, pickStatus, applyBulk, bulkSummary, weekStart, menuWindow, cleanMenuText, cleanMenus, pickSettings, effective, menuOf, menuStamp, weekDays, menuMeals, saveAs, fitMenus, weekText, parseBlock, placeBlock, canManage, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
 })(typeof window !== 'undefined' ? window : globalThis)

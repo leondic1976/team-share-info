@@ -90,6 +90,7 @@ export const FEATURES = [
   'directory',
   'meal',
   'docs',
+  'command',
   'diary',
   'memos',
   'alarms',

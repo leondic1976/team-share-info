@@ -19,6 +19,7 @@ import { invoke } from '@renderer/lib/bridge'
 import { api } from '@renderer/lib/api'
 import { WallpaperLayer } from './WallpaperLayer'
 import { ComingSoon } from '@renderer/features/placeholder/ComingSoon'
+import { CommandPage } from '@renderer/features/command/CommandPage'
 import { ConnectionCard } from '@renderer/features/settings/ConnectionCard'
 import { HomePage } from '@renderer/features/home/HomePage'
 import { BlockingScreen } from './BlockingScreen'
@@ -188,6 +189,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/docs" element={<DocsPage />} />
             <Route path="/docs/:section" element={<DocsPage />} />
             <Route path="/docs/:section/:id" element={<DocsPage />} />
+            <Route path="/command/*" element={<CommandPage />} />
             <Route path="/memos" element={<MemosPage />} />
             <Route path="/alarms" element={<AlarmsPage />} />
             <Route path="/utilities" element={<UtilitiesPage />} />
@@ -200,7 +202,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/plugins" element={<PluginsPage />} />
             <Route path="/plugins/:id" element={<PluginHost />} />
             <Route path="/notes/:id" element={<NotesPage />} />
-            {MENU.filter((m) => !['home', 'notices', 'calendar', 'diary', 'files', 'chat', 'boards', 'duty', 'org', 'meal', 'directory', 'docs', 'memos', 'alarms', 'utilities', 'launcher', 'myfiles', 'notes', 'meetings', 'plugins'].includes(m.key)).map((m) => (
+            {MENU.filter((m) => !['home', 'notices', 'calendar', 'diary', 'files', 'chat', 'boards', 'duty', 'org', 'meal', 'directory', 'docs', 'command', 'memos', 'alarms', 'utilities', 'launcher', 'myfiles', 'notes', 'meetings', 'plugins'].includes(m.key)).map((m) => (
               <Route key={m.key} path={`${m.path}/*`} element={<ComingSoon title={m.label} />} />
             ))}
             <Route path="/settings" element={<SettingsPage extra={<ConnectionCard onReset={onReset} />} />} />

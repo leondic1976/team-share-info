@@ -44,7 +44,11 @@ export function Sidebar({ isAdmin, disabledFeatures, badges = {} }: SidebarProps
           cn(
             'group relative flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors',
             // 확장 기능 stands out (bold, accent colour, light tint) so it is found and used often (지시 68·77)
-            m.key === 'plugins'
+            m.danger
+              ? isActive
+                ? 'bg-urgent/15 font-bold text-urgent'
+                : 'font-bold text-urgent hover:bg-urgent/10'
+              : m.key === 'plugins'
               ? isActive
                 ? 'bg-primary/15 font-bold text-primary'
                 : 'bg-primary/5 font-bold text-primary hover:bg-primary/10'

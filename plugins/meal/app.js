@@ -601,6 +601,24 @@
       </div>`
     renderBulkPeople()
   }
+  /** The mark after a name: who requested or cancelled the chosen meal(s) (지시 78). */
+  function statusMark(st) {
+    const by = (n) => esc(n || '다른 사람')
+    switch (st.kind) {
+      case 'self':
+        return ` <span class="th-badge th-badge-success" data-bstatus="self" title="본인이 직접 신청했습니다">본인 신청</span>`
+      case 'proxy':
+        return ` <span class="th-badge th-badge-success" data-bstatus="proxy" title="${by(st.byName)} 님이 대신 신청했습니다">${by(st.byName)} 대신 신청</span>`
+      case 'cancelSelf':
+        return ` <span class="th-badge th-badge-important" data-bstatus="cancelSelf" title="신청했다가 본인이 취소했습니다">본인 취소</span>`
+      case 'cancelProxy':
+        return ` <span class="th-badge th-badge-important" data-bstatus="cancelProxy" title="신청했다가 ${by(st.byName)} 님이 대신 취소했습니다">${by(st.byName)} 대신 취소</span>`
+      case 'mixed':
+        return ` <span class="th-badge th-badge-muted" data-bstatus="mixed" title="고른 날짜·식사마다 다릅니다">날짜마다 다름</span>`
+      default:
+        return ''
+    }
+  }
   function renderBulkPeople() {
     const chosen = bulkChosen()
     const people = M.resolve(room, members)
@@ -627,7 +645,7 @@
               ? `<div class="bulk-list">${shown
                   .map((m) => {
                     const d = done(m.id)
-                    return `<label class="th-check"><input type="checkbox" data-bid="${esc(m.id)}" ${d ? (bulk.on ? 'checked disabled' : 'disabled') : bulk.sel.has(m.id) ? 'checked' : ''} /> <span>${esc(m.name)}</span>${manualMark(m)}${m.id === me.id ? ` ${badge('muted', '나')}` : ''}${d && chosen.length ? ` ${badge(bulk.on ? 'success' : 'muted', bulk.on ? '신청함' : '신청 안 함')}` : ''}</label>`
+                    return `<label class="th-check"><input type="checkbox" data-bid="${esc(m.id)}" ${d ? (bulk.on ? 'checked disabled' : 'disabled') : bulk.sel.has(m.id) ? 'checked' : ''} /> <span>${esc(m.name)}</span>${manualMark(m)}${m.id === me.id ? ` ${badge('muted', '나')}` : ''}${chosen.length ? statusMark(M.pickStatus(people, m.id, chosen)) : ''}</label>`
                   })
                   .join('')}</div>`
               : ''
