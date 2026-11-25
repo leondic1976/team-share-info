@@ -33,7 +33,7 @@ async function start(dataDir: string, version: string, feedback?: FeedbackRelayC
   const restored = applyPendingRestore(dataDir)
   if (restored) post({ type: 'log', level: 'info', message: `restored backup ${restored}` })
   db = openServerDb(dataDir, version)
-  built = await buildApp({ db, dataDir, version, feedback })
+  built = await buildApp({ db, dataDir, version, feedback, log: (level, message) => post({ type: 'log', level, message }) })
   try {
     const forms = seedForms(built.ctx, formsDir)
     if (forms.folderId) post({ type: 'log', level: 'info', message: `forms library: ${forms.added} added, ${forms.updated} updated` })

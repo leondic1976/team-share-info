@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { newId } from '../../node/sqlite'
 import type { Db } from '../../node/sqlite'
 import type { ServerContext } from '../context'
-import { notFound } from '../errors'
+import { AppError, notFound } from '../errors'
 import { parse, ok } from '../validate'
 import { canSee } from '../scope'
 import { addRef, assertName, blobAbsPath, checkUploadAllowed, contentDisposition, storeStream, type BlobRow } from '../storage/blobs'
@@ -40,9 +40,13 @@ export function linkAttachments(ctx: ServerContext, ids: string[], ownerType: st
   }
 }
 
+/** What a download of a messenger file deleted after its retention period answers (410). */
+export const FILE_EXPIRED_MESSAGE = '보관 기간이 지나 서버에서 삭제된 파일입니다.'
+
 export function deleteAttachmentsOf(ctx: ServerContext, ownerType: string, ownerId: string): void {
-  for (const a of ctx.db.all<{ id: string; blob_id: string }>('SELECT id, blob_id FROM attachments WHERE owner_type = ? AND owner_id = ?', [ownerType, ownerId])) {
-    addRef(ctx, a.blob_id, -1)
+  for (const a of ctx.db.all<{ id: string; blob_id: string | null }>('SELECT id, blob_id FROM attachments WHERE owner_type = ? AND owner_id = ?', [ownerType, ownerId])) {
+    // an expired file (no blob) gave its reference back when it expired
+    if (a.blob_id) addRef(ctx, a.blob_id, -1)
     ctx.db.run('DELETE FROM attachments WHERE id = ?', [a.id])
   }
 }
@@ -70,8 +74,8 @@ export function registerAttachmentRoutes(app: FastifyInstance, ctx: ServerContex
 
   app.get('/api/attachments/:id', auth, async (req, reply) => {
     const { id } = req.params as { id: string }
-    const a = ctx.db.get<{ owner_type: string; owner_id: string; blob_id: string; name: string; created_by: string }>(
-      'SELECT owner_type, owner_id, blob_id, name, created_by FROM attachments WHERE id = ?',
+    const a = ctx.db.get<{ owner_type: string; owner_id: string; blob_id: string | null; name: string; created_by: string; expired_at: number | null }>(
+      'SELECT owner_type, owner_id, blob_id, name, created_by, expired_at FROM attachments WHERE id = ?',
       [id]
     )
     if (!a) throw notFound('첨부 파일')
@@ -81,6 +85,7 @@ export function registerAttachmentRoutes(app: FastifyInstance, ctx: ServerContex
       const check = ATTACHMENT_OWNERS[a.owner_type]
       if (!check || !check(ctx.db, a.owner_id, req.member.id)) throw notFound('첨부 파일')
     }
+    if (a.expired_at || !a.blob_id) throw new AppError('FILE_EXPIRED', FILE_EXPIRED_MESSAGE, 410)
     const blob = ctx.db.get<BlobRow>('SELECT * FROM blobs WHERE id = ?', [a.blob_id])
     if (!blob || !existsSync(blobAbsPath(ctx, blob))) throw notFound('파일')
     const inline = (req.query as { inline?: string }).inline === '1'

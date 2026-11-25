@@ -9,7 +9,7 @@ import { Textarea } from '@renderer/components/ui/input'
 import { Dialog } from '@renderer/components/Dialog'
 import { PresenceDot } from '@renderer/components/PresenceDot'
 import { AuthImage } from '@renderer/components/AuthImage'
-import { FileChip, uploadAttachment } from '@renderer/components/Attachments'
+import { ExpiredFileChip, FileChip, uploadAttachment } from '@renderer/components/Attachments'
 import { api, ApiError, errorMessage } from '@renderer/lib/api'
 import { realtime } from '@renderer/lib/realtime'
 import { invoke } from '@renderer/lib/bridge'
@@ -601,6 +601,8 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
                       <div className="text-[2.57em] leading-tight" data-testid="message-emoticon">
                         {m.body.trim()}
                       </div>
+                    ) : (m.kind === 'image' || m.kind === 'file') && m.fileExpired ? (
+                      <ExpiredFileChip name={m.fileExpired.name} size={m.fileExpired.size} at={m.fileExpired.at} image={m.kind === 'image'} className={compact ? 'w-60' : 'w-80'} />
                     ) : m.kind === 'image' && m.attachments[0] ? (
                       <AuthImage path={`/api/attachments/${m.attachments[0].id}`} alt={m.body} className="max-h-60 cursor-zoom-in rounded-lg border border-border" onClick={() => setViewer(m.attachments[0].id)} />
                     ) : m.kind === 'file' && m.attachments[0] ? (

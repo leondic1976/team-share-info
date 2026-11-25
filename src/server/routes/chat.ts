@@ -133,6 +133,17 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
         .all<{ member_id: string; last_read_seq: number }>('SELECT member_id, last_read_seq FROM conversation_members WHERE conversation_id = ?', [c.id])
         .map((r) => [r.member_id, r.last_read_seq])
     )
+    const filesOf = (messageId: string): Pick<MessageDto, 'attachments' | 'fileExpired'> => {
+      const all = db.all<{ id: string; name: string; size: number; expired_at: number | null }>(
+        `SELECT id, name, size, expired_at FROM attachments WHERE owner_type = 'message' AND owner_id = ?`,
+        [messageId]
+      )
+      const gone = all.find((a) => a.expired_at)
+      return {
+        attachments: all.filter((a) => !a.expired_at).map((a) => ({ id: a.id, name: a.name, size: a.size })),
+        fileExpired: gone ? { name: gone.name, size: gone.size, at: gone.expired_at! } : null
+      }
+    }
     return rows.map((m): MessageDto => {
       // a deleted message keeps its place: no text, no file (an older program shows the text below)
       if (m.deleted_at) {
@@ -146,7 +157,7 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
         senderName: m.sender_name,
         kind: m.kind,
         body: m.body,
-        attachments: db.all<{ id: string; name: string; size: number }>(`SELECT id, name, size FROM attachments WHERE owner_type = 'message' AND owner_id = ?`, [m.id]),
+        ...filesOf(m.id),
         createdAt: m.created_at,
         unreadBy: m.kind === 'system' ? 0 : ids.filter((id) => id !== m.sender_id && (reads.get(id) ?? 0) < m.seq).length,
         editedAt: m.edited_at ?? null,

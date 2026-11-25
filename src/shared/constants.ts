@@ -54,6 +54,17 @@ export const LIMITS = {
   awayAfterMs: 5 * 60 * 1000
 } as const
 
+/**
+ * Files sent in the messenger are deleted from the server PC after this many days (지시 109);
+ * the messages stay. An admin may keep them longer (or for good: null) but never shorter.
+ */
+export const MESSAGE_FILE_RETENTION = {
+  minDays: 90,
+  defaultDays: 90,
+  maxDays: 3650,
+  choices: [90, 180, 365, 730, 1095]
+} as const
+
 export const ERROR_CODES = {
   BAD_REQUEST: 'BAD_REQUEST',
   UNAUTHORIZED: 'UNAUTHORIZED',
@@ -72,6 +83,8 @@ export const ERROR_CODES = {
   EXTENSION_BLOCKED: 'EXTENSION_BLOCKED',
   PC_BLOCKED: 'PC_BLOCKED',
   LOCKED: 'LOCKED',
+  /** a messenger file deleted from the server PC after its retention period (410) */
+  FILE_EXPIRED: 'FILE_EXPIRED',
   INTERNAL: 'INTERNAL'
 } as const
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]
