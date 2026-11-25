@@ -24,7 +24,14 @@ export interface Prefs {
   msgSound: boolean
   /** new message: a card near the tray instead of a Windows notification (지시 83) */
   msgPreview: boolean
+  /** messenger: size of the message text, px; 0 = follows the app's 글자 크기 (지시 108) */
+  chatFontSize: number
 }
+
+/** range of the messenger's own text size (0 stays 0: the default) */
+export const CHAT_FONT_MIN = 11
+export const CHAT_FONT_MAX = 22
+const clampChatFont = (px: number): number => (px ? Math.min(CHAT_FONT_MAX, Math.max(CHAT_FONT_MIN, Math.round(px))) : 0)
 
 const DEFAULT_PREFS: Prefs = {
   theme: 'system',
@@ -41,7 +48,8 @@ const DEFAULT_PREFS: Prefs = {
   wallpaperStrength: 60,
   wallpaperBlur: 0,
   msgSound: true,
-  msgPreview: true
+  msgPreview: true,
+  chatFontSize: 0
 }
 const KEY = 'prefs'
 
@@ -66,6 +74,7 @@ export const usePrefs = create<PrefsState>((set, get) => ({
   load: async () => {
     const saved = (await localKv.get<Partial<Prefs>>(KEY)) ?? {}
     const prefs = { ...DEFAULT_PREFS, ...saved }
+    prefs.chatFontSize = clampChatFont(Number(prefs.chatFontSize) || 0)
     applyTheme(prefs.theme)
     applyFont(prefs.fontSize)
     void invoke('window:setTheme', { theme: prefs.theme })
@@ -88,7 +97,8 @@ export const usePrefs = create<PrefsState>((set, get) => ({
       wallpaperStrength: Math.min(100, Math.max(0, patch.wallpaperStrength ?? cur.wallpaperStrength)),
       wallpaperBlur: Math.min(20, Math.max(0, patch.wallpaperBlur ?? cur.wallpaperBlur)),
       msgSound: patch.msgSound ?? cur.msgSound,
-      msgPreview: patch.msgPreview ?? cur.msgPreview
+      msgPreview: patch.msgPreview ?? cur.msgPreview,
+      chatFontSize: clampChatFont(patch.chatFontSize ?? cur.chatFontSize)
     }
     if (patch.theme) {
       applyTheme(next.theme)
