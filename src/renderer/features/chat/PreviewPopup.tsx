@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { format } from 'date-fns'
-import { MessageSquare, X } from 'lucide-react'
+import { Bell, CalendarDays, Mail, MessageSquare, X } from 'lucide-react'
 import type { PreviewItem } from '@shared/ipc'
 import { invoke, onMain } from '@renderer/lib/bridge'
 
 /**
- * The cards near the tray for new messages (#/popup/preview, src/main/preview.ts). Clicking a
- * card opens the conversation; X closes it. The window is transparent: only the cards show.
+ * The cards near the tray for the alerts of the program (#/popup/preview, src/main/preview.ts):
+ * messages, notices, new events, reminders. Clicking a card opens its screen; X closes it. The window is transparent: only the cards show.
  */
 export function PreviewPopup(): React.JSX.Element {
   const [items, setItems] = useState<PreviewItem[]>([])
@@ -33,11 +33,14 @@ export function PreviewPopup(): React.JSX.Element {
           className="group relative flex h-[76px] shrink-0 cursor-pointer gap-2.5 rounded-xl border border-border bg-card px-3 py-2.5 text-card-foreground shadow-lg hover:border-primary/60"
           onClick={() => void invoke('preview:open', { key: it.key })}
           onKeyDown={(e) => e.key === 'Enter' && void invoke('preview:open', { key: it.key })}
-          title="눌러서 대화 열기"
+          title="눌러서 열기"
           data-testid="preview-card"
         >
           <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <MessageSquare className="size-4" aria-hidden />
+            {(() => {
+              const Icon = it.key.startsWith('event:') || it.route === '/calendar' ? CalendarDays : it.key === 'notes' ? Mail : it.route?.startsWith('/chat') ? MessageSquare : Bell
+              return <Icon className="size-4" aria-hidden />
+            })()}
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 pr-5">

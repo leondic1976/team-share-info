@@ -89,7 +89,7 @@ export function showPreview(p: { key: string; title: string; body: string; route
 /** What the cards show; while locked, only that something came. */
 export function previewItems(): PreviewItem[] {
   if (!lockState().locked) return items
-  return items.map((x) => ({ ...x, title: 'TeamHub', body: '새 메시지가 있습니다. 잠금을 풀면 볼 수 있습니다.' }))
+  return items.map((x) => ({ ...x, title: 'TeamHub', body: '새 알림이 있습니다. 잠금을 풀면 볼 수 있습니다.' }))
 }
 
 /** Close one card (or all, key null). */

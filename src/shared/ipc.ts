@@ -362,8 +362,7 @@ export interface IpcMap {
   'notify:openUrgent': { req: void; res: string[] }
   /** close the urgent windows whose notice is not in `ids`; returns the ids closed */
   'notify:syncUrgent': { req: { ids: string[] }; res: string[] }
-  'notify:toast': { req: { title: string; body: string; route?: string }; res: void }
-  'notify:preview': { req: { key: string; title: string; body: string; route?: string; sound: boolean }; res: boolean }
+  'notify:toast': { req: { title: string; body: string; route?: string; key?: string }; res: void }
   'preview:list': { req: void; res: PreviewItem[] }
   'preview:open': { req: { key: string }; res: void }
   'preview:dismiss': { req: { key: string | null }; res: void }
@@ -685,7 +684,6 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'notify:openUrgent',
   'notify:syncUrgent',
   'notify:toast',
-  'notify:preview',
   'preview:list',
   'preview:open',
   'preview:dismiss',
@@ -899,6 +897,8 @@ export interface MainEventMap {
   'popup:closeRequest': { id: string }
   /** the cards of the message preview changed; sound: a new message came */
   'preview:changed': { sound: boolean }
+  /** play the alert sound ("팀뿌요~") in the TeamHub window */
+  'app:sound': { kind: 'alert' }
   'transfer:update': TransferItem[]
   'transfer:edited': { fileId: string; folderId: string; name: string; path: string }
   'memos:changed': { id: string | null }
@@ -915,7 +915,7 @@ export interface MainEventMap {
   'lock:changed': LockState
 }
 export type MainEvent = keyof MainEventMap
-export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'popup:closeRequest', 'preview:changed', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed', 'storage:progress', 'lock:changed']
+export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'popup:closeRequest', 'preview:changed', 'app:sound', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed', 'storage:progress', 'lock:changed']
 
 export interface TeamhubBridge {
   /** Absolute path of a dropped/selected File (Electron webUtils). */

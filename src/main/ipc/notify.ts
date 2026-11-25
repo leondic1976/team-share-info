@@ -3,8 +3,7 @@ import { z } from 'zod'
 import { handle } from './registry'
 import { closeUrgentPopup, getPopupPayload, openUrgentIds, showToast, showUrgentPopup, syncUrgentPopups } from '../notifications'
 import { getMainWindow, showMainWindow } from '../windows/main-window'
-import { dismissPreview, openPreview, previewItems, previewRead, showPreview } from '../preview'
-import { toastAllowed } from '../notifications'
+import { dismissPreview, openPreview, previewItems, previewRead } from '../preview'
 
 const urgentSchema = z.object({
   id: z.string(),
@@ -30,14 +29,8 @@ export function registerNotifyIpc(): void {
     if (closed.length) getMainWindow()?.webContents.send('popup:closed', { id: closed[0]! })
     return closed
   })
-  handle('notify:toast', z.object({ title: z.string().max(200), body: z.string().max(500), route: z.string().max(200).optional() }), (o) => showToast(o))
+  handle('notify:toast', z.object({ title: z.string().max(200), body: z.string().max(500), route: z.string().max(200).optional(), key: z.string().max(64).optional() }), (o) => showToast(o))
   handle('popup:get', z.object({ id: z.string() }), ({ id }) => getPopupPayload(id))
-  // message preview near the tray (지시 83); focus mode holds it back like the other alerts
-  handle('notify:preview', z.object({ key: z.string().min(1).max(64), title: z.string().max(200), body: z.string().max(500), route: z.string().max(200).optional(), sound: z.boolean() }), (p) => {
-    if (!toastAllowed({ title: p.title, body: p.body, route: p.route })) return false
-    showPreview(p)
-    return true
-  })
   handle('preview:list', null, () => previewItems())
   handle('preview:open', z.object({ key: z.string().max(64) }), ({ key }) => openPreview(key))
   handle('preview:dismiss', z.object({ key: z.string().max(64).nullable() }), ({ key }) => dismissPreview(key))

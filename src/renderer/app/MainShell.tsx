@@ -38,6 +38,7 @@ import { CaptureDialog } from '@renderer/features/memos/CaptureDialog'
 import { useMorningSummary, useTeamAlarms } from '@renderer/features/alarms/useTeamAlarms'
 import { usePluginInvites } from '@renderer/features/plugins/usePluginInvites'
 import { MeetingsPage, useLiveMeetings, useMeetingAlerts } from '@renderer/features/meetings/MeetingsPage'
+import { useEventAlerts } from '@renderer/features/calendar/useEventAlerts'
 
 // Pages load when first opened: a smaller start-up bundle and less idle memory (11장).
 const SettingsPage = lazy(() => import('@renderer/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
@@ -76,6 +77,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   useChatAlerts()
   useDocAlerts()
   useEventReminders()
+  useEventAlerts()
   useTeamAlarms()
   useMorningSummary()
   useMeetingAlerts()

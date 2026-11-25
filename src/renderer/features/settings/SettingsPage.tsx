@@ -135,20 +135,20 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
                 </label>
               </div>
             </Row>
-            <Row label="새 메시지 소리" hint="메신저에 대화나 쪽지가 오면 &quot;팀뿌요~&quot; 하고 알려 줍니다(Windows의 한국어 음성).">
+            <Row label="알림 소리" hint="메시지·쪽지·공지·새 일정·일정 알림·알람 등 알림이 오면 &quot;팀뿌요~&quot; 하고 알려 줍니다(Windows의 한국어 음성). 긴급공지는 따로 경보음이 납니다.">
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="outline" onClick={() => playMessageSound()}>
                   <Volume2 /> 들어 보기
                 </Button>
                 <label className="flex cursor-pointer items-center gap-2 text-sm">
-                  <Switch checked={prefs.msgSound} label="새 메시지 소리" onCheckedChange={(v) => prefs.update({ msgSound: v })} />
+                  <Switch checked={prefs.msgSound} label="알림 소리" onCheckedChange={(v) => prefs.update({ msgSound: v })} />
                   사용
                 </label>
               </div>
             </Row>
-            <Row label="새 메시지 미리보기" hint="TeamHub 창이 숨어 있어도 화면 오른쪽 아래(트레이 아이콘 위)에 보낸 사람과 내용을 띄웁니다. 누르면 대화가 열리고, X로 닫을 때까지 남아 있습니다. 끄면 Windows 알림으로 알려 줍니다.">
+            <Row label="알림 미리보기" hint="TeamHub 창이 숨어 있어도 화면 오른쪽 아래(트레이 아이콘 위)에 알림 내용을 띄웁니다. 누르면 그 화면이 열리고, X로 닫을 때까지 남아 있습니다. 끄면 Windows 알림으로 알려 줍니다.">
               <label className="flex cursor-pointer items-center gap-2 text-sm">
-                <Switch checked={prefs.msgPreview} label="새 메시지 미리보기" onCheckedChange={(v) => prefs.update({ msgPreview: v })} />
+                <Switch checked={prefs.msgPreview} label="알림 미리보기" onCheckedChange={(v) => prefs.update({ msgPreview: v })} />
                 사용
               </label>
             </Row>

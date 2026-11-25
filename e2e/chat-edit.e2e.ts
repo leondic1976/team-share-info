@@ -169,6 +169,36 @@ describe('메신저: edit and delete (shown to everybody), pasted images wait fo
     await expect.poll(() => b.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((x) => x.webContents.getURL().includes('/popup/preview') && x.isVisible())), { timeout: 10000 }).toBe(false)
   }, 90000)
 
+  it('other alerts come the same way: a new shared event and an important notice give a card and the sound', async () => {
+    // sounds within 1.5 s of each other are played once: start clear of the last message's
+    await new Promise((r) => setTimeout(r, 1700))
+    const before = await b.page.evaluate(() => (window as unknown as { __thSounds?: number }).__thSounds ?? 0)
+    const post = (url: string, body: unknown) =>
+      a.page.evaluate(
+        async ({ url, body }) => {
+          const c = await window.teamhub.invoke('conn:get', undefined as never)
+          const r = await fetch(`${c.serverUrl}${url}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.deviceId}.${c.deviceKey}`, 'X-Win-User': encodeURIComponent(c.winUser), 'X-Protocol': '1' }, body: JSON.stringify(body) })
+          return r.status
+        },
+        { url, body }
+      )
+    const TEAM = { type: 'team', groupIds: [], memberIds: [] }
+    const start = Date.now() + 2 * 86400_000
+    expect(await post('/api/events', { title: '새일정알림E2E', startAt: start, endAt: start + 3600_000, scope: TEAM })).toBe(200)
+    const cards = () => b.app.windows().find((w) => w.url().includes('/popup/preview') && !w.isClosed())?.getByTestId('message-preview').textContent() ?? Promise.resolve('')
+    await expect.poll(cards, { timeout: 15000 }).toContain('새일정알림E2E')
+    expect(await cards()).toContain('새 일정 · 서버관리자')
+    const sounds = () => b.page.evaluate(() => (window as unknown as { __thSounds?: number }).__thSounds ?? 0)
+    await expect.poll(sounds, { timeout: 5000 }).toBeGreaterThanOrEqual(before + 1)
+    // sounds within 1.5 s of each other are played once
+    await new Promise((r) => setTimeout(r, 1700))
+    expect(await post('/api/notices', { level: 'important', title: '중요공지알림E2E', bodyHtml: '<p>x</p>', scope: TEAM, requireAck: false, replyOptions: [], pinned: false, publishAt: null, expiresAt: null, renotifyMinutes: null, attachmentIds: [] })).toBe(200)
+    await expect.poll(cards, { timeout: 15000 }).toContain('중요공지알림E2E')
+    await expect.poll(sounds, { timeout: 5000 }).toBeGreaterThanOrEqual(before + 2)
+    // the one who registered it gets nothing for their own event
+    expect(await a.app.evaluate(() => ((globalThis as unknown as { __teamhubPreviews?: { title: string }[] }).__teamhubPreviews ?? []).filter((x) => x.title.startsWith('새 일정')).length)).toBe(0)
+  }, 60000)
+
   it('a Windows notification stays until it is clicked (no time-out)', async () => {
     await b.page.evaluate(() => window.teamhub.invoke('notify:toast', { title: '알림E2E', body: '본문', route: '/notices' }))
     const got = await b.app.evaluate(() => ((globalThis as unknown as { __teamhubToasts?: { title: string; timeoutType?: string }[] }).__teamhubToasts ?? []).filter((t) => t.title === '알림E2E'))

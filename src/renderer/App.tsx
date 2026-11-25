@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { usePrefs } from './app/prefs-store'
 import { useSession } from './app/session-store'
 import { useConn } from './app/conn-store'
-import { invoke, localKv } from './lib/bridge'
+import { invoke, localKv, onMain } from './lib/bridge'
 import { queryClient } from './lib/query-client'
 import { startQueryPersist } from './lib/query-persist'
 import type { Hello, MeDto } from '@shared/schemas/auth'
@@ -22,6 +22,7 @@ import { FeedbackWindow } from './features/feedback/FeedbackWindow'
 import { LockedSmall, LockGate } from './features/lock/LockGate'
 import { LogoutWarning } from './features/seat/LogoutWarning'
 import { PreviewPopup } from '@renderer/features/chat/PreviewPopup'
+import { playMessageSound } from '@renderer/lib/message-sound'
 
 type Screen = 'loading' | 'first-run' | 'wizard' | 'join' | 'pending' | 'main' | 'import'
 
@@ -55,6 +56,12 @@ export function App(): React.JSX.Element {
     void invoke('app:getInfo').then(setApp)
     if (!window.location.hash.startsWith('#/popup/')) void refresh()
   }, [loadPrefs, setApp, refresh])
+
+  // the alert sound ("팀뿌요~") of every alert is played by the TeamHub window (also hidden or locked)
+  useEffect(() => {
+    if (window.location.hash.startsWith('#/popup/')) return
+    return onMain('app:sound', () => playMessageSound())
+  }, [])
 
   // Popup windows reuse this bundle with their own hash route.
   const hash = window.location.hash

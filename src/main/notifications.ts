@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import type { UrgentPayload } from '../shared/schemas/notices'
 import { getMainWindow, isQuitting, loadRenderer, secureWebContents, showMainWindow } from './windows/main-window'
 import { resourcePath } from './paths'
+import { localDb } from './localdb'
+import { showPreview } from './preview'
 
 /**
  * Urgent popup windows (6.3) and Windows toast notifications.
@@ -113,6 +115,8 @@ export interface ToastOptions {
   body: string
   route?: string
   silent?: boolean
+  /** cards with the same key are merged (a conversation); default: the route, else the title */
+  key?: string
 }
 
 /** Focus mode (6.12 ③) holds back normal toasts; the gate returns false to hold. */
@@ -121,19 +125,40 @@ export function setToastGate(fn: (o: ToastOptions) => boolean): void {
   toastGate = fn
 }
 
-/** Whether an alert may show now (focus mode holds normal ones back). */
-export function toastAllowed(o: ToastOptions): boolean {
-  return toastGate(o)
+/** 설정 → 알림: the card near the tray and the "팀뿌요~" sound (both on unless turned off). */
+function alertPrefs(): { preview: boolean; sound: boolean } {
+  try {
+    const p = localDb().kv.get<{ msgPreview?: boolean; msgSound?: boolean }>('prefs') ?? {}
+    return { preview: p.msgPreview !== false, sound: p.msgSound !== false }
+  } catch {
+    return { preview: true, sound: true }
+  }
 }
 
+/** The "팀뿌요~" sound, played by the TeamHub window (it keeps running while hidden to the tray). */
+function playAlertSound(): void {
+  getMainWindow()?.webContents.send('app:sound', { kind: 'alert' })
+}
+
+/**
+ * Every alert of the program (공지, 일정 알림, 알람, 메시지, 기록, 사용 신청 …, 지시 83·85): a card
+ * at the bottom right above the tray and the "팀뿌요~" sound. With the card turned off in 설정, a
+ * Windows notification instead (it stays until clicked, 지시 63).
+ */
 export function showToast(opts: ToastOptions, force = false): void {
   if (!force && !toastGate(opts)) return
+  const prefs = alertPrefs()
   // timeoutType 'never': the notification stays on the screen until it is clicked or closed,
   // instead of going away after a few seconds (사용자 요청 2026-11-25, 지시 63)
-  const options: Electron.NotificationConstructorOptions = { title: opts.title, body: opts.body, icon: resourcePath('icon.png'), silent: opts.silent ?? false, timeoutType: 'never' }
+  const options: Electron.NotificationConstructorOptions = { title: opts.title, body: opts.body, icon: resourcePath('icon.png'), silent: prefs.sound || (opts.silent ?? false), timeoutType: 'never' }
   if (process.env.TEAMHUB_E2E) {
     const g = globalThis as unknown as { __teamhubToasts?: (ToastOptions & { timeoutType?: string })[] }
     ;(g.__teamhubToasts ??= []).push({ ...opts, timeoutType: options.timeoutType })
+  }
+  if (prefs.sound && !opts.silent) playAlertSound()
+  if (prefs.preview) {
+    showPreview({ key: (opts.key ?? opts.route ?? opts.title).slice(0, 64), title: opts.title, body: opts.body, route: opts.route, sound: prefs.sound && !opts.silent })
+    return
   }
   if (!Notification.isSupported()) return
   const n = new Notification(options)
