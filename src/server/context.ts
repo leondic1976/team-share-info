@@ -16,6 +16,8 @@ export interface ServerContext {
   onSettingsChanged?: () => void
   /** Ask the host (Electron main) to restart the server process, e.g. after staging a restore. */
   requestRestart?: (reason: string) => void
+  /** A line for the server log (the host writes it to the app log file). */
+  log?: (level: 'info' | 'warn', message: string) => void
 }
 
 export function recordError(ctx: ServerContext, message: string): void {

@@ -35,6 +35,7 @@ import { registerLedgerRoutes } from './routes/ledgers'
 import { registerSearchRoutes } from './routes/search'
 import { pruneIdempotency, registerIdempotency } from './idempotency'
 import { runBackupJob } from './backup'
+import { runMessageFileRetention } from './message-files'
 import { registerCommand } from './command-host'
 import type { CommandServer } from '../../command/server/routes'
 
@@ -46,6 +47,8 @@ export interface BuildOptions {
   logger?: boolean
   /** Run periodic jobs (scheduled publish, re-notify). Tests call the job functions directly. */
   jobs?: boolean
+  /** Server log lines (the utilityProcess hands them to the host's log file). */
+  log?: ServerContext['log']
 }
 
 export interface BuiltApp {
@@ -66,7 +69,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   // eslint-disable-next-line prefer-const
   let ctx: ServerContext
   const hub = new Hub(() => ctx)
-  ctx = { db: opts.db, dataDir: opts.dataDir, version: opts.version, startedAt: Date.now(), hub, recentErrors: [], feedback: opts.feedback }
+  ctx = { db: opts.db, dataDir: opts.dataDir, version: opts.version, startedAt: Date.now(), hub, recentErrors: [], feedback: opts.feedback, log: opts.log }
 
   // Header-based auth (no cookies), so allowing any origin is safe (13.3).
   await app.register(cors, {
@@ -130,6 +133,13 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   hub.onMemberOffline = (memberId) => leaveAllMeetings(ctx, memberId)
 
   const timers: NodeJS.Timeout[] = []
+  const messageFileJob = (): void => {
+    try {
+      runMessageFileRetention(ctx)
+    } catch (e) {
+      recordError(ctx, `message file retention: ${(e as Error).message}`)
+    }
+  }
   if (opts.jobs !== false) {
     timers.push(
       setInterval(() => {
@@ -155,8 +165,12 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
         } catch (e) {
           recordError(ctx, `file jobs: ${(e as Error).message}`)
         }
+        messageFileJob()
       }, 3600_000)
     )
+    // messenger files past their retention period: soon after a start, then with the hourly jobs
+    // (E2E: a few seconds, so a test can age a file, restart the server and see it expire)
+    timers.push(setTimeout(messageFileJob, process.env.TEAMHUB_E2E ? 3000 : 60_000))
     // 긴급구조지휘대: messages of running drills go out on time (every 5 seconds)
     timers.push(
       setInterval(() => {

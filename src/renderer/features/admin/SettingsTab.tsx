@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Save } from 'lucide-react'
 import type { AllSettings } from '@shared/schemas/settings'
-import type { FeatureKey } from '@shared/constants'
+import { MESSAGE_FILE_RETENTION, type FeatureKey } from '@shared/constants'
 import { api, errorMessage, setAdminPin } from '@renderer/lib/api'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Textarea } from '@renderer/components/ui/input'
@@ -27,6 +27,25 @@ const GB = 1024 ** 3
 /** Bytes as a GB figure for an input: 5, 0.5, 1.25 (no trailing zeros). */
 const gbText = (bytes: number): string => String(Number((bytes / GB).toFixed(3)))
 
+/** 90일, 180일, 1년, 2년, 3년 */
+const daysLabel = (d: number): string => (d % 365 === 0 ? `${d / 365}년` : `${d}일`)
+
+interface MessageFilesStatus {
+  files: number
+  bytes: number
+  cleanup: { checkedAt: number; last: { at: number; files: number; bytes: number; days: number } | null } | null
+}
+
+/** What the messenger files take now and what the last cleanup removed. */
+function messageFilesText(m: MessageFilesStatus | undefined): string {
+  if (!m) return ''
+  const now = `지금 대화방 파일 ${m.files.toLocaleString()}개 · ${formatSize(m.bytes)}`
+  const last = m.cleanup?.last
+  if (!last) return `${now} · 아직 지운 파일 없음`
+  const d = new Date(last.at)
+  return `${now} · 마지막 정리 ${d.getMonth() + 1}월 ${d.getDate()}일(파일 ${last.files.toLocaleString()}개, ${formatSize(last.bytes)} 확보)`
+}
+
 export function SettingsTab(): React.JSX.Element {
   const qc = useQueryClient()
   const owner = useIsOwner()
@@ -40,7 +59,7 @@ export function SettingsTab(): React.JSX.Element {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const status = useQuery({
     queryKey: ['admin', 'status'],
-    queryFn: () => api.get<{ storageUsed: number; disk: { free: number; total: number } | null }>('/api/admin/status')
+    queryFn: () => api.get<{ storageUsed: number; disk: { free: number; total: number } | null; messageFiles?: MessageFilesStatus }>('/api/admin/status')
   })
 
   useEffect(() => {
@@ -183,6 +202,29 @@ export function SettingsTab(): React.JSX.Element {
               <Input aria-label="금지 확장자" value={blocked} onChange={(e) => setBlocked(e.target.value)} />
             </Field>
           </div>
+          <Field label="메시지 파일 보관 기간">
+            <select
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              aria-label="메시지 파일 보관 기간"
+              value={s.storage.messageFileRetentionDays === null ? 'forever' : String(s.storage.messageFileRetentionDays)}
+              onChange={(e) => upd('storage', { messageFileRetentionDays: e.target.value === 'forever' ? null : Number(e.target.value) })}
+            >
+              {[...new Set<number>([...MESSAGE_FILE_RETENTION.choices, ...(s.storage.messageFileRetentionDays === null ? [] : [s.storage.messageFileRetentionDays])])]
+                .sort((a, b) => a - b)
+                .map((d) => (
+                  <option key={d} value={String(d)}>
+                    {daysLabel(d)}
+                    {d === MESSAGE_FILE_RETENTION.defaultDays ? ' (기본)' : ''}
+                  </option>
+                ))}
+              <option value="forever">무기한 (지우지 않음)</option>
+            </select>
+          </Field>
+          <p className="col-span-2 -mt-1 text-xs text-muted-foreground" data-testid="message-file-retention-hint">
+            메신저 대화방에서 주고받은 파일과 사진은 보낸 날부터 이 기간이 지나면 서버 PC에서 지웁니다(최소 {MESSAGE_FILE_RETENTION.minDays}일). 메시지 내용은 남고, 대화방에는
+            &quot;보관 기간이 지나 서버에서 삭제된 파일입니다.&quot;로 표시됩니다. 자료실·공지·게시판의 첨부 파일과 백업은 지우지 않습니다.
+            {status.data?.messageFiles && <span className="mt-0.5 block">{messageFilesText(status.data.messageFiles)}</span>}
+          </p>
         </CardContent>
       </Card>
 

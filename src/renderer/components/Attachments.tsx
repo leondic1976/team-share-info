@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Paperclip, X, Loader2, Download, ExternalLink, FileText } from 'lucide-react'
+import { Paperclip, X, Loader2, Download, ExternalLink, FileText, FileX, ImageOff } from 'lucide-react'
 import type { AttachSaveResult } from '@shared/ipc'
 import { invoke } from '@renderer/lib/bridge'
 import { cn } from '@renderer/lib/utils'
@@ -114,6 +114,27 @@ export function FileChip({ id, name, size, className }: { id: string; name: stri
         </div>
       )}
       {err && <p className="border-t border-border px-3 py-1 text-xs text-urgent">{err}</p>}
+    </div>
+  )
+}
+
+/** A messenger file deleted from the server PC after its retention period (지시 109): name only. */
+export function ExpiredFileChip({ name, size, image, at, className }: { name: string; size: number; image?: boolean; at?: number; className?: string }): React.JSX.Element {
+  const Icon = image ? ImageOff : FileX
+  return (
+    <div
+      className={cn('rounded-lg border border-dashed border-border bg-muted/40 text-left text-sm', className)}
+      data-testid="file-expired"
+      title={at ? `${new Date(at).toLocaleDateString('ko-KR')}에 서버에서 삭제됨` : undefined}
+    >
+      <div className="flex items-center gap-2 px-3 py-2">
+        <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <span className="min-w-0 flex-1 truncate text-muted-foreground" title={name}>
+          {name}
+        </span>
+        {size > 0 && <span className="shrink-0 text-xs text-muted-foreground">{formatSize(size)}</span>}
+      </div>
+      <p className="border-t border-border px-3 py-1 text-xs text-muted-foreground">보관 기간이 지나 서버에서 삭제된 파일입니다.</p>
     </div>
   )
 }

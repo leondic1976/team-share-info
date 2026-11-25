@@ -929,5 +929,35 @@ CREATE TABLE plugin_installs (
 );
 CREATE INDEX idx_plugin_installs_plugin ON plugin_installs(plugin_id);
 `
+  },
+  {
+    id: 25,
+    name: 'attachment-expiry',
+    sql: `
+-- 메신저 파일 보관 기간 (지시 109): a file sent in a conversation is deleted from the server PC
+-- after the period set in 관리 > 설정 > 저장 공간 (at least 90 days). The message and the
+-- attachment row stay (name, size) with expired_at set and no blob, so the conversation shows
+-- "보관 기간이 지나 서버에서 삭제된 파일입니다." instead of a broken file. blob_id becomes
+-- nullable, which SQLite allows only by rebuilding the table (nothing references attachments).
+CREATE TABLE attachments_new (
+  id TEXT PRIMARY KEY,
+  owner_type TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  blob_id TEXT REFERENCES blobs(id),
+  name TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_by TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  expired_at INTEGER
+);
+INSERT INTO attachments_new (id, owner_type, owner_id, blob_id, name, size, created_by, created_at, updated_at)
+  SELECT id, owner_type, owner_id, blob_id, name, size, created_by, created_at, updated_at FROM attachments;
+DROP TABLE attachments;
+ALTER TABLE attachments_new RENAME TO attachments;
+CREATE INDEX idx_attach_owner ON attachments(owner_type, owner_id);
+-- the retention job looks for live message files by age
+CREATE INDEX idx_attach_message_live ON attachments(created_at) WHERE owner_type = 'message' AND expired_at IS NULL;
+`
   }
 ]

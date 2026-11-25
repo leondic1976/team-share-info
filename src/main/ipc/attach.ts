@@ -50,7 +50,14 @@ async function fetchTo(id: string, dest: string): Promise<void> {
   const c = readCredential()
   if (!c) throw new Error('서버에 연결되어 있지 않습니다.')
   const res = await net.fetch(`${c.serverUrl}/api/attachments/${encodeURIComponent(id)}`, { headers: headers() })
-  if (!res.ok || !res.body) throw new Error(res.status === 404 ? '파일을 찾을 수 없습니다(지워졌거나 볼 수 없는 파일).' : `내려받지 못했습니다 (${res.status}).`)
+  if (!res.ok || !res.body) {
+    // 410: a messenger file deleted from the server PC after its retention period; the server says so
+    if (res.status === 410) {
+      const msg = await (res.json() as Promise<{ error?: { message?: string } }>).then((j) => j.error?.message).catch(() => undefined)
+      throw new Error(msg ?? '보관 기간이 지나 서버에서 삭제된 파일입니다.')
+    }
+    throw new Error(res.status === 404 ? '파일을 찾을 수 없습니다(지워졌거나 볼 수 없는 파일).' : `내려받지 못했습니다 (${res.status}).`)
+  }
   mkdirSync(dirname(dest), { recursive: true })
   const part = `${dest}.part`
   try {

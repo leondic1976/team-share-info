@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { DEFAULT_NOTICE_TEXT, DEFAULT_PORT, FEATURES, LIMITS, type FeatureKey } from '../constants'
+import { DEFAULT_NOTICE_TEXT, DEFAULT_PORT, FEATURES, LIMITS, MESSAGE_FILE_RETENTION, type FeatureKey } from '../constants'
 
 export const orgSettingsSchema = z.object({
   orgName: z.string().trim().min(1, '기관/회사명을 입력하세요').max(60),
@@ -26,7 +26,15 @@ export type NetworkSettings = z.infer<typeof networkSettingsSchema>
 export const storageSettingsSchema = z.object({
   quotaBytes: z.number().int().positive().default(LIMITS.defaultQuotaBytes),
   maxFileBytes: z.number().int().positive().default(LIMITS.defaultMaxFileBytes),
-  blockedExtensions: z.array(z.string().trim().toLowerCase()).default(['exe', 'bat', 'cmd', 'com', 'scr', 'ps1', 'vbs', 'js', 'msi'])
+  blockedExtensions: z.array(z.string().trim().toLowerCase()).default(['exe', 'bat', 'cmd', 'com', 'scr', 'ps1', 'vbs', 'js', 'msi']),
+  /** days a file sent in the messenger stays on the server PC (null: kept for good); at least 90 */
+  messageFileRetentionDays: z
+    .number()
+    .int()
+    .min(MESSAGE_FILE_RETENTION.minDays, `메시지 파일 보관 기간은 ${MESSAGE_FILE_RETENTION.minDays}일보다 짧게 할 수 없습니다.`)
+    .max(MESSAGE_FILE_RETENTION.maxDays)
+    .nullable()
+    .default(MESSAGE_FILE_RETENTION.defaultDays)
 })
 export type StorageSettings = z.infer<typeof storageSettingsSchema>
 

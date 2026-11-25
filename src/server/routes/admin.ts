@@ -15,6 +15,7 @@ import { isOwnerRequest, makeRequireOwner, ownerOnly } from '../auth'
 import { newId } from '../../node/sqlite'
 import { logActivity } from '../activity'
 import { usedBytes } from '../storage/blobs'
+import { messageFileCleanupState, messageFileUsage } from '../message-files'
 import type { FastifyRequest } from 'fastify'
 
 interface JoinRow {
@@ -379,6 +380,8 @@ export function registerAdminRoutes(
       pendingJoins: ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM join_requests WHERE state = 'pending'`)?.n ?? 0,
       disk,
       storageUsed: usedBytes(ctx),
+      // 메신저 파일 보관 기간: what conversation files take now and what the last cleanup did
+      messageFiles: { ...messageFileUsage(ctx), cleanup: messageFileCleanupState(ctx) },
       recentErrors: ctx.recentErrors.slice(0, 20)
     })
   })

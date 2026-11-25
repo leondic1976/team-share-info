@@ -59,6 +59,11 @@ export interface MessageDto {
   editedAt?: number | null
   /** deleted by the sender: shown as "삭제된 메시지입니다." (body and attachments are gone) */
   deleted?: boolean
+  /**
+   * The file of this file/image message was deleted from the server PC after its retention
+   * period (`attachments` is then empty; an older program shows the file name as text).
+   */
+  fileExpired?: { name: string; size: number; at: number } | null
 }
 
 /** A sender may change the text of a message for this long after sending it (like KakaoTalk). */
