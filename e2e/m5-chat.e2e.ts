@@ -92,7 +92,7 @@ describe('M5 messenger and notes', () => {
     await expect.poll(() => a.page.getByTestId('note-item').first().textContent(), { timeout: 10000 }).toContain('읽음 1/1')
   })
 
-  it('leave from the list: the 1:1 goes from my list after a confirmation and returns when the other writes', async () => {
+  it('leave (inside the conversation): the 1:1 goes from my list after a confirmation and returns when the other writes', async () => {
     await go(b.page, '/chat')
     await b.page.getByRole('button', { name: '대화', exact: true }).click()
     await b.page.getByTestId('conv-서버관리자').click()
@@ -103,14 +103,15 @@ describe('M5 messenger and notes', () => {
       asked = d.message()
       void d.dismiss()
     })
-    await b.page.getByTestId('conv-서버관리자').hover()
-    await b.page.getByTestId(`conv-leave-${convId}`).click()
+    // the rows of the list carry no 나가기 any more (지시 82); it is in the conversation's header
+    expect(await b.page.getByTestId(`conv-leave-${convId}`).count()).toBe(0)
+    await b.page.getByRole('button', { name: '대화방 나가기' }).click()
     expect(asked).toContain('내 목록에서 지울까요')
     expect(asked).toContain('다시 나타납니다')
     expect(await b.page.getByTestId('conv-서버관리자').count()).toBe(1)
     // saying yes removes it and closes the open conversation
     b.page.once('dialog', (d) => void d.accept())
-    await b.page.getByTestId(`conv-leave-${convId}`).click()
+    await b.page.getByRole('button', { name: '대화방 나가기' }).click()
     await expect.poll(() => b.page.getByTestId('conv-서버관리자').count(), { timeout: 10000 }).toBe(0)
     await expect.poll(() => b.page.evaluate(() => window.location.hash)).toBe('#/chat')
     // the other person writes again: it is back, with the earlier messages

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Monitor, Sun, Moon, MessageSquarePlus, ExternalLink } from 'lucide-react'
+import { Monitor, Sun, Moon, MessageSquarePlus, ExternalLink, Volume2 } from 'lucide-react'
 import { DOWNLOAD_SITE } from '@shared/constants'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
@@ -20,6 +20,7 @@ import { ProfileTab } from '@renderer/features/directory/DirectoryPage'
 import { useConn } from '@renderer/app/conn-store'
 import type { ReactNode } from 'react'
 import { TimeSelect } from '@renderer/components/DateTimeInput'
+import { playMessageSound } from '@renderer/lib/message-sound'
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }): React.JSX.Element {
   return (
@@ -133,6 +134,23 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
                   사용
                 </label>
               </div>
+            </Row>
+            <Row label="새 메시지 소리" hint="메신저에 대화나 쪽지가 오면 &quot;팀뿌요~&quot; 하고 알려 줍니다(Windows의 한국어 음성).">
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={() => playMessageSound()}>
+                  <Volume2 /> 들어 보기
+                </Button>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <Switch checked={prefs.msgSound} label="새 메시지 소리" onCheckedChange={(v) => prefs.update({ msgSound: v })} />
+                  사용
+                </label>
+              </div>
+            </Row>
+            <Row label="새 메시지 미리보기" hint="TeamHub 창이 숨어 있어도 화면 오른쪽 아래(트레이 아이콘 위)에 보낸 사람과 내용을 띄웁니다. 누르면 대화가 열리고, X로 닫을 때까지 남아 있습니다. 끄면 Windows 알림으로 알려 줍니다.">
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <Switch checked={prefs.msgPreview} label="새 메시지 미리보기" onCheckedChange={(v) => prefs.update({ msgPreview: v })} />
+                사용
+              </label>
             </Row>
           </CardContent>
         </Card>

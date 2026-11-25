@@ -21,6 +21,7 @@ import { InvitePopup } from './features/meetings/InvitePopup'
 import { FeedbackWindow } from './features/feedback/FeedbackWindow'
 import { LockedSmall, LockGate } from './features/lock/LockGate'
 import { LogoutWarning } from './features/seat/LogoutWarning'
+import { PreviewPopup } from '@renderer/features/chat/PreviewPopup'
 
 type Screen = 'loading' | 'first-run' | 'wizard' | 'join' | 'pending' | 'main' | 'import'
 
@@ -57,6 +58,8 @@ export function App(): React.JSX.Element {
 
   // Popup windows reuse this bundle with their own hash route.
   const hash = window.location.hash
+  // the cards of new messages near the tray (content is masked by the main process while locked)
+  if (hash.startsWith('#/popup/preview')) return loaded ? <PreviewPopup /> : <></>
   const popup = /^#\/popup\/urgent\/([\w-]+)/.exec(hash)
   if (popup) return loaded ? <UrgentPopup id={popup[1]} /> : <Loading />
   const alarm = /^#\/popup\/alarm\/([\w-]+)/.exec(hash)

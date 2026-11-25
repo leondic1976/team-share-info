@@ -121,6 +121,11 @@ export function setToastGate(fn: (o: ToastOptions) => boolean): void {
   toastGate = fn
 }
 
+/** Whether an alert may show now (focus mode holds normal ones back). */
+export function toastAllowed(o: ToastOptions): boolean {
+  return toastGate(o)
+}
+
 export function showToast(opts: ToastOptions, force = false): void {
   if (!force && !toastGate(opts)) return
   // timeoutType 'never': the notification stays on the screen until it is clicked or closed,

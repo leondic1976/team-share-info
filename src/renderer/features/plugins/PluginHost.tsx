@@ -13,6 +13,7 @@ import { usePrefs } from '@renderer/app/prefs-store'
 import { MENU_PLUGINS } from '@renderer/app/menu'
 import { Puzzle } from 'lucide-react'
 import { detectPii, PII_LABEL } from '@shared/pii'
+import { cachedRead } from '@renderer/lib/warm-cache'
 
 type Msg = { th: 1; id: string; method: string; params: Record<string, unknown> | null }
 
@@ -114,11 +115,15 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
         case 'time':
           // the server's clock: deadlines must not depend on the clock of each PC
           return api.get<{ now: number }>('/api/time')
-        case 'holidays':
+        case 'holidays': {
           // public holidays of TeamHub (관리 → 공휴일) between two dates
-          return api.get<{ date: string; name: string }[]>('/api/holidays', { from: str('from', 10), to: str('to', 10) })
+          const from = str('from', 10)
+          const to = str('to', 10)
+          return cachedRead(['plugin', 'holidays', from, to], () => api.get<{ date: string; name: string }[]>('/api/holidays', { from, to }))
+        }
         case 'members':
-          return (await api.get<MemberDto[]>('/api/members')).filter((x) => x.status === 'active').map((x) => ({ id: x.id, name: x.name, deptName: x.deptName, title: x.title, presence: x.presence }))
+          // the same kept list as the rest of the program: readable while the server PC is off
+          return (await cachedRead(['members'], () => api.get<MemberDto[]>('/api/members'))).filter((x) => x.status === 'active').map((x) => ({ id: x.id, name: x.name, deptName: x.deptName, title: x.title, presence: x.presence }))
         case 'storage.get':
           return invoke('local:kv.get', { key: `plugin:${id}:${str('key', 80)}` })
         case 'storage.set': {
@@ -132,10 +137,14 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
             .filter((k) => k.startsWith(`plugin:${id}:`))
             .map((k) => k.slice(`plugin:${id}:`.length))
         }
+        // reads are kept (지시 81): an extension such as 식사 신청 shows its last state while the
+        // server PC is off; writing needs the server and says so
         case 'rooms.list':
-          return api.get<PluginRoomDto[]>(rooms)
-        case 'rooms.get':
-          return api.get<PluginRoomDto>(`${rooms}/${encodeURIComponent(str('roomId', 40))}`)
+          return cachedRead(['plugin', id, 'rooms'], () => api.get<PluginRoomDto[]>(rooms))
+        case 'rooms.get': {
+          const roomId = str('roomId', 40)
+          return cachedRead(['plugin', id, 'room', roomId], () => api.get<PluginRoomDto>(`${rooms}/${encodeURIComponent(roomId)}`))
+        }
         case 'rooms.create':
           return api.post<PluginRoomDto>(rooms, { title: str('title', 100), scope: p.scope, shared: p.shared ?? {} })
         case 'rooms.setShared':

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { format, isToday } from 'date-fns'
-import { AlarmClock, MessageSquarePlus, MessagesSquare, Mail, Search, Send, StickyNote, Trash2, Inbox, BellOff, LogOut } from 'lucide-react'
+import { AlarmClock, MessageSquarePlus, MessagesSquare, Mail, Search, Send, StickyNote, Trash2, Inbox, BellOff } from 'lucide-react'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Textarea } from '@renderer/components/ui/input'
@@ -17,7 +17,6 @@ import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
 import type { ConversationDto, NoteDto } from '@shared/schemas/chat'
 import { ConversationView } from './ConversationView'
-import { GROUP_LEAVE_HINT, leaveConversation } from './leave'
 import { convTitle } from './title'
 import { SharedMemosView } from './SharedMemos'
 import { TeamAlarmsView } from './TeamAlarms'
@@ -239,16 +238,7 @@ export function ChatPage(): React.JSX.Element {
 
   const convs = (list.data ?? []).filter((c) => space === 'team' || c.groupId === space)
   const { data: me } = useMe()
-  const [leaveErr, setLeaveErr] = useState('')
-  /** Leave straight from the list; the page of that conversation closes with it. */
-  const leave = async (c: ConversationDto): Promise<void> => {
-    setLeaveErr('')
-    try {
-      if ((await leaveConversation(c, me?.name ?? '')) && id === c.id) navigate('/chat')
-    } catch (e) {
-      setLeaveErr(errorMessage(e))
-    }
-  }
+  // 나가기 is inside the conversation (its header), not on the rows of the list (지시 82)
   const { data: team } = useMembers()
   const titleOf = (c: ConversationDto): string => convTitle(c, team, me?.id)
   // matches the title as shown (a 1:1 shows "본명(필명)") and the plain one
@@ -307,7 +297,6 @@ export function ChatPage(): React.JSX.Element {
               <Input aria-label="대화 검색" className="pl-8" value={q} onChange={(e) => setQ(e.target.value)} placeholder="대화방·메시지 검색" />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto" data-testid="conv-list">
-              {leaveErr && <p className="border-b border-border px-3 py-1.5 text-xs text-urgent">{leaveErr}</p>}
               {filtered.map((c) => (
                 <div key={c.id} className="group relative border-b border-border">
                 <button
@@ -327,12 +316,6 @@ export function ChatPage(): React.JSX.Element {
                     {c.unread > 0 && <span className="ml-auto shrink-0 rounded-full bg-urgent px-1.5 text-[0.7rem] font-bold text-white">{c.unread}</span>}
                   </div>
                 </button>
-                {/* shown while the row is hovered or holds the keyboard focus; a group chat follows its group */}
-                <span className="absolute right-1.5 top-1 hidden rounded-md bg-card shadow-sm group-focus-within:block group-hover:block" title={c.kind === 'group' ? GROUP_LEAVE_HINT : !online ? '서버에 연결되어 있을 때 나갈 수 있습니다.' : '나가기'}>
-                  <Button size="icon-sm" variant="ghost" className="text-urgent" aria-label={`${titleOf(c)} 나가기`} disabled={c.kind === 'group' || !online} onClick={() => void leave(c)} data-testid={`conv-leave-${c.id}`}>
-                    <LogOut />
-                  </Button>
-                </span>
                 </div>
               ))}
               {q.trim().length > 1 && (search.data?.length ?? 0) > 0 && (

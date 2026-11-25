@@ -20,6 +20,10 @@ export interface Prefs {
   wallpaperStrength: number
   /** blur of the user's own picture, px */
   wallpaperBlur: number
+  /** new message: the "팀뿌요~" sound (지시 83) */
+  msgSound: boolean
+  /** new message: a card near the tray instead of a Windows notification (지시 83) */
+  msgPreview: boolean
 }
 
 const DEFAULT_PREFS: Prefs = {
@@ -35,7 +39,9 @@ const DEFAULT_PREFS: Prefs = {
   hiddenWidgets: [],
   wallpaper: '',
   wallpaperStrength: 60,
-  wallpaperBlur: 0
+  wallpaperBlur: 0,
+  msgSound: true,
+  msgPreview: true
 }
 const KEY = 'prefs'
 
@@ -80,7 +86,9 @@ export const usePrefs = create<PrefsState>((set, get) => ({
       hiddenWidgets: patch.hiddenWidgets ?? cur.hiddenWidgets,
       wallpaper: patch.wallpaper ?? cur.wallpaper,
       wallpaperStrength: Math.min(100, Math.max(0, patch.wallpaperStrength ?? cur.wallpaperStrength)),
-      wallpaperBlur: Math.min(20, Math.max(0, patch.wallpaperBlur ?? cur.wallpaperBlur))
+      wallpaperBlur: Math.min(20, Math.max(0, patch.wallpaperBlur ?? cur.wallpaperBlur)),
+      msgSound: patch.msgSound ?? cur.msgSound,
+      msgPreview: patch.msgPreview ?? cur.msgPreview
     }
     if (patch.theme) {
       applyTheme(next.theme)

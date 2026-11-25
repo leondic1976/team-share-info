@@ -62,11 +62,15 @@ export function useDisplayName(): (m: { id?: string | null; name: string }) => s
   }
 }
 
+/** While the server PC is off nobody's presence is known: the kept list must not say "online". */
+const presenceUnknown = (list: MemberDto[]): MemberDto[] => list.map((m) => (m.presence === 'offline' ? m : { ...m, presence: 'offline' }))
+
 export function useMembers() {
   const online = useConn((s) => s.state === 'online')
   return useQuery({
     queryKey: ['members'],
     queryFn: () => api.get<MemberDto[]>('/api/members'),
-    enabled: online
+    enabled: online,
+    select: online ? undefined : presenceUnknown
   })
 }

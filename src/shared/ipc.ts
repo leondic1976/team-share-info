@@ -145,6 +145,18 @@ export interface FeedbackInfo {
 }
 
 /** Program lock (optional: a 4-digit PIN asked at start and after Windows was locked). */
+/** A card of the message preview near the tray (src/main/preview.ts). */
+export interface PreviewItem {
+  /** the conversation (or 'notes') */
+  key: string
+  title: string
+  body: string
+  route?: string
+  /** messages that came since the card appeared */
+  count: number
+  at: number
+}
+
 export interface LockState {
   /** The user turned the lock on by making a PIN. Shared PC: the signed-in person has a PIN. */
   hasPin: boolean
@@ -351,9 +363,16 @@ export interface IpcMap {
   /** close the urgent windows whose notice is not in `ids`; returns the ids closed */
   'notify:syncUrgent': { req: { ids: string[] }; res: string[] }
   'notify:toast': { req: { title: string; body: string; route?: string }; res: void }
+  'notify:preview': { req: { key: string; title: string; body: string; route?: string; sound: boolean }; res: boolean }
+  'preview:list': { req: void; res: PreviewItem[] }
+  'preview:open': { req: { key: string }; res: void }
+  'preview:dismiss': { req: { key: string | null }; res: void }
+  'preview:read': { req: { key: string }; res: void }
   'popup:get': { req: { id: string }; res: UrgentPayload | null }
   'window:showMain': { req: { path?: string }; res: void }
   'window:flash': { req: { on: boolean }; res: void }
+  /** the window that asks is on screen and has the focus (a window hidden to the tray still claims both in the page) */
+  'window:inFront': { req: void; res: boolean }
   'local:events.list': { req: { from: number; to: number }; res: PersonalOccurrenceDto[] }
   'local:events.get': { req: { id: string }; res: PersonalEventDto | null }
   'local:events.save': { req: PersonalEventInput; res: string }
@@ -666,9 +685,15 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'notify:openUrgent',
   'notify:syncUrgent',
   'notify:toast',
+  'notify:preview',
+  'preview:list',
+  'preview:open',
+  'preview:dismiss',
+  'preview:read',
   'popup:get',
   'window:showMain',
   'window:flash',
+  'window:inFront',
   'local:events.list',
   'local:events.get',
   'local:events.save',
@@ -872,6 +897,8 @@ export interface MainEventMap {
   'popup:closed': { id: string }
   /** the title-bar X of an urgent window that needs a confirmation: the window decides what it means */
   'popup:closeRequest': { id: string }
+  /** the cards of the message preview changed; sound: a new message came */
+  'preview:changed': { sound: boolean }
   'transfer:update': TransferItem[]
   'transfer:edited': { fileId: string; folderId: string; name: string; path: string }
   'memos:changed': { id: string | null }
@@ -888,7 +915,7 @@ export interface MainEventMap {
   'lock:changed': LockState
 }
 export type MainEvent = keyof MainEventMap
-export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'popup:closeRequest', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed', 'storage:progress', 'lock:changed']
+export const MAIN_EVENTS: readonly MainEvent[] = ['window:maximized', 'app:navigate', 'server:status', 'update:state', 'popup:refresh', 'popup:closed', 'popup:closeRequest', 'preview:changed', 'transfer:update', 'transfer:edited', 'memos:changed', 'alarms:changed', 'clipboard:changed', 'favorites:changed', 'focus:state', 'capture:done', 'launcher:changed', 'fsindex:changed', 'meeting:closed', 'plugins:changed', 'storage:progress', 'lock:changed']
 
 export interface TeamhubBridge {
   /** Absolute path of a dropped/selected File (Electron webUtils). */

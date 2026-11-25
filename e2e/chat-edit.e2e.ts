@@ -136,6 +136,39 @@ describe('메신저: edit and delete (shown to everybody), pasted images wait fo
     await a.page.getByRole('button', { name: '이모티콘' }).click()
   }, 60000)
 
+  it('a new message while the window is hidden: a card near the tray, the 팀뿌요 sound, a click opens it', async () => {
+    const mainOf = (l: Launched) => l.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => !w.webContents.getURL().includes('/popup/'))!.id)
+    const bMain = await mainOf(b)
+    await b.app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)!.hide(), bMain)
+    const before = await b.page.evaluate(() => (window as unknown as { __thSounds?: number }).__thSounds ?? 0)
+    await sendText(a.page, '미리보기E2E 안녕하세요')
+    const preview = async () => b.app.windows().find((w) => w.url().includes('/popup/preview') && !w.isClosed())
+    await expect.poll(async () => !!(await preview()), { timeout: 15000 }).toBe(true)
+    const w = (await preview())!
+    await expect.poll(() => w.getByTestId('preview-card').first().textContent(), { timeout: 10000 }).toContain('미리보기E2E')
+    expect(await w.getByTestId('preview-card').first().textContent()).toContain('서버관리자')
+    // it does not take the focus, and it sits at the bottom right of the screen
+    const pos = await b.app.evaluate(({ BrowserWindow, screen }) => {
+      const pw = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('/popup/preview'))!
+      const area = screen.getPrimaryDisplay().workArea
+      const r = pw.getBounds()
+      return { focusable: pw.isFocusable(), right: area.x + area.width - (r.x + r.width), bottom: area.y + area.height - (r.y + r.height), visible: pw.isVisible() }
+    })
+    expect(pos).toMatchObject({ focusable: false, visible: true })
+    expect(pos.right).toBeLessThan(40)
+    expect(pos.bottom).toBeLessThan(40)
+    await expect.poll(() => b.page.evaluate(() => (window as unknown as { __thSounds?: number }).__thSounds ?? 0), { timeout: 5000 }).toBeGreaterThan(before)
+    // a second message of the same conversation adds to the same card
+    await sendText(a.page, '두번째E2E')
+    await expect.poll(() => w.getByTestId('preview-card').count(), { timeout: 10000 }).toBe(1)
+    await expect.poll(() => w.getByTestId('preview-card').first().textContent(), { timeout: 10000 }).toContain('두번째E2E')
+    // clicking opens the conversation in the TeamHub window and the card goes
+    await w.getByTestId('preview-card').first().click()
+    await expect.poll(() => b.app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)!.isVisible(), bMain), { timeout: 10000 }).toBe(true)
+    await expect.poll(() => b.page.getByTestId('message-list').textContent(), { timeout: 10000 }).toContain('두번째E2E')
+    await expect.poll(() => b.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().some((x) => x.webContents.getURL().includes('/popup/preview') && x.isVisible())), { timeout: 10000 }).toBe(false)
+  }, 90000)
+
   it('a Windows notification stays until it is clicked (no time-out)', async () => {
     await b.page.evaluate(() => window.teamhub.invoke('notify:toast', { title: '알림E2E', body: '본문', route: '/notices' }))
     const got = await b.app.evaluate(() => ((globalThis as unknown as { __teamhubToasts?: { title: string; timeoutType?: string }[] }).__teamhubToasts ?? []).filter((t) => t.title === '알림E2E'))

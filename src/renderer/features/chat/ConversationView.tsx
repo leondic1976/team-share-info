@@ -12,6 +12,7 @@ import { AuthImage } from '@renderer/components/AuthImage'
 import { FileChip, uploadAttachment } from '@renderer/components/Attachments'
 import { api, ApiError, errorMessage } from '@renderer/lib/api'
 import { realtime } from '@renderer/lib/realtime'
+import { invoke } from '@renderer/lib/bridge'
 import { useMe, useMembers } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { MESSAGE_EDIT_WINDOW_MS, type ConversationChangedPayload, type MessageChangedPayload, type MessageDto, type MessageNewPayload } from '@shared/schemas/chat'
@@ -97,8 +98,14 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
     (list: MessageDto[]) => {
       const last = list[list.length - 1]
       if (!last || !activeRef.current || !document.hasFocus() || document.visibilityState !== 'visible') return
-      void api.post(`/api/conversations/${id}/read`, { seq: last.seq }).then(() => void qc.invalidateQueries({ queryKey: ['chat', 'list'] }))
-      void qc.invalidateQueries({ queryKey: ['chat', 'unread'] })
+      // hidden to the tray the page still claims focus and visibility: only what is really on screen is read
+      void invoke('window:inFront')
+        .catch(() => true)
+        .then((front) => {
+          if (!front) return
+          void api.post(`/api/conversations/${id}/read`, { seq: last.seq }).then(() => void qc.invalidateQueries({ queryKey: ['chat', 'list'] }))
+          void qc.invalidateQueries({ queryKey: ['chat', 'unread'] })
+        })
     },
     [id, qc]
   )
@@ -185,6 +192,8 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
   useEffect(() => {
     if (!active) return
     view(id)
+    // the card of this conversation near the tray is not needed any more
+    void invoke('preview:read', { key: id }).catch(() => undefined)
     const el = listRef.current
     if (el && stickBottom.current) el.scrollTop = el.scrollHeight
     markRead(msgRef.current)

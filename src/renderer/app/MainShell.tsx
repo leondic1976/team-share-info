@@ -26,6 +26,7 @@ import { BlockingScreen } from './BlockingScreen'
 import { NoticesPage } from '@renderer/features/notices/NoticesPage'
 import { useNoticeAlerts, useUnreadNotices } from '@renderer/features/notices/useNoticeAlerts'
 import { useSpace } from './space-store'
+import { useWarmCache } from './useWarmCache'
 import { useEventReminders } from '@renderer/features/calendar/useEventReminders'
 import { TransferPanel } from '@renderer/features/files/TransferPanel'
 import { useChatAlerts, useChatUnread } from '@renderer/features/chat/useChatAlerts'
@@ -78,6 +79,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   useTeamAlarms()
   useMorningSummary()
   useMeetingAlerts()
+  useWarmCache(state === 'online', me ? !(me.disabledFeatures ?? []).includes('meal') : true)
   usePluginInvites()
   useJoinAlerts(me?.role === 'admin')
   useLedgerAlerts(me?.id)
