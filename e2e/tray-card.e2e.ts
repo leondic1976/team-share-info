@@ -57,13 +57,13 @@ describe('tray cards', () => {
     const w = find()!
     await expect.poll(() => w.getByTestId('preview-card').count(), { timeout: 10000 }).toBe(1)
 
-    // the bottom right corner of another monitor when there is one (an installed TeamHub may show its own cards on the primary one),
+    // the top right corner of another monitor when there is one (an installed TeamHub may show its own cards on the primary one),
     // then a transparent always-on-top window over the cards, shown after them, like KakaoTalk's alert
     const info = await a.app.evaluate(async ({ BrowserWindow, screen }) => {
       const pw = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('/popup/preview'))!
       const d = screen.getAllDisplays().find((x) => x.id !== screen.getPrimaryDisplay().id) ?? screen.getPrimaryDisplay()
       const b = pw.getBounds()
-      pw.setBounds({ x: d.workArea.x + d.workArea.width - b.width - 12, y: d.workArea.y + d.workArea.height - b.height - 12, width: b.width, height: b.height })
+      pw.setBounds({ x: d.workArea.x + d.workArea.width - b.width - 12, y: d.workArea.y + 40, width: b.width, height: b.height })
       const cover = new BrowserWindow({ ...pw.getBounds(), frame: false, transparent: true, focusable: false, skipTaskbar: true, alwaysOnTop: true, show: false, resizable: false })
       cover.setAlwaysOnTop(true, 'pop-up-menu')
       await cover.loadURL('data:text/html,<body style="background:rgba(0,0,0,0.02);margin:0"></body>')
@@ -105,7 +105,7 @@ describe('tray cards', () => {
     await a.app.evaluate(() => (globalThis as unknown as { __cover: Electron.BrowserWindow }).__cover.destroy())
   }, 120000)
 
-  it('설정 → 미리보기 위치: the top right corner, and back to the bottom right', async () => {
+  it('설정 → 알림 → 시험 알림: the card shows at the top right (지시 114) and X closes it', async () => {
     await a.close()
     a = await launch({ profile: 'e2e-tray-corner' })
     await runWizard(a.page, '47431')
@@ -116,16 +116,13 @@ describe('tray cards', () => {
         if (!pw) return null
         const b = pw.getBounds()
         const wa = screen.getPrimaryDisplay().workArea
-        return { top: b.y - wa.y, bottom: wa.y + wa.height - (b.y + b.height), right: wa.x + wa.width - (b.x + b.width) }
+        return { top: b.y - wa.y, right: wa.x + wa.width - (b.x + b.width) }
       })
-    await a.page.getByRole('radio', { name: '오른쪽 위' }).click()
+    expect(await a.page.getByRole('radio', { name: '오른쪽 아래' }).count()).toBe(0)
     await a.page.getByRole('button', { name: '시험 알림' }).click()
-    await expect.poll(where, { timeout: 10000 }).toEqual(expect.objectContaining({ top: 40, right: 12 }))
+    await expect.poll(where, { timeout: 10000 }).toEqual({ top: 40, right: 12 })
     const card = a.app.windows().find((w) => w.url().includes('/popup/preview'))!
     await expect.poll(() => card.getByTestId('preview-card').filter({ hasText: 'TeamHub 시험 알림' }).count()).toBe(1)
-    // changed while the card is shown: it moves within a few seconds
-    await a.page.getByRole('radio', { name: '오른쪽 아래' }).click()
-    await expect.poll(where, { timeout: 8000 }).toEqual(expect.objectContaining({ bottom: 12, right: 12 }))
     await card.locator('button[aria-label="닫기"]').first().click()
     await expect.poll(where, { timeout: 5000 }).toBe(null)
   }, 120000)

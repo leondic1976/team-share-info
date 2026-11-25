@@ -34,11 +34,6 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   )
 }
 
-const PREVIEW_CORNERS: { value: 'bottom-right' | 'top-right'; label: string }[] = [
-  { value: 'bottom-right', label: '오른쪽 아래' },
-  { value: 'top-right', label: '오른쪽 위' }
-]
-
 const THEMES: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: '밝게', icon: Sun },
   { value: 'dark', label: '어둡게', icon: Moon },
@@ -151,29 +146,8 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
                 </label>
               </div>
             </Row>
-            <Row label="알림 미리보기" hint="TeamHub 창이 숨어 있어도 화면 구석에 알림 내용을 띄웁니다. 누르면 그 화면이 열리고, X로 닫을 때까지 남아 있습니다. 끄면 Windows 알림으로 알려 줍니다.">
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
-                <Switch checked={prefs.msgPreview} label="알림 미리보기" onCheckedChange={(v) => prefs.update({ msgPreview: v })} />
-                사용
-              </label>
-            </Row>
-            <Row label="미리보기 위치" hint="오른쪽 아래는 트레이 아이콘 위, 오른쪽 위는 창의 닫기 단추 아래에 띄웁니다. 다른 프로그램의 알림과 겹치면 바꿔 보세요.">
+            <Row label="알림 미리보기" hint="TeamHub 창이 숨어 있어도 화면 오른쪽 위(창의 닫기 단추 아래)에 알림 내용을 띄웁니다. 누르면 그 화면이 열리고, X로 닫을 때까지 남아 있습니다. 끄면 Windows 알림으로 알려 줍니다.">
               <div className="flex items-center gap-2">
-                <div className="flex gap-1" role="radiogroup" aria-label="미리보기 위치">
-                  {PREVIEW_CORNERS.map((c) => (
-                    <Button
-                      key={c.value}
-                      size="sm"
-                      variant={prefs.previewCorner === c.value ? 'default' : 'outline'}
-                      role="radio"
-                      aria-checked={prefs.previewCorner === c.value}
-                      disabled={!prefs.msgPreview}
-                      onClick={() => prefs.update({ previewCorner: c.value })}
-                    >
-                      {c.label}
-                    </Button>
-                  ))}
-                </div>
                 <Button
                   size="sm"
                   variant="outline"
@@ -182,6 +156,10 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
                 >
                   <BellRing /> 시험 알림
                 </Button>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <Switch checked={prefs.msgPreview} label="알림 미리보기" onCheckedChange={(v) => prefs.update({ msgPreview: v })} />
+                  사용
+                </label>
               </div>
             </Row>
           </CardContent>

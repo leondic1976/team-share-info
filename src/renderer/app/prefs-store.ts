@@ -24,8 +24,6 @@ export interface Prefs {
   msgSound: boolean
   /** new message: a card near the tray instead of a Windows notification (지시 83) */
   msgPreview: boolean
-  /** where the cards show (지시 106) */
-  previewCorner: 'bottom-right' | 'top-right'
   /** messenger: size of the message text, px; 0 = follows the app's 글자 크기 (지시 108) */
   chatFontSize: number
 }
@@ -51,7 +49,6 @@ const DEFAULT_PREFS: Prefs = {
   wallpaperBlur: 0,
   msgSound: true,
   msgPreview: true,
-  previewCorner: 'bottom-right',
   chatFontSize: 0
 }
 const KEY = 'prefs'
@@ -101,7 +98,6 @@ export const usePrefs = create<PrefsState>((set, get) => ({
       wallpaperBlur: Math.min(20, Math.max(0, patch.wallpaperBlur ?? cur.wallpaperBlur)),
       msgSound: patch.msgSound ?? cur.msgSound,
       msgPreview: patch.msgPreview ?? cur.msgPreview,
-      previewCorner: patch.previewCorner === 'top-right' || patch.previewCorner === 'bottom-right' ? patch.previewCorner : cur.previewCorner,
       chatFontSize: clampChatFont(patch.chatFontSize ?? cur.chatFontSize)
     }
     if (patch.theme) {

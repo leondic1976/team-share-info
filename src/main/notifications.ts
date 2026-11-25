@@ -142,7 +142,7 @@ function playAlertSound(): void {
 
 /**
  * Every alert of the program (공지, 일정 알림, 알람, 메시지, 기록, 사용 신청 …, 지시 83·85): a card
- * at the bottom right above the tray and the "팀뿌요~" sound. With the card turned off in 설정, a
+ * at the top right of the screen (지시 114) and the "팀뿌요~" sound. With the card turned off in 설정, a
  * Windows notification instead (it stays until clicked, 지시 63).
  */
 export function showToast(opts: ToastOptions, force = false): void {

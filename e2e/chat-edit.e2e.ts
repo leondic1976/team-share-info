@@ -136,7 +136,7 @@ describe('메신저: edit and delete (shown to everybody), pasted images wait fo
     await a.page.getByRole('button', { name: '이모티콘' }).click()
   }, 60000)
 
-  it('a new message while the window is hidden: a card near the tray, the 팀뿌요 sound, a click opens it', async () => {
+  it('a new message while the window is hidden: a card at the top right, the 팀뿌요 sound, a click opens it', async () => {
     const mainOf = (l: Launched) => l.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => !w.webContents.getURL().includes('/popup/'))!.id)
     const bMain = await mainOf(b)
     await b.app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)!.hide(), bMain)
@@ -147,16 +147,16 @@ describe('메신저: edit and delete (shown to everybody), pasted images wait fo
     const w = (await preview())!
     await expect.poll(() => w.getByTestId('preview-card').first().textContent(), { timeout: 10000 }).toContain('미리보기E2E')
     expect(await w.getByTestId('preview-card').first().textContent()).toContain('서버관리자')
-    // it does not take the focus, and it sits at the bottom right of the screen
+    // it does not take the focus, and it sits at the top right of the screen (지시 114)
     const pos = await b.app.evaluate(({ BrowserWindow, screen }) => {
       const pw = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('/popup/preview'))!
       const area = screen.getPrimaryDisplay().workArea
       const r = pw.getBounds()
-      return { focusable: pw.isFocusable(), right: area.x + area.width - (r.x + r.width), bottom: area.y + area.height - (r.y + r.height), visible: pw.isVisible() }
+      return { focusable: pw.isFocusable(), right: area.x + area.width - (r.x + r.width), top: r.y - area.y, visible: pw.isVisible() }
     })
     expect(pos).toMatchObject({ focusable: false, visible: true })
     expect(pos.right).toBeLessThan(40)
-    expect(pos.bottom).toBeLessThan(40)
+    expect(pos.top).toBe(40)
     await expect.poll(() => b.page.evaluate(() => (window as unknown as { __thSounds?: number }).__thSounds ?? 0), { timeout: 5000 }).toBeGreaterThan(before)
     // a second message of the same conversation adds to the same card
     await sendText(a.page, '두번째E2E')

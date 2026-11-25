@@ -3,11 +3,11 @@ import { join } from 'node:path'
 import type { PreviewItem } from '../shared/ipc'
 import { getMainWindow, loadRenderer, secureWebContents, showMainWindow } from './windows/main-window'
 import { lockState } from './applock'
-import { localDb } from './localdb'
 
 /**
- * 메시지 미리보기 (지시 83, 2026-11-25): new messages show as small cards at the bottom right of
- * the screen, above the tray icon (or the top right one, 설정 → 알림 → 미리보기 위치, 지시 106), also while the TeamHub window is hidden. One card per
+ * 메시지 미리보기 (지시 83, 2026-11-25): new messages show as small cards at the top right of the
+ * screen (지시 114: fixed there, away from the tray corner where other programs put their alerts),
+ * also while the TeamHub window is hidden. One card per
  * conversation (the newest message, how many came), newest on top, four at most. A card stays
  * until it is clicked (opens the conversation) or closed (지시 63: alerts do not vanish by
  * themselves). The window never takes the focus away from what the person is typing in.
@@ -45,8 +45,8 @@ function startGuard(): void {
     const p = screen.getCursorScreenPoint()
     const b = win.getBounds()
     const now = p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height
-    if (++tick % 10 === 0 && corner() !== placedAt) place() // the corner was changed in 설정
-    if ((now && !inside) || tick % 10 === 0) raise()
+    const periodic = ++tick % 10 === 0
+    if ((now && !inside) || periodic) raise()
     inside = now
   }, 300)
 }
@@ -59,25 +59,12 @@ function stopGuard(): void {
 /** Room left above the cards in the top right corner so the close and minimise buttons of a maximised window stay free. */
 const TITLE_BAR = 40
 
-/** 설정 → 알림 → 미리보기 위치 (지시 106): the bottom right corner above the tray (default) or the top right one. */
-function corner(): 'bottom-right' | 'top-right' {
-  try {
-    return localDb().kv.get<{ previewCorner?: string }>('prefs')?.previewCorner === 'top-right' ? 'top-right' : 'bottom-right'
-  } catch {
-    return 'bottom-right'
-  }
-}
-
-let placedAt: 'bottom-right' | 'top-right' = 'bottom-right'
-
 function place(): void {
   if (!win || win.isDestroyed()) return
-  placedAt = corner()
   const area = screen.getPrimaryDisplay().workArea
   // the cards, and the 모두 닫기 line above them when there are several
   const height = Math.max(1, items.length) * (CARD + GAP) + GAP + (items.length > 1 ? 28 : 0)
-  const y = placedAt === 'top-right' ? area.y + TITLE_BAR : area.y + area.height - height - 12
-  win.setBounds({ x: area.x + area.width - WIDTH - 12, y, width: WIDTH, height })
+  win.setBounds({ x: area.x + area.width - WIDTH - 12, y: area.y + TITLE_BAR, width: WIDTH, height })
 }
 
 function ensureWindow(): BrowserWindow {
