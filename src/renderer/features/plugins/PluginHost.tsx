@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { InstalledPlugin, PluginPermission, PluginRoomDto } from '@shared/schemas/plugins'
 import type { MemberDto } from '@shared/schemas/auth'
+import type { UnregisteredDto } from '@shared/schemas/unregistered'
 import { EmptyState } from '@renderer/components/EmptyState'
 import { Button } from '@renderer/components/ui/button'
 import { invoke } from '@renderer/lib/bridge'
@@ -23,6 +24,7 @@ const NEEDS: Record<string, PluginPermission | null> = {
   time: null,
   holidays: null,
   members: 'members',
+  unregistered: 'members',
   'storage.get': 'storage',
   'storage.set': 'storage',
   'storage.keys': 'storage',
@@ -131,6 +133,19 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
         case 'members':
           // the same kept list as the rest of the program: readable while the server PC is off
           return (await cachedRead(['members'], () => api.get<MemberDto[]>('/api/members'))).filter((x) => x.status === 'active').map((x) => ({ id: x.id, name: x.name, deptName: x.deptName, title: x.title, presence: x.presence }))
+        case 'unregistered':
+          // 미등록 인원 (관리): everybody ever on the list - `gone` deleted, `as` merged into that member
+          return (await cachedRead(['unregistered'], () => api.get<UnregisteredDto[]>('/api/unregistered'))).map((x) => ({
+            id: x.id,
+            name: x.name,
+            dept: x.dept,
+            title: x.title,
+            memo: x.memo,
+            at: x.updatedAt,
+            by: x.createdBy,
+            ...(x.deleted ? { gone: true } : {}),
+            ...(x.mergedInto ? { as: x.mergedInto } : {})
+          }))
         case 'storage.get':
           return invoke('local:kv.get', { key: `plugin:${id}:${str('key', 80)}` })
         case 'storage.set': {
@@ -201,9 +216,13 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
       const x = pl as { pluginId: string; roomId: string; deleted?: boolean }
       if (x.pluginId === id) post({ th: 1, event: 'room.changed', data: { roomId: x.roomId, deleted: !!x.deleted } })
     })
+    const offUnreg = realtime.on('unregistered.changed', () => {
+      if (perms.has('members')) post({ th: 1, event: 'unregistered.changed', data: {} })
+    })
     return () => {
       window.removeEventListener('message', onMessage)
       offRoom()
+      offUnreg()
     }
   }, [plugin, id, me, navigate])
 

@@ -79,6 +79,10 @@ describe('긴급구조지휘대', () => {
 
   it('the server PC sets up a 조, its rotation, 분류 and 배치', async () => {
     const p = a.page
+    // a colleague who does not use TeamHub, from the one list of 미등록 인원 (관리, 지시 134)
+    await call(p, 'POST', '/api/unregistered', { name: '미등록지휘', dept: '현장E2E', title: '주무관' })
+    await expect.poll(() => p.getByTestId('cmd-unreg-row').count(), { timeout: 10000 }).toBe(1)
+    expect(await p.getByTestId('cmd-unreg-card').textContent()).toContain('관리 → 구성원·PC → 미등록 인원')
     await p.getByTestId('cmd-team-add').click()
     await ask(p, 'A조')
     const row = p.getByTestId('cmd-team-row').filter({ hasText: 'A조' })
@@ -86,8 +90,14 @@ describe('긴급구조지휘대', () => {
     await row.getByRole('button', { name: '조원' }).click()
     await p.getByRole('checkbox', { name: '서버관리자' }).check()
     await p.getByRole('checkbox', { name: '이훈련' }).check()
+    expect(await p.getByRole('dialog').textContent()).toContain('미등록 인원')
+    await p.getByRole('checkbox', { name: '미등록지휘' }).check()
     await p.getByTestId('picker-save').click()
-    await expect.poll(() => row.textContent()).toContain('2명')
+    await expect.poll(() => row.textContent()).toContain('3명')
+    // the name carries the mark wherever it is shown
+    expect(await row.getByTestId('cmd-unreg').textContent()).toBe('미등록')
+    await p.getByTestId('cmd-unreg-card').scrollIntoViewIfNeeded()
+    await shot(p, 'command-unregistered')
     await p.getByTestId('cmd-rotation-save').click()
     await expect.poll(() => p.getByTestId('cmd-rotation-preview').textContent()).toContain('A조')
 

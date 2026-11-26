@@ -221,17 +221,33 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     expect(await fb.locator('#bulkAddPerson').isVisible()).toBe(false)
     await fb.locator('#bulkClose').click()
 
-    // the admin registers a colleague who does not use TeamHub
+    // the server PC registers a colleague who does not use TeamHub in 관리 → 미등록 인원 (1.8.0, 지시 134)
+    const card = a.page.locator('[data-testid="unregistered-card"]')
+    await go(a.page, '/admin/members')
+    await card.getByTestId('unregistered-add').click()
+    await a.page.getByLabel('미등록 인원 이름').fill('팀원B')
+    await expect.poll(() => a.page.getByText('같은 이름의 구성원이 있습니다').count(), wait).toBe(1)
+    await a.page.getByLabel('미등록 인원 이름').fill('미등록E2E')
+    await a.page.getByLabel('미등록 인원 부서').fill('현장E2E')
+    await a.page.getByTestId('unregistered-save').click()
+    await card.getByTestId('unregistered-row-미등록E2E').waitFor(wait)
+    expect(await card.getByTestId('unregistered-row-미등록E2E').textContent()).toContain('미등록')
+    if (SHOTS) {
+      await card.scrollIntoViewIfNeeded()
+      await a.page.waitForTimeout(400)
+      await a.page.screenshot({ path: `${SHOTS}/admin-unregistered-light.png` })
+      await a.page.evaluate(() => document.documentElement.classList.add('dark'))
+      await a.page.waitForTimeout(300)
+      await a.page.screenshot({ path: `${SHOTS}/admin-unregistered-dark.png` })
+      await a.page.evaluate(() => document.documentElement.classList.remove('dark'))
+    }
+    // 식사 신청 shows the same list, read only, with the mark
+    await open(a.page, '#main')
     await fa.locator('#settingsTab').click()
-    await fa.locator('#personAdd').click()
-    await fa.locator('#p-name').fill('팀원B')
-    expect(await fa.locator('#personWarn').textContent()).toContain('같은 이름의 구성원')
-    await fa.locator('#p-name').fill('미등록E2E')
-    await fa.locator('#p-dept').fill('현장E2E')
-    await fa.locator('#personSave').click()
     await fa.locator('#peopleCard tr[data-person]').waitFor(wait)
     expect(await fa.locator('#peopleCard tbody').textContent()).toContain('미등록E2E')
     expect(await fa.locator('#peopleCard tbody .th-badge').first().textContent()).toBe('미등록')
+    expect(await fa.locator('#personAdd').count()).toBe(0)
 
     // 여러 명 대신 신청: today's dinner is ticked (lunch is past its deadline and cannot be)
     await fa.locator('nav [data-tab="apply"]').click()
@@ -274,14 +290,16 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     expect(await dinnerA.locator('[data-who^="x:"]').textContent()).toContain('미등록E2E')
     expect(await dinnerA.locator('[data-who^="x:"] .th-badge').textContent()).toBe('미등록')
 
-    // removed from the list: no longer offered, the request already made stays under the name
+    // removed from the list in 관리: no longer offered, the request already made stays under the name
+    await go(a.page, '/admin/members')
+    a.page.once('dialog', (d) => void d.accept())
+    await card.getByTestId('unregistered-row-미등록E2E').getByRole('button', { name: '삭제' }).click()
+    await expect.poll(() => card.getByTestId('unregistered-row-미등록E2E').count(), wait).toBe(0)
+    await open(a.page, '#main')
     await fa.locator('#settingsTab').click()
-    await fa.locator('#peopleCard [data-person-del]').click()
-    expect(await fa.locator('#peopleCard [data-person-del]').textContent()).toBe('정말 삭제')
-    await fa.locator('#peopleCard [data-person-del]').click()
     await expect.poll(() => fa.locator('#peopleCard tr[data-person]').count(), wait).toBe(0)
     await fa.locator('nav [data-tab="status"]').click()
-    expect(await dinnerA.textContent()).toContain('미등록E2E')
+    await expect.poll(() => dinnerA.textContent(), wait).toContain('미등록E2E')
   }, 120000)
 
   it('통계 only for those in charge and the server PC; 내 기록 for everybody (지시 90·91)', async () => {

@@ -847,6 +847,25 @@
    *  - What a member wrote before the owner named them (shared.since[id]) does not count.
    *    So once removed, their edits are gone unless the owner's save folded them in (saveAs).
    */
+  /**
+   * 1.8.0: TeamHub keeps one list of 미등록 인원 (관리 → 구성원·PC → 미등록 인원, the same ids as
+   * the people this plugin registered before, which the server took over). Given that list
+   * ([{ id, name, dept, title, memo, at, by, gone?, as? }] from TeamHub.call('unregistered')),
+   * it is the people registered by hand everywhere (effective().people) and the room's own list
+   * is no longer read. null: an older TeamHub without the list - the room's list as before.
+   */
+  let corePeople = null
+  function setCorePeople(list) {
+    if (!Array.isArray(list)) {
+      corePeople = null
+      return
+    }
+    const src = {}
+    for (const p of list) if (p && typeof p === 'object' && isManualId(p.id)) src[p.id] = Object.assign({}, p, { at: Number(p.at) > 0 ? Number(p.at) : 1 })
+    corePeople = cleanPeople(src, true)
+  }
+  const usesCorePeople = () => !!corePeople
+
   function effective(room) {
     const shared = (room && room.shared) || {}
     const base = cleanConfig(shared)
@@ -889,7 +908,8 @@
         people[pid] = Object.assign({}, v.people[pid], { at, by: id })
       }
     }
-    return { config: Object.assign({}, base, settings, { stewards }), stewards, settingsAt, settingsBy, menus, people }
+    // since 1.8.0 the people registered by hand are TeamHub's one list of 미등록 인원 (setCorePeople)
+    return { config: Object.assign({}, base, settings, { stewards }), stewards, settingsAt, settingsBy, menus, people: corePeople ? Object.assign({}, corePeople) : people }
   }
   /** The text of one cell ('' = nothing registered). */
   const menuOf = (menus, date, slot) => (menus && menus[date] && menus[date][slot] ? menus[date][slot].t : '')
@@ -1303,5 +1323,5 @@
     return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n'
   }
 
-  g.Meal = { cleanPrices, isPriceRoom, pickPriceRoom, effectivePrices, priceAt, monthPrices, savePrices, mealDates, settle, settlement, snapSettlement, wonText, settleCsv, isFirm, firmRefusal, declinedList, firmAny, settled, monthDays, dailyTally, deptTally, monthSummary, personMonth, personMonths, statsSnapshot, betterOf, dailyCsv, deptCsv, personCsv, isManualId, newManualId, cleanPerson, cleanPeople, manualList, roster, nameClash, splitCount, countText, MEALS, MEAL_KEYS, MENU_SLOTS, LIMITS, deptGroups, groupState, bulkSlots, alreadySet, pickStatus, applyBulk, bulkSummary, weekStart, menuWindow, cleanMenuText, cleanMenus, pickSettings, effective, menuOf, menuStamp, weekDays, menuMeals, saveAs, fitMenus, weekText, parseBlock, placeBlock, canManage, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
+  g.Meal = { setCorePeople, usesCorePeople, cleanPrices, isPriceRoom, pickPriceRoom, effectivePrices, priceAt, monthPrices, savePrices, mealDates, settle, settlement, snapSettlement, wonText, settleCsv, isFirm, firmRefusal, declinedList, firmAny, settled, monthDays, dailyTally, deptTally, monthSummary, personMonth, personMonths, statsSnapshot, betterOf, dailyCsv, deptCsv, personCsv, isManualId, newManualId, cleanPerson, cleanPeople, manualList, roster, nameClash, splitCount, countText, MEALS, MEAL_KEYS, MENU_SLOTS, LIMITS, deptGroups, groupState, bulkSlots, alreadySet, pickStatus, applyBulk, bulkSummary, weekStart, menuWindow, cleanMenuText, cleanMenus, pickSettings, effective, menuOf, menuStamp, weekDays, menuMeals, saveAs, fitMenus, weekText, parseBlock, placeBlock, canManage, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
 })(typeof window !== 'undefined' ? window : globalThis)

@@ -1019,5 +1019,30 @@ CREATE TABLE collect_reminders (
   PRIMARY KEY (request_id, kind, deadline_at)
 );
 `
+  },
+  {
+    id: 33,
+    name: 'unregistered-people',
+    sql: `
+-- 미등록 인원 (지시 134): staff who do not use TeamHub, one list for the whole program (식사 신청,
+-- 긴급구조지휘대 …), kept by the server PC and the 서무 in 관리. The id is 'x:' + letters and
+-- digits: the ids the 식사 신청 plugin gave the people it registered by hand are kept, so its old
+-- records still name the same person. merged_into: the member this person turned out to be
+-- (their records show under that member); deleted_at: taken off the list (kept so the past
+-- stays readable).
+CREATE TABLE unregistered_people (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  dept TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  memo TEXT NOT NULL DEFAULT '',
+  merged_into TEXT,
+  deleted_at INTEGER,
+  created_by TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  updated_by TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
+`
   }
 ]

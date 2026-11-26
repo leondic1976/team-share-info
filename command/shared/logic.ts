@@ -126,11 +126,13 @@ export interface Headcount {
 
 /** 인원총괄현황 for one mode (placed/unplaced depend on the mode). */
 export function headcount(o: { teams: CmdTeam[]; people: CmdPerson[]; assignments: CmdAssignment[]; roles: CmdRole[]; common: CmdCommon[]; exceptions: CmdException[]; modeId: string; today: string }): Headcount {
-  const temp = new Set(o.people.filter((p) => p.temp).map((p) => p.id))
   const modeRoles = new Set(o.roles.filter((r) => r.modeId === o.modeId).map((r) => r.id))
   const placed = new Set(o.assignments.filter((a) => modeRoles.has(a.roleId)).map((a) => `${a.teamId}|${a.personId}`))
   const excepted = new Set(activeExceptions(o.exceptions, o.today).map((e) => e.personId))
   const inTeam = new Set(o.teams.flatMap((t) => t.members))
+  // people of a host's list (e.g. 식수관리 등록자) count only once they have a place here
+  const used = new Set([...inTeam, ...excepted, ...o.common.flatMap((c) => c.assign.map((a) => a.personId))])
+  const temp = new Set(o.people.filter((p) => p.temp && (!p.source || used.has(p.id))).map((p) => p.id))
   const teams = o.teams.map((t) => {
     const ms = t.members.filter((p) => !excepted.has(p))
     const placedN = ms.filter((p) => placed.has(`${t.id}|${p}`)).length

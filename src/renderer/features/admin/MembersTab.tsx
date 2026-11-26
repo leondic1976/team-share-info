@@ -16,6 +16,7 @@ import { displayName, roleLabel } from '@shared/schemas/auth'
 import { OwnerOnlyNote, useIsOwner } from './owner'
 import { affiliationText } from '@shared/org'
 import { RoleMark } from '@renderer/components/RoleMark'
+import { UnregisteredCard } from './UnregisteredCard'
 
 export function MembersTab(): React.JSX.Element {
   const qc = useQueryClient()
@@ -97,6 +98,7 @@ export function MembersTab(): React.JSX.Element {
         </table>
       </Card>
 
+      <UnregisteredCard />
       <MemberOrderCard />
       <DepartmentsCard />
 

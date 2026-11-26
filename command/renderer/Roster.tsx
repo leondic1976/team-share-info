@@ -3,7 +3,7 @@ import type { CmdTeam } from '../shared/types'
 import { rolePath } from '../shared/logic'
 import type { Model } from './model'
 import { useHost } from './host'
-import { Badge, Button, Card, CardHeader, CardTitle, EmptyNote, EmptyState, cn, titled } from './ui'
+import { Badge, Button, Card, CardHeader, CardTitle, EmptyNote, EmptyState, Names, PersonName, Unreg, cn, titled, titledText } from './ui'
 
 /** The role tree of a mode, a column per 조, the people in each cell. */
 export function RoleTable({ m, modeId, teams }: { m: Model; modeId: string; teams: CmdTeam[] }): React.JSX.Element {
@@ -39,7 +39,7 @@ export function RoleTable({ m, modeId, teams }: { m: Model; modeId: string; team
                         {ps.map((p) => (
                           <span key={p.id} className="whitespace-nowrap">
                             {titled(p)}
-                            {p.temp && <Badge className="ml-1">임시</Badge>}
+                            <Unreg p={p} />
                           </span>
                         ))}
                       </span>
@@ -64,13 +64,13 @@ export function Roster({ m, modeId }: { m: Model; modeId: string }): React.JSX.E
   if (!m.s.teams.length) return <EmptyState title="조가 없습니다" description="설정 → 조에서 A조·B조처럼 조를 만들고 조원을 넣으세요." />
   const csv = (): void => {
     const rows: string[][] = [['분류', ...m.s.teams.map((t) => t.name)]]
-    for (const { role } of m.tree(modeId)) rows.push([rolePath(m.s.roles, role.id), ...m.s.teams.map((t) => m.placed(role.id, t.id).map((p) => titled(p)).join(', '))])
+    for (const { role } of m.tree(modeId)) rows.push([rolePath(m.s.roles, role.id), ...m.s.teams.map((t) => m.placed(role.id, t.id).map((p) => titledText(p)).join(', '))])
     rows.push([])
     rows.push(['공통업무', '방식', '담당'])
-    for (const c of m.s.common) rows.push([c.name, c.perTeam ? '조별' : '고정', c.assign.map((a) => `${c.perTeam ? `${m.team(a.teamId)?.name ?? ''}: ` : ''}${titled(m.person(a.personId))}`).join(', ')])
+    for (const c of m.s.common) rows.push([c.name, c.perTeam ? '조별' : '고정', c.assign.map((a) => `${c.perTeam ? `${m.team(a.teamId)?.name ?? ''}: ` : ''}${titledText(m.person(a.personId))}`).join(', ')])
     rows.push([])
     rows.push(['예외자', '사유', '기간'])
-    for (const e of m.s.exceptions) rows.push([titled(m.person(e.personId)), e.reason, `${e.fromDate} ~ ${e.toDate ?? '계속'}`])
+    for (const e of m.s.exceptions) rows.push([titledText(m.person(e.personId)), e.reason, `${e.fromDate} ~ ${e.toDate ?? '계속'}`])
     host.saveCsv(`편성표_${mode?.name ?? ''}.csv`, rows)
   }
   return (
@@ -106,7 +106,7 @@ export function Roster({ m, modeId }: { m: Model; modeId: string }): React.JSX.E
                   return (
                     <li key={pid} className={placed ? '' : 'text-important'}>
                       {titled(p)}
-                      {p?.temp && <Badge className="ml-1">임시</Badge>}
+                      <Unreg p={p} />
                       {!placed && <span className="ml-1 text-xs">(미배치)</span>}
                     </li>
                   )
@@ -134,11 +134,11 @@ export function Roster({ m, modeId }: { m: Model; modeId: string }): React.JSX.E
                           const ps = c.assign.filter((a) => a.teamId === t.id)
                           return ps.length ? (
                             <span key={t.id} className="mr-3 whitespace-nowrap">
-                              <b>{t.name}</b> {ps.map((a) => titled(m.person(a.personId))).join(', ')}
+                              <b>{t.name}</b> <Names people={ps.map((a) => m.person(a.personId))} />
                             </span>
                           ) : null
                         })
-                      : c.assign.map((a) => titled(m.person(a.personId))).join(', ') || <span className="text-muted-foreground">지정 안 됨</span>}
+                      : <Names people={c.assign.map((a) => m.person(a.personId))} empty={<span className="text-muted-foreground">지정 안 됨</span>} />}
                   </td>
                 </tr>
               ))}
@@ -160,7 +160,9 @@ export function Roster({ m, modeId }: { m: Model; modeId: string }): React.JSX.E
             <tbody>
               {m.s.exceptions.map((e) => (
                 <tr key={e.id} className={cn('border-b border-border last:border-0', !m.excepted.has(e.personId) && 'text-muted-foreground')}>
-                  <td className="px-3 py-1.5 font-medium">{titled(m.person(e.personId))}</td>
+                  <td className="px-3 py-1.5 font-medium">
+                    <PersonName p={m.person(e.personId)} />
+                  </td>
                   <td className="px-3 py-1.5">{e.reason}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap">
                     {e.fromDate} ~ {e.toDate ?? '계속'}
