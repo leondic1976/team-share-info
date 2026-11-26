@@ -246,11 +246,11 @@ function TeamTab({ notify }: { notify: (s: string) => void }): React.JSX.Element
   const run = async (it: TeamLauncherDto): Promise<void> => {
     const r = await invoke('launcher:runTeam', it)
     if (!r.ok) notify(r.error ?? '열지 못했습니다.')
-    else if (it.kind === 'template') notify(`"${it.name}" 사본을 문서\\TeamHub 양식 폴더에 만들어 열었습니다.`)
+    else if (it.kind === 'template') notify(`"${it.name}" 사본을 만들어 열었습니다. 원하는 곳에 두려면 그 프로그램에서 "다른 이름으로 저장"을 쓰세요.`)
   }
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-5" data-testid="launcher-team">
-      <p className="mb-4 text-sm text-muted-foreground">관리자가 등록한 업무 사이트·공용 폴더·양식입니다. 양식은 누를 때마다 내 문서에 새 사본을 만들어 엽니다.</p>
+      <p className="mb-4 text-sm text-muted-foreground">관리자가 등록한 업무 사이트·공용 폴더·양식입니다. 양식은 누를 때마다 TeamHub 폴더에 새 사본을 만들어 엽니다(최근 문서에도 남습니다).</p>
       {!q.data?.length && <EmptyState icon={Users} title="공용 항목이 없습니다" />}
       {groupBy(q.data ?? []).map(([g, list]) => (
         <section key={g || '_'} className="mb-5">

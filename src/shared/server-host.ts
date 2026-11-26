@@ -17,6 +17,11 @@ export type HostToServer =
       feedback?: FeedbackRelayConfig
       /** resources/forms of the program: official forms put into the file library (서식자료실) */
       formsDir?: string
+      /**
+       * true only for the installed app: listen on the office network (settings bindIp) and answer
+       * discovery there. Otherwise everything stays on 127.0.0.1 (src/main/netpolicy.ts).
+       */
+      lan?: boolean
     }
   | { type: 'stop' }
 

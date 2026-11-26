@@ -9,6 +9,7 @@ import { compareVersions } from '../shared/semver'
 import { fetchDownloadCounts, hitDownload, type CounterFetch } from '../shared/plugin-stats'
 import { pluginBundleSchema, PLUGIN_ID_RE, type CatalogPlugin, type InstalledPlugin, type PluginBundle, type PluginManifest, type PluginPermission } from '../shared/schemas/plugins'
 import { localDb } from './localdb'
+import { rememberSaveDir, savePath } from './save-dir'
 import { localDataPath } from './storage'
 import { PLUGIN_SDK } from './plugin-sdk'
 import { resourcePath } from './paths'
@@ -314,9 +315,10 @@ export async function pluginSaveFile(id: string, name: string, text: string): Pr
   if (!FILE_EXT.includes(ext)) return { ok: false, error: `저장할 수 없는 파일 형식입니다(.${ext || '?'}).` }
   if (text.length > MAX_FILE) return { ok: false, error: '파일이 너무 큽니다(5MB).' }
   const win = BrowserWindow.getFocusedWindow() ?? undefined
-  const opts = { title: '파일로 저장', defaultPath: join(app.getPath('documents'), safe), filters: [{ name: ext.toUpperCase(), extensions: [ext] }] }
+  const opts = { title: '파일로 저장', defaultPath: savePath(safe), filters: [{ name: ext.toUpperCase(), extensions: [ext] }] }
   const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
   if (r.canceled || !r.filePath) return { ok: false }
+  rememberSaveDir(r.filePath)
   const path = extOfName(r.filePath) === ext ? r.filePath : `${r.filePath}.${ext}`
   writeFileSync(path, text, 'utf8')
   log.info(`plugin ${id} saved a file: ${path}`)

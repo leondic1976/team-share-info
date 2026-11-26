@@ -101,6 +101,21 @@ export interface DiscoveredServer {
   version: string
 }
 
+/** One inbound firewall rule TeamHub adds (src/main/firewall.ts), as shown to the person. */
+export interface FirewallRule {
+  name: string
+  label: string
+}
+
+export interface FirewallState {
+  /** false in development and E2E runs: nothing is registered there (they stay on 127.0.0.1) */
+  available: boolean
+  /** what the register button adds on this PC */
+  rules: FirewallRule[]
+  /** names of those rules that exist now */
+  registered: string[]
+}
+
 export interface SetupResult {
   ok: boolean
   error?: string
@@ -347,7 +362,9 @@ export interface IpcMap {
   'server:setup': { req: ServerSetupInput & { replaceExisting?: boolean }; res: SetupResult }
   'server:status': { req: void; res: ServerStatus }
   'server:restart': { req: void; res: ServerStatus }
-  'server:registerFirewall': { req: void; res: { ok: boolean; message: string } }
+  'firewall:state': { req: void; res: FirewallState }
+  'firewall:register': { req: void; res: { ok: boolean; message: string } }
+  'firewall:remove': { req: void; res: { ok: boolean; message: string } }
   'server:inspectBackup': { req: { dir: string }; res: { ok: boolean; error?: string; orgName?: string; teamName?: string; createdAt?: number; admins?: { id: string; name: string }[] } }
   'server:importBackup': { req: { dir: string; dataDir: string; adminId: string }; res: SetupResult }
   'discovery:scan': { req: void; res: DiscoveredServer[] }
@@ -682,7 +699,9 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'server:setup',
   'server:status',
   'server:restart',
-  'server:registerFirewall',
+  'firewall:state',
+  'firewall:register',
+  'firewall:remove',
   'server:inspectBackup',
   'server:importBackup',
   'discovery:scan',

@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { handle } from './registry'
+import { rememberSaveDir, savePath } from '../save-dir'
 import { cancelTransfer, clearFinished, downloadTo, enqueueUploads, listTransfers, openWithApp, resumeTransfers, retryTransfer } from '../transfer'
 
 export function registerTransferIpc(): void {
@@ -29,10 +30,11 @@ export function registerTransferIpc(): void {
       dest = join(dir, name)
     } else {
       const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
-      const opts = { title: '저장할 위치', defaultPath: join(app.getPath('downloads'), name) }
+      const opts = { title: '저장할 위치', defaultPath: savePath(name) }
       const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
       if (r.canceled || !r.filePath) return { ok: false }
       dest = r.filePath
+      rememberSaveDir(dest)
     }
     try {
       return { ok: true, path: await downloadTo(fileId, name, dest, versionId) }

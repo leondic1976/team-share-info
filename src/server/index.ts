@@ -29,7 +29,13 @@ function post(msg: ServerToHost): void {
   parent?.postMessage(msg)
 }
 
-async function start(dataDir: string, version: string, feedback?: FeedbackRelayConfig, formsDir?: string): Promise<void> {
+/** Where the server listens: the office network only for the installed app (HostToServer `lan`), else this PC. */
+const LOOPBACK = '127.0.0.1'
+function listenHost(lan: boolean, bindIp: string): string {
+  return lan ? bindIp || '0.0.0.0' : LOOPBACK
+}
+
+async function start(dataDir: string, version: string, feedback?: FeedbackRelayConfig, formsDir?: string, lan = false): Promise<void> {
   const restored = applyPendingRestore(dataDir)
   if (restored) post({ type: 'log', level: 'info', message: `restored backup ${restored}` })
   db = openServerDb(dataDir, version)
@@ -52,13 +58,14 @@ async function start(dataDir: string, version: string, feedback?: FeedbackRelayC
   }
   built.ctx.requestRestart = (reason) => post({ type: 'restart-requested', reason })
   writeLatestYml(built.ctx)
-  await built.app.listen({ port: net.port, host: net.bindIp || '0.0.0.0' })
+  const host = listenHost(lan, net.bindIp)
+  await built.app.listen({ port: net.port, host })
   try {
-    udp = startDiscoveryResponder(built.ctx, (m) => post({ type: 'log', level: 'warn', message: m }))
+    udp = startDiscoveryResponder(built.ctx, (m) => post({ type: 'log', level: 'warn', message: m }), lan ? undefined : LOOPBACK)
   } catch (e) {
     post({ type: 'log', level: 'warn', message: `discovery disabled: ${String(e)}` })
   }
-  post({ type: 'ready', port: net.port, bindIp: net.bindIp })
+  post({ type: 'ready', port: net.port, bindIp: host })
 }
 
 async function stop(): Promise<void> {
@@ -78,7 +85,7 @@ async function stop(): Promise<void> {
 parent?.on('message', (e) => {
   const msg = e.data
   if (msg.type === 'start') {
-    start(msg.dataDir, msg.version, msg.feedback, msg.formsDir).catch((err: unknown) => {
+    start(msg.dataDir, msg.version, msg.feedback, msg.formsDir, msg.lan === true).catch((err: unknown) => {
       post({ type: 'error', message: err instanceof Error ? err.message : String(err), fatal: true })
       // Exit so the host restarts us with back-off (e.g. the port is still held by a dying process).
       db?.close()

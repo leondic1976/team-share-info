@@ -9,7 +9,7 @@ import log from 'electron-log/main'
 import { handle } from './registry'
 import { headers } from '../transfer'
 import { readCredential } from '../connection'
-import { localDb } from '../localdb'
+import { rememberSaveDir, saveDir, savePath } from '../save-dir'
 
 /**
  * Files attached to messages, notices and posts: save to a place the user picks, or fetch
@@ -17,7 +17,6 @@ import { localDb } from '../localdb'
  * process saved in this session and asks to open or show that (13.8).
  */
 const saved = new Map<string, string>()
-const KV_DIR = 'attachDir'
 
 /** Opening these runs code: they are saved, never started from here (9장: 실행 파일 경고). */
 const RUNS_CODE = new Set(['.exe', '.msi', '.msix', '.bat', '.cmd', '.com', '.scr', '.pif', '.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.ps1', '.psm1', '.lnk', '.reg', '.hta', '.cpl', '.jar', '.dll', '.appx', '.gadget'])
@@ -31,11 +30,6 @@ const safeName = (n: string): string =>
       .replace(/[. ]+$/, '')
       .trim() || 'file'
   ).slice(0, 180)
-
-function lastDir(): string {
-  const d = localDb().kv.get<string>(KV_DIR)
-  return d && existsSync(d) ? d : app.getPath('downloads')
-}
 
 /** "보고서.hwp" -> "보고서 (2).hwp" when the name is taken. */
 function freeName(dir: string, name: string): string {
@@ -93,17 +87,17 @@ export function registerAttachIpc(): void {
     const file = safeName(name)
     let dest: string
     if (openNow || process.env.TEAMHUB_E2E) {
-      // straight into the folder used last (Downloads at first), under a name that is free
-      const dir = process.env.TEAMHUB_E2E ? join(app.getPath('userData'), 'downloads') : lastDir()
+      // straight into the folder used last (Downloads at first, never a protected folder), under a name that is free
+      const dir = process.env.TEAMHUB_E2E ? join(app.getPath('userData'), 'downloads') : saveDir()
       mkdirSync(dir, { recursive: true })
       dest = freeName(dir, file)
     } else {
       const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
-      const opts = { title: '저장할 위치', defaultPath: join(lastDir(), file) }
+      const opts = { title: '저장할 위치', defaultPath: savePath(file) }
       const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
       if (r.canceled || !r.filePath) return { ok: false, canceled: true }
       dest = r.filePath
-      localDb().kv.set(KV_DIR, dirname(dest))
+      rememberSaveDir(dest)
     }
     try {
       await fetchTo(id, dest)

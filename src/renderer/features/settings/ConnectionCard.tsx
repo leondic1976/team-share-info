@@ -1,6 +1,6 @@
 import { EmptyNote } from '@renderer/components/EmptyState'
 import { useEffect, useState } from 'react'
-import { Lock, Radar, Loader2, RotateCcw, Server } from 'lucide-react'
+import { Lock, Radar, Loader2, RotateCcw, Server, ShieldCheck, ShieldOff } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -10,7 +10,7 @@ import { realtime } from '@renderer/lib/realtime'
 import { request, errorMessage } from '@renderer/lib/api'
 import { toServerUrl } from '@shared/net'
 import { DEFAULT_PORT } from '@shared/constants'
-import type { DiscoveredServer } from '@shared/ipc'
+import type { DiscoveredServer, FirewallState } from '@shared/ipc'
 import type { ServerStatus } from '@shared/server-host'
 import type { Hello } from '@shared/schemas/auth'
 
@@ -69,16 +69,6 @@ export function ConnectionCard({ onReset }: { onReset: () => void }): React.JSX.
               <Button size="sm" variant="outline" onClick={async () => setServer(await invoke('server:restart'))}>
                 <RotateCcw /> 서버 다시 시작
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  const r = await invoke('server:registerFirewall')
-                  setMsg(r.message)
-                }}
-              >
-                방화벽 규칙 다시 등록
-              </Button>
             </div>
           </div>
         ) : (
@@ -120,6 +110,7 @@ export function ConnectionCard({ onReset }: { onReset: () => void }): React.JSX.
           </>
         )}
         {msg && <p className="text-xs text-muted-foreground">{msg}</p>}
+        <FirewallSection server={conn.mode === 'server'} />
         <div className="space-y-1 border-t border-border pt-3 text-sm" data-testid="pc-identity">
           <div className="flex items-center gap-1.5 font-medium">
             <Lock className="size-3.5" /> 이 PC
@@ -151,5 +142,58 @@ export function ConnectionCard({ onReset }: { onReset: () => void }): React.JSX.
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * Inbound firewall rules of TeamHub: lists what the button adds, registers them (Windows asks for
+ * administrator rights) and removes them again. Nothing happens without a press here or in setup.
+ */
+function FirewallSection({ server }: { server: boolean }): React.JSX.Element {
+  const [state, setState] = useState<FirewallState | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  useEffect(() => {
+    void invoke('firewall:state').then(setState)
+  }, [server])
+  const run = async (op: 'firewall:register' | 'firewall:remove'): Promise<void> => {
+    setBusy(true)
+    try {
+      setMsg((await invoke(op)).message)
+      setState(await invoke('firewall:state'))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const all = !!state && state.rules.every((r) => state.registered.includes(r.name))
+  const some = !!state && state.registered.length > 0
+  return (
+    <div className="space-y-2 border-t border-border pt-3 text-sm" data-testid="firewall">
+      <div className="flex items-center gap-1.5 font-medium">
+        <ShieldCheck className="size-3.5" /> 방화벽
+        <span className="ml-auto text-xs font-normal text-muted-foreground" data-testid="firewall-state">
+          {!state ? '확인 중…' : !state.available ? '개발 실행: 이 PC 안에서만 연결' : all ? '등록됨' : some ? '일부만 등록됨' : '등록 안 됨'}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {server ? '다른 PC가 이 서버에 들어올 수 있도록' : '화상회의에서 다른 PC가 이 PC로 연결할 수 있도록'} 개인·도메인 네트워크(공용 네트워크 제외)에서 다음 연결을 허용합니다. 등록할 때와 지울 때 Windows가 관리자 권한을 한 번 묻습니다.
+      </p>
+      <ul className="list-disc pl-5 text-xs">
+        {state?.rules.map((r) => (
+          <li key={r.name}>
+            {r.label} <span className="text-muted-foreground">— 규칙 이름 "{r.name}"</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" disabled={busy || !state?.available} onClick={() => void run('firewall:register')}>
+          {busy ? <Loader2 className="animate-spin" /> : <ShieldCheck />} {some ? '방화벽 규칙 다시 등록' : '방화벽 규칙 등록'}
+        </Button>
+        <Button size="sm" variant="outline" disabled={busy || !state?.available || !some} onClick={() => void run('firewall:remove')}>
+          <ShieldOff /> 방화벽 규칙 지우기
+        </Button>
+      </div>
+      {msg && <p className="text-xs text-muted-foreground">{msg}</p>}
+    </div>
   )
 }
