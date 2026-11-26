@@ -167,7 +167,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
           </div>
         }
       />
-      <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} isAdmin={isAdmin} disabledFeatures={disabled} />
       <div className="flex min-h-0 flex-1">
         <Sidebar isAdmin={isAdmin} disabledFeatures={disabled} badges={{ notices: unread, chat: chatUnread.messages + chatUnread.notes, meetings: liveMeetings.data?.length ?? 0, admin: me?.pendingJoins ?? 0, ledger: me?.ledgerUnseen ?? 0, command: commandBadge }} />
         <CommandAlerts meId={me?.id ?? null} enabled={commandOn && state === 'online'} />

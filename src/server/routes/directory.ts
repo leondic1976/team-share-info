@@ -12,6 +12,7 @@ import { adminFieldsOf, getMember, listDepartments, setAdminFields, updateMember
 import { DEPT_MAX_DEPTH, deptDepth, deptHeight, deptNameError, cleanDeptName, siblingNameTaken, subtreeIds } from '../../shared/org'
 import { departmentCreateSchema, departmentMergeSchema, departmentOrderSchema, departmentPatchSchema, orgMemberOrderSchema, orgMemberPatchSchema } from '../../shared/schemas/org'
 import { ADMIN_SET_FIELDS } from '../../shared/schemas/auth'
+import { choseongOr } from '../choseong'
 
 interface ContactRow {
   id: string
@@ -77,8 +78,9 @@ export function registerDirectoryRoutes(app: FastifyInstance, ctx: ServerContext
     const params: string[] = [...w.params]
     if (q.q.trim()) {
       const like = `%${q.q.trim()}%`
-      where.push('(c.name LIKE ? OR c.org LIKE ? OR c.title LIKE ? OR c.phone LIKE ? OR c.mobile LIKE ? OR c.memo LIKE ?)')
-      params.push(like, like, like, like, like, like)
+      const c = choseongOr(q.q, ['c.name', 'c.org', 'c.title'])
+      where.push(`(c.name LIKE ? OR c.org LIKE ? OR c.title LIKE ? OR c.phone LIKE ? OR c.mobile LIKE ? OR c.memo LIKE ?${c.sql})`)
+      params.push(like, like, like, like, like, like, ...c.params)
     }
     if (q.groupId) {
       where.push(inGroupWhere('c', 'contact'))

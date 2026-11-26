@@ -25,6 +25,7 @@ import { useConn } from '@renderer/app/conn-store'
 import { cn } from '@renderer/lib/utils'
 import { DateTimeInput } from '@renderer/components/DateTimeInput'
 import { RoleMark } from '@renderer/components/RoleMark'
+import { matchesHangul } from '@shared/hangul'
 
 type Tab = 'day' | 'week' | 'list'
 type Section = DutySection<DutyMemberDto>
@@ -596,7 +597,7 @@ export function DutyPage(): React.JSX.Element {
     const rows = board.entries
       .filter((e) => shown.has(e.memberId))
       .map((e) => ({ e, ...shown.get(e.memberId)! }))
-      .filter((r) => !q.trim() || `${r.m.name} ${dn(r.m)} ${r.dept} ${r.e.type} ${r.e.place} ${r.e.note}`.includes(q.trim()))
+      .filter((r) => matchesHangul(`${r.m.name} ${dn(r.m)} ${r.dept} ${r.e.type} ${r.e.place} ${r.e.note}`, q))
       .sort((x, y) => x.rank - y.rank || x.e.start - y.e.start)
     const days = (e: DutyEntryDto): string => (e.allDay ? `${Math.round((e.end - e.start) / DAY)}일` : `${Math.round(((e.end - e.start) / 3600000) * 10) / 10}시간`)
     const exportCsv = (): void => {

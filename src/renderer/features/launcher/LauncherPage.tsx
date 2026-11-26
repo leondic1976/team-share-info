@@ -15,6 +15,7 @@ import { useConn } from '@renderer/app/conn-store'
 import { cn } from '@renderer/lib/utils'
 import { useLocalQuery } from '@renderer/features/memos/tools-api'
 import { BookmarksTab } from './BookmarksTab'
+import { matchesHangul } from '@shared/hangul'
 
 export function AppIcon({ path, kind, className }: { path: string; kind: string; className?: string }): React.JSX.Element {
   const q = useQuery({ queryKey: ['local', 'icon', path], queryFn: () => invoke('launcher:icon', { path }), enabled: kind !== 'url' && kind !== 'template', staleTime: Infinity, networkMode: 'always' })
@@ -112,7 +113,7 @@ function ItemDialog({ item, groups, onClose }: { item: Partial<LauncherInput> | 
 function StartMenuDialog({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element {
   const [q, setQ] = useState('')
   const list = useQuery({ queryKey: ['local', 'startmenu'], queryFn: () => invoke('launcher:startMenu'), enabled: open, networkMode: 'always', staleTime: 60_000 })
-  const items = (list.data ?? []).filter((p) => !q.trim() || p.name.toLowerCase().includes(q.trim().toLowerCase()))
+  const items = (list.data ?? []).filter((p) => matchesHangul(p.name, q))
   return (
     <Dialog open={open} onClose={onClose} title="시작 메뉴에서 프로그램 추가" width="max-w-2xl">
       <Input aria-label="프로그램 검색" placeholder="프로그램 이름" value={q} onChange={(e) => setQ(e.target.value)} className="mb-2" />
@@ -274,7 +275,7 @@ function RecentTab({ notify }: { notify: (s: string) => void }): React.JSX.Eleme
   const [q, setQ] = useState('')
   const recent = useQuery({ queryKey: ['local', 'recent-docs'], queryFn: () => invoke('launcher:recent'), networkMode: 'always', refetchOnMount: 'always' })
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ['local', 'recent-docs'] })
-  const list = (recent.data ?? []).filter((d: RecentDocDto) => !q.trim() || d.name.toLowerCase().includes(q.trim().toLowerCase()))
+  const list = (recent.data ?? []).filter((d: RecentDocDto) => matchesHangul(d.name, q))
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-5">
       <div className="relative mb-3 max-w-sm">

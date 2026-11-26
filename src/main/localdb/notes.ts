@@ -1,6 +1,7 @@
 import type { Db } from '../../node/sqlite'
 import { newId, parseJson } from '../../node/sqlite'
 import { DEFAULT_DB_PROPS, extractNoteLinks, htmlToText, type CellValue, type DbProps, type NoteDto, type NoteKind, type NoteRow, type NoteTreeItem } from '../../shared/notes'
+import { hasChoseong } from '../../shared/hangul'
 
 interface Row {
   id: string
@@ -201,10 +202,15 @@ export class NotesRepo {
     const t = q.trim()
     if (!t) return []
     const base = 'SELECT n.id, n.title, n.icon, n.body_text FROM notes n'
+    // 초성 검색 ("ㅈㅅ ㄴㅌ") matches titles only (hangul_match, src/node/sqlite.ts); FTS cannot
+    const cho = hasChoseong(t)
     const rows =
-      [...t].length >= 3
+      [...t].length >= 3 && !cho
         ? this.db.all<{ id: string; title: string; icon: string; body_text: string }>(`${base} JOIN notes_fts f ON f.rowid = n.rowid WHERE notes_fts MATCH ? AND n.trashed_at IS NULL ORDER BY rank LIMIT ?`, [`"${t.replace(/"/g, '""')}"`, limit])
-        : this.db.all<{ id: string; title: string; icon: string; body_text: string }>(`${base} WHERE (n.title LIKE ? OR n.body_text LIKE ?) AND n.trashed_at IS NULL ORDER BY n.updated_at DESC LIMIT ?`, [`%${t}%`, `%${t}%`, limit])
+        : this.db.all<{ id: string; title: string; icon: string; body_text: string }>(
+            `${base} WHERE (n.title LIKE ? OR n.body_text LIKE ?${cho ? ' OR hangul_match(n.title, ?)' : ''}) AND n.trashed_at IS NULL ORDER BY n.updated_at DESC LIMIT ?`,
+            cho ? [`%${t}%`, `%${t}%`, t, limit] : [`%${t}%`, `%${t}%`, limit]
+          )
     return rows.map((r) => {
       const i = r.body_text.toLowerCase().indexOf(t.toLowerCase())
       return { id: r.id, title: r.title, icon: r.icon, snippet: i >= 0 ? r.body_text.slice(Math.max(0, i - 30), i + 60).replace(/\n/g, ' ') : r.body_text.slice(0, 80).replace(/\n/g, ' ') }

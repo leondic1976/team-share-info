@@ -8,6 +8,7 @@ import { Dialog, confirmDialog } from '@renderer/components/Dialog'
 import { EmptyState } from '@renderer/components/EmptyState'
 import { invoke } from '@renderer/lib/bridge'
 import { errorMessage } from '@renderer/lib/api'
+import { matchesHangul } from '@shared/hangul'
 
 export const useBookmarks = () => useQuery({ queryKey: ['local', 'bookmarks'], queryFn: () => invoke('bm:list'), networkMode: 'always' })
 
@@ -22,7 +23,7 @@ export function BookmarksTab({ notify }: { notify: (s: string) => void }): React
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [editing, setEditing] = useState(false)
   const refresh = (): void => void qc.invalidateQueries({ queryKey: ['local', 'bookmarks'] })
-  const list = (bm.data ?? []).filter((b) => !q.trim() || `${b.title} ${b.url} ${b.category} ${b.note}`.toLowerCase().includes(q.trim().toLowerCase()))
+  const list = (bm.data ?? []).filter((b) => matchesHangul(`${b.title} ${b.url} ${b.category} ${b.note}`, q))
   const groups = useMemo(() => {
     const m = new Map<string, BookmarkDto[]>()
     for (const b of list) m.set(b.category, [...(m.get(b.category) ?? []), b])

@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { Lock, Search, Users } from 'lucide-react'
+import { LayoutList, Lock, Search, Users } from 'lucide-react'
 import { api } from '@renderer/lib/api'
 import { invoke } from '@renderer/lib/bridge'
 import { useConn } from './conn-store'
 import { cn } from '@renderer/lib/utils'
+import { BOTTOM_MENU, MENU } from './menu'
+import { usePrefs } from './prefs-store'
+import { matchesHangul } from '@shared/hangul'
 
 interface Hit {
   key: string
@@ -30,7 +33,7 @@ function useDebounced(v: string, ms = 200): string {
 }
 
 /** Ctrl+K: search the team (server, within my scope) and this PC (memos, diary, notes, files, sites). */
-export function SearchPalette({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element | null {
+export function SearchPalette({ open, onClose, isAdmin = false, disabledFeatures = [] }: { open: boolean; onClose: () => void; isAdmin?: boolean; disabledFeatures?: string[] }): React.JSX.Element | null {
   const navigate = useNavigate()
   const online = useConn((s) => s.state === 'online')
   const [q, setQ] = useState('')
@@ -73,19 +76,32 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
         ...notes.slice(0, 6).map((n) => ({ key: `note${n.id}`, group: '지식 노트', local: true, title: n.title || '제목 없음', snippet: n.snippet, go: () => go(`/notes/${n.id}`) })),
         ...files.map((f) => ({ key: `file${f.path}`, group: '내 파일', local: true, title: f.name, snippet: f.dir, at: f.mtime, go: () => void invoke('fm:open', { path: f.path }).then(onClose) })),
         ...sites
-          .filter((b) => `${b.title} ${b.url} ${b.category}`.toLowerCase().includes(dq.toLowerCase()))
+          .filter((b) => matchesHangul(`${b.title} ${b.url} ${b.category}`, dq))
           .slice(0, 6)
           .map((b) => ({ key: `bm${b.id}`, group: '사이트 모음', local: true, title: b.title, snippet: b.url, go: () => void invoke('bm:open', { url: b.url }).then(onClose) }))
       ]
     }
   })
+  const hiddenMenus = usePrefs((s) => s.hiddenMenus)
+  // the menus themselves, so "근무현황" or "ㄱㅁㅎㅎ" opens the screen
+  const menus = useMemo<Hit[]>(
+    () =>
+      dq
+        ? [...MENU, ...BOTTOM_MENU]
+            .filter((m) => (!m.adminOnly || isAdmin) && !hiddenMenus.includes(m.key) && !disabledFeatures.includes(m.key) && matchesHangul(m.label, dq))
+            .map((m) => ({ key: `menu${m.key}`, group: '메뉴', local: false, title: m.label, snippet: '', go: () => go(m.path) }))
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dq, isAdmin, hiddenMenus, disabledFeatures]
+  )
   const hits = useMemo<Hit[]>(
     () => [
+      ...menus,
       ...(server.data ?? []).map((r) => ({ key: `${r.type}${r.id}`, group: TYPE_LABEL[r.type] ?? r.type, local: false, title: r.title, snippet: r.snippet, at: r.at, go: () => go(r.route) })),
       ...(local.data ?? [])
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [server.data, local.data]
+    [menus, server.data, local.data]
   )
   useEffect(() => setSel(0), [dq])
   if (!open) return null
@@ -118,7 +134,7 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
               <div key={h.key}>
                 {header && (
                   <p className="flex items-center gap-1 px-2 pb-1 pt-2 text-xs font-semibold text-muted-foreground">
-                    {h.local ? <Lock className="size-3" /> : <Users className="size-3" />} {h.group}
+                    {h.group === '메뉴' ? <LayoutList className="size-3" /> : h.local ? <Lock className="size-3" /> : <Users className="size-3" />} {h.group}
                   </p>
                 )}
                 <button

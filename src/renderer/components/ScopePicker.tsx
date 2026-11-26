@@ -9,6 +9,7 @@ import { affiliationText } from '@shared/org'
 import { RoleMark } from './RoleMark'
 import { PresenceDot, PRESENCE_LABEL } from './PresenceDot'
 import { byPresence } from '@shared/presence'
+import { matchesHangul } from '@shared/hangul'
 
 export function defaultScope(space: string): ScopeInput {
   return space === 'team' ? { type: 'team', groupIds: [], memberIds: [] } : { type: 'group', groupIds: [space], memberIds: [] }
@@ -105,7 +106,7 @@ export function MemberPicker({
   const list = useMemo(() => {
     const shown = (members ?? [])
       .filter((m) => !excludeSelf || m.id !== me?.id)
-      .filter((m) => !q.trim() || `${m.name} ${m.nickname ?? ''} ${affiliationText(m)}`.includes(q.trim()))
+      .filter((m) => matchesHangul(`${m.name} ${m.nickname ?? ''} ${affiliationText(m)}`, q))
     return presence ? [...shown].sort(byPresence) : shown
   }, [members, me, q, excludeSelf, presence])
   const selected = (members ?? []).filter((m) => value.includes(m.id))

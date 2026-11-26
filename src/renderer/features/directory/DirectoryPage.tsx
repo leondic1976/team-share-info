@@ -18,6 +18,8 @@ import { displayName, type MemberDto } from '@shared/schemas/auth'
 import type { ContactDto } from '@shared/schemas/work'
 import type { ScopeInput } from '@shared/schemas/scope'
 import { CONTACT_COLUMNS, csvToContacts, parseCsv, toCsv } from '@shared/csv'
+import { decodeText } from '@shared/text-decode'
+import { matchesHangul } from '@shared/hangul'
 import { MemberCard } from './MemberCard'
 import { MemberLink } from '@renderer/components/MemberLink'
 import { DeptPicker, deptPathError, type DeptChoice } from '@renderer/components/DeptPicker'
@@ -33,7 +35,7 @@ function MembersTab(): React.JSX.Element {
   const [q, setQ] = useState('')
   const [card, setCard] = useState<MemberDto | null>(null)
   // the whole affiliation is searched: "총무과" also finds the people of the teams below it
-  const list = (members ?? []).filter((m) => !q.trim() || `${m.name} ${m.nickname ?? ''} ${affiliationText(m)} ${m.title ?? ''} ${m.duty ?? ''} ${m.ext ?? ''}`.includes(q.trim()))
+  const list = (members ?? []).filter((m) => !q.trim() || matchesHangul(`${m.name} ${m.nickname ?? ''} ${affiliationText(m)} ${m.title ?? ''} ${m.duty ?? ''} ${m.ext ?? ''}`, q))
   // Org chart: department tree order, members under each department.
   const tree = useMemo(() => {
     const out: { dept: Dept | null; depth: number; path: string[]; members: MemberDto[] }[] = deptOptions(depts ?? []).map((o) => ({
@@ -253,7 +255,7 @@ function ContactsTab(): React.JSX.Element {
   }
   const importCsv = async (file?: File): Promise<void> => {
     if (!file) return
-    const rows = csvToContacts(parseCsv(await file.text()))
+    const rows = csvToContacts(parseCsv(decodeText(new Uint8Array(await file.arrayBuffer()))))
     if (!rows.length) return setMsg('가져올 줄이 없습니다. 첫 줄에 "기관, 이름, 직위, 전화, 휴대폰, 이메일, 메모" 머리글이 있어야 합니다.')
     if (!window.confirm(`${rows.length}명을 가져올까요? 공개 범위는 ${space === 'team' ? '팀 전체' : '지금 고른 그룹'}입니다.`)) return
     try {

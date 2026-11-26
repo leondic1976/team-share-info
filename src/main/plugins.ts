@@ -12,6 +12,7 @@ import { localDb } from './localdb'
 import { localDataPath } from './storage'
 import { PLUGIN_SDK } from './plugin-sdk'
 import { resourcePath } from './paths'
+import { decodeText } from '../shared/text-decode'
 
 /**
  * Plugins (확장 기능): install from the download site's catalog or from a .thplugin file,
@@ -336,15 +337,6 @@ export async function pluginOpenFile(id: string, exts: string[]): Promise<{ ok: 
   if (buf.length > MAX_FILE) return { ok: false, error: '파일이 너무 큽니다(5MB).' }
   return { ok: true, name: p.split(/[\\/]/).pop(), text: decodeText(buf) }
 }
-/** UTF-8 (with or without BOM); Excel's Korean CSV (CP949/EUC-KR) when UTF-8 does not fit. */
-function decodeText(buf: Buffer): string {
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^\uFEFF/, '')
-  } catch {
-    return new TextDecoder('euc-kr').decode(buf)
-  }
-}
-
 export function uninstallPlugin(id: string): void {
   if (!PLUGIN_ID_RE.test(id) || isBuiltinApp(id)) return
   rmSync(join(root(), id), { recursive: true, force: true })

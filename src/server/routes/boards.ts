@@ -11,6 +11,7 @@ import { audienceOf, canSee, scopeDto, setScope, visibleWhere } from '../scope'
 import { cleanHtml } from '../html'
 import { deleteAttachmentsOf, linkAttachments, listAttachments, registerAttachmentOwner } from './attachments'
 import { commentCount, registerCommentOwner } from './comments'
+import { choseongOr } from '../choseong'
 
 interface BoardRow {
   id: string
@@ -202,8 +203,9 @@ export function registerBoardRoutes(app: FastifyInstance, ctx: ServerContext, gu
     const where = ['p.board_id = ?', 'p.deleted_at IS NULL']
     const params: (string | number)[] = [b.id]
     if (q.q.trim()) {
-      where.push('(p.title LIKE ? OR p.body_html LIKE ?)')
-      params.push(`%${q.q.trim()}%`, `%${q.q.trim()}%`)
+      const c = choseongOr(q.q, ['p.title'])
+      where.push(`(p.title LIKE ? OR p.body_html LIKE ?${c.sql})`)
+      params.push(`%${q.q.trim()}%`, `%${q.q.trim()}%`, ...c.params)
     }
     if (q.before) {
       where.push('p.created_at < ?')

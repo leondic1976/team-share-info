@@ -4,6 +4,7 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, rmSync, statSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import type { Page } from 'playwright-core'
 import type { TransferItem } from '../src/shared/ipc'
 import { go, launch, runWizard, type Launched } from './helpers'
 
@@ -12,6 +13,19 @@ const BIG = 1024 * 1024 * 1024 // 1GB (13.12 M4 verification)
 const bigPath = join(tmpdir(), `teamhub-e2e-1gb-${Date.now()}.bin`)
 // ASCII name on disk: Vitest 5.1 workers crash when the test process creates non-ASCII file names on Windows (13.13).
 const smallPath = join(tmpdir(), `teamhub-e2e-report.txt`)
+const eucPath = join(tmpdir(), `teamhub-e2e-euckr.csv`)
+const SHOTS = process.env.TEAMHUB_SHOT_DIR
+
+/** With TEAMHUB_SHOT_DIR set: a screenshot in the light and in the dark theme. */
+async function shot(p: Page, name: string): Promise<void> {
+  if (!SHOTS) return
+  await p.waitForTimeout(400)
+  await p.screenshot({ path: `${SHOTS}/${name}-light.png` })
+  await p.evaluate(() => document.documentElement.classList.add('dark'))
+  await p.waitForTimeout(300)
+  await p.screenshot({ path: `${SHOTS}/${name}-dark.png` })
+  await p.evaluate(() => document.documentElement.classList.remove('dark'))
+}
 
 function makeBigFile(): string {
   const hash = createHash('sha256')
@@ -38,6 +52,7 @@ describe('M4 files', () => {
     await a?.close()
     rmSync(bigPath, { force: true })
     rmSync(smallPath, { force: true })
+    rmSync(eucPath, { force: true })
   })
 
   it('creates a root folder and uploads a small file through the UI flow', async () => {
@@ -64,6 +79,18 @@ describe('M4 files', () => {
     const preview = a.page.getByTestId('file-preview-text')
     await expect.poll(() => preview.textContent(), { timeout: 10000 }).toBe('두 번째 버전입니다')
     expect(await preview.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/Pretendard.*Malgun Gothic/)
+    await a.page.getByRole('dialog').getByRole('button', { name: '닫기' }).click()
+  })
+
+  it('previews a text file saved as EUC-KR (CP949) without broken letters', async () => {
+    // "이름,부서 / 홍길동,총무과 / 똠방각하,서무" as Excel and Notepad save it on Korean Windows (똠 is CP949-only)
+    writeFileSync(eucPath, Buffer.from('c0ccb8a72cbacebcad0d0ac8abb1e6b5bf2cc3d1b9abb0fa0d0a8c63b9e6b0a2c7cf2cbcadb9ab', 'hex'))
+    await a.page.evaluate(([p, f]) => window.teamhub.invoke('transfer:upload', { paths: [p], folderId: f }), [eucPath, folderId])
+    await a.page.getByTestId('file-row-teamhub-e2e-euckr.csv').waitFor({ timeout: 15000 })
+    await a.page.getByTestId('file-row-teamhub-e2e-euckr.csv').click()
+    const preview = a.page.getByTestId('file-preview-text')
+    await expect.poll(async () => (await preview.textContent())?.split(String.fromCharCode(13)).join(''), { timeout: 10000 }).toBe(['이름,부서', '홍길동,총무과', '똠방각하,서무'].join(String.fromCharCode(10)))
+    await shot(a.page, 'files-preview-euckr')
     await a.page.getByRole('dialog').getByRole('button', { name: '닫기' }).click()
   })
 

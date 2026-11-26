@@ -6,6 +6,7 @@ import { Badge } from '@renderer/components/ui/badge'
 import { cn } from '@renderer/lib/utils'
 import type { DepartmentDto } from '@shared/schemas/org'
 import { DEPT_MAX_DEPTH, DEPT_SEP, deptNameError, deptOptions, deptPathText, matchDeptPath, parseDeptPath } from '@shared/org'
+import { matchesHangul } from '@shared/hangul'
 
 /** An existing department (null: none), or the affiliation as typed, top level first. */
 export type DeptChoice = { deptId: string | null } | { path: string[] }
@@ -45,7 +46,7 @@ export function DeptPicker({
   const [text, setText] = useState('path' in value ? deptPathText(value.path) : '')
   const options = useMemo(() => deptOptions(depts), [depts])
   const needle = q.trim().toLowerCase()
-  const shown = needle ? options.filter((o) => o.path.join(' ').toLowerCase().includes(needle)) : options
+  const shown = needle ? options.filter((o) => matchesHangul(o.path.join(' '), needle)) : options
 
   const pickedId = 'deptId' in value ? value.deptId : null
   const typed = 'path' in value ? value.path : null
