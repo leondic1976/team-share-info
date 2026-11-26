@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Save } from 'lucide-react'
 import type { AllSettings } from '@shared/schemas/settings'
@@ -71,6 +72,16 @@ export function SettingsTab(): React.JSX.Element {
       setMaxFileGb(gbText(q.data.storage.maxFileBytes))
     }
   }, [q.data, s])
+
+  // "백업 위치 바꾸기" in the backup warnings opens this tab on the backup location
+  const focus = (useLocation().state as { focus?: string } | null)?.focus
+  const loaded = !!s
+  useEffect(() => {
+    if (!loaded || focus !== 'backup') return
+    const el = document.getElementById('backup-dir')
+    el?.scrollIntoView({ block: 'center' })
+    el?.focus()
+  }, [loaded, focus])
 
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => api.put<AllSettings>('/api/admin/settings', body),
@@ -235,8 +246,11 @@ export function SettingsTab(): React.JSX.Element {
         <CardContent className="grid grid-cols-3 gap-3">
           <div className="col-span-3">
             <Field label="백업 위치">
-              <Input aria-label="백업 위치" value={s.backup.dir} onChange={(e) => upd('backup', { dir: e.target.value })} />
+              <Input id="backup-dir" aria-label="백업 위치" value={s.backup.dir} placeholder="예: E:\TeamHub 백업, \\NAS\공유\TeamHub 백업" onChange={(e) => upd('backup', { dir: e.target.value })} />
             </Field>
+            <p className="mt-1 text-xs text-muted-foreground">
+              비워 두면 서버 자료 폴더 안(같은 드라이브)에 백업하므로 디스크가 고장 나면 서버 자료와 백업을 함께 잃습니다. 서버 자료와 다른 드라이브, NAS(공유 폴더) 또는 USB 드라이브의 폴더를 적으세요.
+            </p>
           </div>
           <Field label="매일 백업 시각">
             <Input aria-label="백업 시각" value={s.backup.time} onChange={(e) => upd('backup', { time: e.target.value })} />

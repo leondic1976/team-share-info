@@ -16,6 +16,7 @@ import { newId } from '../../node/sqlite'
 import { logActivity } from '../activity'
 import { usedBytes } from '../storage/blobs'
 import { messageFileCleanupState, messageFileUsage } from '../message-files'
+import { backupHealth } from '../backup'
 import type { FastifyRequest } from 'fastify'
 
 interface JoinRow {
@@ -362,7 +363,7 @@ export function registerAdminRoutes(
     return ok(getAllSettings(ctx.db))
   })
 
-  app.get('/api/admin/status', pre, async () => {
+  app.get('/api/admin/status', pre, async (req) => {
     let disk: { free: number; total: number } | null
     try {
       const s = statfsSync(ctx.dataDir)
@@ -382,6 +383,8 @@ export function registerAdminRoutes(
       storageUsed: usedBytes(ctx),
       // 메신저 파일 보관 기간: what conversation files take now and what the last cleanup did
       messageFiles: { ...messageFileUsage(ctx), cleanup: messageFileCleanupState(ctx) },
+      // backups are the 최종관리자's (a 서무 cannot change them), so only the server PC sees their state
+      backup: isOwnerRequest(ctx, req) ? backupHealth(ctx.db, ctx.dataDir) : undefined,
       recentErrors: ctx.recentErrors.slice(0, 20)
     })
   })

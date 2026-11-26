@@ -13,6 +13,7 @@ import { getSection, isInitialized, readSetting } from '../settings'
 import { adminFieldsOf, ensureDeptPath, getMember, listDepartments, listMembers, toMemberDto, updateMember } from '../repos/members'
 import { blockedPc, ownerMemberId } from '../repos/devices'
 import { isOwnerRequest } from '../auth'
+import { backupAlert, backupHealth } from '../backup'
 import { logActivity } from '../activity'
 import { approveJoinRequest } from './admin'
 import { myGroups } from '../repos/groups'
@@ -102,9 +103,10 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
   app.get('/api/me', { preHandler: requireAuth }, async (req) => {
     const m = req.member
     const ops = getSection(ctx.db, 'ops')
+    const isOwner = isOwnerRequest(ctx, req)
     const me: MeDto = {
       ...toMemberDto(m, ctx.hub.presenceOf(m.id)),
-      isOwner: isOwnerRequest(ctx, req),
+      isOwner,
       deviceId: req.device.id,
       groups: myGroups(ctx.db, m.id),
       disabledFeatures: ops.disabledFeatures,
@@ -112,7 +114,9 @@ export function registerCoreRoutes(app: FastifyInstance, ctx: ServerContext, req
       // Only the count, so the menu badge and alerts work before the admin PIN is entered.
       pendingJoins: m.role === 'admin' ? (ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM join_requests WHERE state = 'pending'`)?.n ?? 0) : 0,
       canSendUrgent: m.role === 'admin' || ops.urgentSenders === 'everyone',
-      ledgerUnseen: ledgerUnseen(m.id)
+      ledgerUnseen: ledgerUnseen(m.id),
+      // the reminder card on the server PC when backups fail or are old (works before the admin PIN)
+      backupAlert: isOwner ? backupAlert(backupHealth(ctx.db, ctx.dataDir)) : null
     }
     return ok(me)
   })
