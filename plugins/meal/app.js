@@ -17,6 +17,7 @@
   let me = null
   let members = []
   let room = null
+  let priceRoom = null // 식대 단가 (1.7.0): a room of its own, see Meal.effectivePrices
   let tab = 'apply'
   let offset = 0 // server clock - this PC's clock
   let statusDate = ''
@@ -43,6 +44,8 @@
     return effValue
   }
   const config = () => M.withHolidays(eff().config, holidays)
+  /** The price list that counts: [{ from, lunch, dinner }]. */
+  const prices = () => M.effectivePrices(room, priceRoom).prices
   const canProxy = () => M.canProxy(room, me.id)
   const canManage = () => M.canManage(room, me.id)
   const isOwner = () => !!room && room.createdBy === me.id
@@ -68,12 +71,12 @@
   const byDept = (a, b) => (a.deptName || '').localeCompare(b.deptName || '', 'ko') || a.name.localeCompare(b.name, 'ko')
   /** "식수서무 김○○, 이○○ · 관리자 박○○": whom to ask. */
   const chargeText = () => `식수서무 ${eff().stewards.map(nameOf).join(', ') || '지정 안 됨'} · 관리자 ${nameOf(room.createdBy)}`
-  function toast(msg) {
+  function toast(msg, ms) {
     const t = $('toast')
     t.textContent = msg
     t.classList.add('show')
     clearTimeout(toast.t)
-    toast.t = setTimeout(() => t.classList.remove('show'), 3200)
+    toast.t = setTimeout(() => t.classList.remove('show'), ms || 3200)
   }
   const empty = (name, title, body, action) => `<div class="th-empty empty">${icon(name)}<p class="th-empty-title">${esc(title)}</p><p>${esc(body)}</p>${action || ''}</div>`
   const badge = (kind, text) => `<span class="th-badge${kind ? ` th-badge-${kind}` : ''}">${text}</span>`
@@ -106,7 +109,9 @@
     }
   }
   async function load() {
-    room = M.pickRoom(await call('rooms.list'))
+    const all = await call('rooms.list')
+    room = M.pickRoom(all)
+    priceRoom = M.pickPriceRoom(all)
   }
 
   // ---------- 신청 ----------
@@ -244,7 +249,15 @@
         toast(firm ? `${what} 확실히 신청안함으로 정했습니다. 다른 사람은 대신 신청할 수 없습니다.` : was && !on ? `${what} 확실히 신청안함에서 풀었습니다.` : `${what} ${on ? '신청했습니다' : '취소했습니다'}.`)
       }
     } catch (e) {
-      toast(e.message || '저장하지 못했습니다.')
+      // the server refuses a change after the deadline by its own clock (1.7.0): say why, a bit
+      // longer, and show what stands now
+      toast(e.message || '저장하지 못했습니다.', 6000)
+      try {
+        await syncClock()
+        room = await call('rooms.get', { roomId: room.id })
+      } catch {
+        // keep what is shown
+      }
     }
     busy = false
     render()
@@ -486,6 +499,8 @@
           })
           .join('')}
         </tbody><tfoot><tr><td>합계(확정)</td>${meals.map((k) => `<td class="th-num">${sm[k]}</td>`).join('')}<td class="th-num">${sm.total}</td><td></td></tr></tfoot></table></div></section>`
+    } else if (statsView === 'settle') {
+      body = renderSettle(snap, fromSaved)
     } else if (statsView === 'dept') {
       body = `<section class="th-card" data-stats="dept"><div class="th-card-header"><h2 class="th-card-title">${y}년 ${mo}월 부서별</h2></div>${deptTable(snap)}</section>`
     } else {
@@ -499,6 +514,43 @@
         }</section>`
     }
     return `<div class="stack">${body}${note}</div>`
+  }
+  /** 식대 정산 of a month: a saved month is priced again with the prices of each date (1.7.0). */
+  const settleOf = (snap) => M.snapSettlement(snap, prices()) || M.settlement(room, snap.month, members, now(), prices())
+  const fromText = (d) => d.split('-').map(Number).join('.')
+  const priceText = (m) => {
+    const meals = mealCols()
+    const list = M.monthPrices(prices(), m)
+    return list.length ? list.map((p) => `${fromText(p.from)}부터 ${meals.map((k) => `${M.MEALS[k]} ${M.wonText(p[k])}원`).join(' · ')}`).join(' / ') : '정한 단가 없음'
+  }
+  function renderSettle(snap) {
+    const s = settleOf(snap)
+    const meals = mealCols()
+    const [y, mo] = snap.month.split('-').map(Number)
+    const amt = (n) => `${M.wonText(n)}`
+    const cells = (r) => `${meals.map((k) => `<td class="th-num">${r[k]}</td>`).join('')}${meals.map((k) => `<td class="th-num">${amt(r[`${k}Amt`])}</td>`).join('')}<td class="th-num"><b>${amt(r.amount)}</b></td>`
+    const head = `<tr><th>부서</th><th>이름</th>${meals.map((k) => `<th class="th-num">${M.MEALS[k]}(회)</th>`).join('')}${meals.map((k) => `<th class="th-num">${M.MEALS[k]} 금액</th>`).join('')}<th class="th-num">합계(원)</th></tr>`
+    const body = s.depts
+      .map((d) => {
+        const people = s.rows.filter((r) => (r.deptName || '부서 미지정') === d.dept)
+        return `${people.map((r) => `<tr data-settle="${esc(r.id)}"><td class="th-muted">${esc(r.deptName)}</td><td>${esc(r.name)}${manualMark(r)}</td>${cells(r)}</tr>`).join('')}<tr class="sub" data-settle-dept="${esc(d.dept)}"><td>${esc(d.dept)}</td><td class="th-muted">소계 ${d.people}명</td>${cells(d)}</tr>`
+      })
+      .join('')
+    const warn = !prices().length
+      ? `<div class="th-notice th-no-print" data-settle-warn>식대 단가가 없어 금액을 셀 수 없습니다. [설정 → 식대 단가]에서 정하세요.</div>`
+      : s.unpriced
+        ? `<div class="th-notice th-no-print" data-settle-warn>단가를 정하기 전 날짜의 식사 ${s.unpriced}회는 금액에 넣지 않았습니다. [설정 → 식대 단가]에서 그날부터의 단가를 더하세요.</div>`
+        : ''
+    return `<section class="th-card" data-stats="settle">
+      <div id="printHead" class="th-print-only"><h1>${y}년 ${mo}월 식대 정산</h1><p>적용 단가 ${esc(priceText(snap.month))} · ${esc(chargeText())}</p></div>
+      <div class="th-card-header th-no-print"><h2 class="th-card-title">${y}년 ${mo}월 식대 정산</h2><span class="th-xs th-muted">${esc(priceText(snap.month))}</span></div>
+      ${warn ? `<div class="th-card-body th-no-print">${warn}</div>` : ''}
+      ${
+        s.rows.length
+          ? `<div class="th-table-wrap"><table class="th-table tally settle"><thead>${head}</thead><tbody>${body}</tbody>
+            <tfoot><tr data-settle-total><td>합계</td><td>${s.total.people}명${s.total.manual ? ` <span class="th-xs th-muted">(미등록 ${s.total.manual}명 포함)</span>` : ''}</td>${cells(s.total)}</tr></tfoot></table></div>`
+          : empty('receipt', '이 달에 정산할 식사가 없습니다', '마감이 지난 신청이 여기에 금액과 함께 모입니다.')
+      }</section>`
   }
   function deptTable(snap) {
     if (!snap.depts.length) return `<div class="th-card-body"><p class="th-hint">확정된 신청이 없습니다.</p></div>`
@@ -582,6 +634,7 @@
             .join('') || '<p class="th-hint">팀원이 없습니다.</p>'
         }</div>
       </div></section>
+      ${priceCard(off)}
       <section class="th-card"><div class="th-card-header"><h2 class="th-card-title">안내 글</h2><span class="th-xs th-muted">선택</span></div><div class="th-card-body"><div class="th-field">
         <textarea class="th-input" id="notice" rows="2" maxlength="${M.LIMITS.notice}" placeholder="예: 구내식당 4,000원, 식권은 식수서무에게" aria-label="안내 글" ${off}>${esc(c.notice)}</textarea>
         <p class="th-hint">신청 화면 맨 위에 보입니다.</p>
@@ -594,6 +647,52 @@
       </div>
     </form>`
   }
+  /** 식대 단가 (1.7.0): one row per price change; a past row keeps the price of its days. */
+  const priceRow = (p, off) => `<tr data-price-row>
+      <td><input class="th-input th-nums" type="date" data-price="from" value="${esc(p.from || '')}" aria-label="적용 시작일" ${off} /></td>
+      <td class="th-num"><input class="th-input th-nums" type="number" min="0" max="${M.LIMITS.priceMax}" step="10" data-price="lunch" value="${p.lunch || ''}" placeholder="0" aria-label="점심 단가(원)" ${off} /> 원</td>
+      <td class="th-num"><input class="th-input th-nums" type="number" min="0" max="${M.LIMITS.priceMax}" step="10" data-price="dinner" value="${p.dinner || ''}" placeholder="0" aria-label="저녁 단가(원)" ${off} /> 원</td>
+      <td class="acts">${off ? '' : `<button type="button" class="th-btn th-btn-ghost th-btn-sm" data-price-del aria-label="이 줄 지우기">${icon('trash-2')} 지우기</button>`}</td></tr>`
+  function priceCard(off) {
+    const ep = M.effectivePrices(room, priceRoom)
+    const list = ep.prices.slice().reverse()
+    return `<section class="th-card" id="priceCard"><div class="th-card-header"><h2 class="th-card-title">식대 단가</h2><span class="th-xs th-muted">한 끼 · 원</span></div><div class="th-card-body stack tight">
+        <p class="th-hint">통계의 [식대 정산]에서 사람별 금액을 셉니다. 단가가 바뀌면 줄을 더해 적용 시작일과 새 단가를 적으세요. 그 전 날짜의 식사는 그때의 단가로 셈하므로 지난 줄은 남겨 둡니다.</p>
+        <div class="th-table-wrap"><table class="th-table prices"><thead><tr><th>적용 시작일</th><th class="th-num">점심</th><th class="th-num">저녁</th><th></th></tr></thead>
+        <tbody id="priceRows">${list.map((p) => priceRow(p, off)).join('')}</tbody></table></div>
+        <p class="th-hint" id="priceEmpty" ${list.length ? 'hidden' : ''}>아직 정한 단가가 없습니다.</p>
+        <div class="price-foot">${off ? '' : `<button type="button" class="th-btn th-btn-outline th-btn-sm" id="priceAdd">${icon('plus')} 단가 추가</button>`}<span class="th-xs th-muted push" id="priceStamp">${ep.at ? `마지막 저장: ${esc(nameOf(ep.by))} · ${stamp(ep.at)}` : ''}</span></div>
+      </div></section>`
+  }
+  /** The rows of the price form (a row left blank is skipped). */
+  const priceForm = () =>
+    Array.from(document.querySelectorAll('#priceRows tr'))
+      .map((tr) => ({ from: tr.querySelector('[data-price="from"]').value, lunch: tr.querySelector('[data-price="lunch"]').value, dinner: tr.querySelector('[data-price="dinner"]').value }))
+      .filter((p) => p.from || p.lunch || p.dinner)
+  function addPriceRow() {
+    const rows = priceForm()
+    const last = rows.slice().sort((a, b) => (a.from < b.from ? -1 : 1)).pop()
+    // the first day of next month, with the prices of the newest row to change from
+    const d = new Date(now())
+    const from = M.ymd(new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime())
+    $('priceRows').insertAdjacentHTML('afterbegin', priceRow({ from: last && last.from >= from ? '' : from, lunch: last ? last.lunch : '', dinner: last ? last.dinner : '' }, ''))
+    $('priceEmpty').hidden = true
+    $('priceRows').querySelector('input').focus()
+  }
+  /** Saves the price list into its room (made by the first save); false = nothing changed. */
+  async function savePriceList(list) {
+    const all = await call('rooms.list')
+    room = M.pickRoom(all)
+    priceRoom = M.pickPriceRoom(all)
+    await syncClock()
+    const r = M.savePrices(room, priceRoom, me.id, now(), list)
+    if (r.error) throw new Error(r.error)
+    if (r.same) return false
+    if (r.create) priceRoom = await call('rooms.create', { title: '식대 단가', scope: { type: 'team', groupIds: [], memberIds: [] }, shared: r.create })
+    else if (r.shared) priceRoom = await call('rooms.setShared', { roomId: priceRoom.id, shared: r.shared })
+    else priceRoom = await call('rooms.setEntry', { roomId: priceRoom.id, value: r.entry })
+    return true
+  }
   async function saveSettings() {
     const settings = {
       meals: { lunch: { on: $('on-lunch').checked, cutoff: $('cut-lunch').value }, dinner: { on: $('on-dinner').checked, cutoff: $('cut-dinner').value } },
@@ -605,6 +704,12 @@
     const stewards = Array.from(document.querySelectorAll('#stewards input:checked')).map((x) => x.value)
     if (!settings.meals.lunch.on && !settings.meals.dinner.on) return ($('setError').textContent = '점심과 저녁 가운데 하나는 받아야 합니다.')
     if (stewards.length > M.LIMITS.stewardsMax) return ($('setError').textContent = `식수서무는 ${M.LIMITS.stewardsMax}명까지 정할 수 있습니다.`)
+    // the price list is checked before anything is saved
+    const priceList = $('priceRows') ? priceForm() : null
+    if (priceList) {
+      const check = M.savePrices({ createdBy: me.id, shared: {}, entries: {} }, null, me.id, now(), priceList)
+      if (check.error) return ($('setError').textContent = check.error)
+    }
     try {
       if (room) {
         // only the owner's list of 식수서무 is taken (Meal.saveAs)
@@ -619,6 +724,7 @@
         }
         toast('설정을 저장했습니다.')
       }
+      if (priceList && (await savePriceList(priceList))) toast('설정과 식대 단가를 저장했습니다.')
       tab = 'apply'
       render()
     } catch (e) {
@@ -888,9 +994,10 @@
         ['summary', '통합'],
         ['daily', '일별'],
         ['person', '개인별'],
-        ['dept', '부서별']
+        ['dept', '부서별'],
+        ['settle', '식대 정산']
       ]
-      tools = `<span class="seg" role="group" aria-label="통계 보기">${views.map(([k, l]) => tool(`data-stats-view="${k}" aria-pressed="${statsView === k}"`, l, statsView === k ? '' : 'th-btn-outline')).join('')}</span>${tool('id="csvMonth"', `${icon('download')} CSV로 저장`, undefined, !statsOf(cur).snap.summary.total)}`
+      tools = `<span class="seg" role="group" aria-label="통계 보기">${views.map(([k, l]) => tool(`data-stats-view="${k}" aria-pressed="${statsView === k}"`, l, statsView === k ? '' : 'th-btn-outline')).join('')}</span>${statsView === 'settle' ? tool('id="printSettle"', `${icon('file-text')} 인쇄`, undefined, !statsOf(cur).snap.summary.total) : ''}${tool('id="csvMonth"', `${icon('download')} CSV로 저장`, undefined, !statsOf(cur).snap.summary.total)}`
     } else if (room && tab === 'mine') {
       const cur = mineMonth || today.slice(0, 7)
       const [y, m] = cur.split('-').map(Number)
@@ -948,6 +1055,11 @@
       return void change(statusDate, meal, !t.dataset.unproxy, { id, name })
     }
     if (t.dataset.menuDay) return openDay(t.dataset.menuDay)
+    if (t.dataset.priceDel !== undefined) {
+      t.closest('tr').remove()
+      $('priceEmpty').hidden = !!document.querySelector('#priceRows tr')
+      return
+    }
     // 직접 등록한 사람
     if (t.dataset.personEdit) return openPerson(t.dataset.personEdit, false)
     if (t.dataset.personLink) return openPerson(t.dataset.personLink, true)
@@ -1030,7 +1142,10 @@
         firmAsk = null
         return $('firmDlg').close()
       case 'printWeek':
+      case 'printSettle':
         return window.print()
+      case 'priceAdd':
+        return addPriceRow()
       case 'copyWeek':
         return void call('clipboard.write', { text: M.weekText(config(), eff().menus, menuWeek) }).then(
           () => toast('주간 메뉴를 글로 복사했습니다.'),
@@ -1043,7 +1158,7 @@
         )
       case 'csvMonth': {
         const snap = statsOf(month).snap
-        const kind = statsView === 'daily' ? ['일별', M.dailyCsv(snap)] : statsView === 'dept' ? ['부서별', M.deptCsv(snap)] : ['개인별', M.personCsv(snap)]
+        const kind = statsView === 'daily' ? ['일별', M.dailyCsv(snap)] : statsView === 'dept' ? ['부서별', M.deptCsv(snap)] : statsView === 'settle' ? ['식대정산', M.settleCsv(settleOf(snap))] : ['개인별', M.personCsv(snap)]
         return void call('file.save', { name: `식사신청_${month}_${kind[0]}.csv`, text: kind[1] }).then(
           (r) => r && r.ok && toast('저장했습니다.'),
           (err) => toast(err.message)

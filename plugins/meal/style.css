@@ -502,3 +502,44 @@ table.people td {
 tr.today td {
   background: color-mix(in srgb, var(--primary) 6%, transparent);
 }
+
+/* ---------- 식대 단가 · 식대 정산 (1.7.0) ---------- */
+.price-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+table.prices input[type='date'] {
+  width: 10rem;
+}
+table.prices input[type='number'] {
+  width: 7rem;
+  text-align: right;
+}
+table.prices td {
+  vertical-align: middle;
+  white-space: nowrap;
+}
+table.prices td.acts {
+  text-align: right;
+}
+table.settle .th-num {
+  text-align: right;
+}
+table.settle tr.sub td {
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  font-weight: 600;
+}
+@media print {
+  table.settle th,
+  table.settle td {
+    border: 1px solid #94a3b8;
+    color: #000;
+  }
+  table.settle tr.sub td {
+    background: #f1f5f9;
+  }
+  table.settle tr {
+    break-inside: avoid;
+  }
+}

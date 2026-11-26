@@ -37,7 +37,10 @@
     personTitle: 20,
     personMemo: 60,
     // the server refuses shared data and an entry above 64 KB; stay below it
-    stateMax: 60000
+    stateMax: 60000,
+    // 식대 (1.7.0): the price of one meal in 원, and how many price changes are kept
+    priceMax: 1000000,
+    pricesMax: 60
   }
   const DAY = 86400000
   const NO_DEPT_NAME = '부서 미지정'
@@ -214,7 +217,8 @@
     if (!isYmd(date) || !MEALS[meal]) return '잘못된 신청입니다.'
     const st = stateOf(config, date, meal, now)
     if (st === 'off') return holidayName(config, date) ? `공휴일(${holidayName(config, date)})이라 신청을 받지 않습니다.` : `${MEALS[meal]} 신청을 받지 않는 날입니다.`
-    if (st === 'closed') return `${MEALS[meal]} 신청이 ${config.meals[meal].cutoff}에 마감되었습니다. 바꿀 수 없습니다.`
+    // the same words as the server's refusal (src/server/plugin-locks.ts), which keeps the deadline since 1.7.0
+    if (st === 'closed') return `${dateLabel(date, '')} ${MEALS[meal]}은 마감 시각(${config.meals[meal].cutoff})이 지나 바꿀 수 없습니다.`
     if (!upcoming(config, now).includes(date)) return '아직 신청을 받지 않는 날짜입니다.'
     return ''
   }
@@ -521,15 +525,20 @@
     }
     return out
   }
-  /** What the statistics keep of a month (saved on the PC of the one in charge when the month is over). */
+  /**
+   * What the statistics keep of a month (saved on the PC of the one in charge when the month is over).
+   * Since 1.7.0 each row also has `dates` ({ lunch: [dates], dinner: [dates] }, the final meals),
+   * so the 식대 정산 of a saved month is priced again with the prices of each date.
+   */
   function statsSnapshot(room, month, members, now) {
     const t = monthTally(room, month, members, now, false)
+    const dates = new Map(mealDates(room, month, members, now).map((r) => [r.id, r.dates]))
     return {
       v: 1,
       month,
       savedAt: now,
       summary: monthSummary(room, month, members, now),
-      rows: t.rows.map((r) => ({ id: r.id, name: r.name, deptName: r.deptName, lunch: r.lunch, dinner: r.dinner, manual: !!r.manual })),
+      rows: t.rows.map((r) => ({ id: r.id, name: r.name, deptName: r.deptName, lunch: r.lunch, dinner: r.dinner, manual: !!r.manual, dates: dates.get(r.id) || { lunch: [], dinner: [] } })),
       daily: dailyTally(room, month, members, now).map((d) => ({ date: d.date, served: d.served, why: d.why, lunch: d.meals.lunch ? d.meals.lunch.count : null, dinner: d.meals.dinner ? d.meals.dinner.count : null })),
       depts: deptTally(room, month, members, now)
     }
@@ -547,6 +556,156 @@
   }
   function personCsv(snap) {
     return csvOf([['부서', '이름', '점심', '저녁', '합계'], ...snap.rows.map((r) => [r.deptName, r.manual ? `${r.name} (미등록)` : r.name, r.lunch, r.dinner, r.lunch + r.dinner]), ['', '합계', snap.summary.lunch, snap.summary.dinner, snap.summary.total]])
+  }
+
+  // ---------- 식대: prices that change over time, and the monthly settlement (1.7.0) ----------
+  /*
+   * The prices live in a room of their own (shared.kind = 'meal-price'), not in the settings:
+   * a client older than 1.7.0 rewrites the settings room's shared data and its entries without
+   * the fields it does not know, which would drop them; it never looks at this room.
+   * The list is [{ from: 'YYYY-MM-DD', lunch, dinner }] (원), oldest first. A price applies from
+   * its date until the next one, so a change keeps the price that applied on every earlier date.
+   * The room's creator writes its shared data { kind, v, prices, at }; the others in charge write
+   * their own entry { v, prices, at }. The newest list of those in charge of the settings room
+   * counts (as with the settings: a time is never later than when the server stored it, and what
+   * a 식수서무 wrote before being named does not count).
+   */
+  const won = (v) => {
+    const n = Math.round(Number(String(v == null ? '' : v).replace(/[,\s원]/g, '')))
+    return Number.isFinite(n) && n > 0 ? Math.min(n, LIMITS.priceMax) : 0
+  }
+  /** The price list as stored: valid dates only, one per date (the later one wins), oldest first. */
+  function cleanPrices(list) {
+    const by = new Map()
+    for (const p of Array.isArray(list) ? list : []) if (p && isYmd(p.from)) by.set(p.from, { from: p.from, lunch: won(p.lunch), dinner: won(p.dinner) })
+    return Array.from(by.values())
+      .sort((a, b) => (a.from < b.from ? -1 : 1))
+      .slice(-LIMITS.pricesMax)
+  }
+  const isPriceRoom = (r) => !!r && !!r.shared && r.shared.kind === 'meal-price'
+  /** The price room: the oldest one, so a second one made at the same moment changes nothing. */
+  const pickPriceRoom = (rooms) => (rooms || []).filter(isPriceRoom).sort((a, b) => a.createdAt - b.createdAt)[0] || null
+  /** The prices that count: { prices, at, by } (prices [] = none set yet). */
+  function effectivePrices(room, priceRoom) {
+    let out = { prices: [], at: 0, by: '' }
+    if (!room || !priceRoom) return out
+    const since = cleanSince(room.shared && room.shared.since)
+    const take = (list, at, by) => {
+      if (!(at > out.at) || !canManage(room, by) || (by !== room.createdBy && at < (since[by] || 0))) return
+      out = { prices: cleanPrices(list), at, by }
+    }
+    const sh = priceRoom.shared || {}
+    const cap = (x) => (Number(x) > 0 ? Number(x) : Infinity)
+    if (Number(sh.at) > 0) take(sh.prices, Math.min(Number(sh.at), cap(priceRoom.updatedAt)), priceRoom.createdBy)
+    for (const id of Object.keys(priceRoom.entries || {})) {
+      const e = priceRoom.entries[id]
+      const v = e && e.value
+      if (v && typeof v === 'object' && Number(v.at) > 0) take(v.prices, Math.min(Number(v.at), cap(e.at)), id)
+    }
+    return out
+  }
+  /** The price of one meal on a date (null = no price applies yet). */
+  function priceAt(prices, date, meal) {
+    let out = null
+    for (const p of prices || []) if (p.from <= date) out = p[meal]
+    return out
+  }
+  /** The prices that apply in a month: the one in force on the 1st and those that start later in it. */
+  function monthPrices(prices, month) {
+    const first = `${month}-01`
+    const list = cleanPrices(prices)
+    const start = list.filter((p) => p.from <= first).pop()
+    return (start ? [start] : []).concat(list.filter((p) => p.from > first && p.from.slice(0, 7) === month))
+  }
+  /**
+   * A save of the price list by somebody in charge (`now` = the server's clock):
+   * { create } (no price room yet: make it with this shared data), { shared } (the room's
+   * creator), { entry } (anybody else in charge), { same } (nothing changed) or { error }.
+   */
+  function savePrices(room, priceRoom, id, now, list) {
+    if (!room || !canManage(room, id)) return { error: '설정을 만든 관리자와 식수서무만 할 수 있습니다.' }
+    const given = Array.isArray(list) ? list : []
+    if (given.some((p) => !p || !isYmd(p.from))) return { error: '식대 단가의 적용 시작일을 고르세요.' }
+    if (new Set(given.map((p) => p.from)).size !== given.length) return { error: '같은 적용 시작일이 두 번 있습니다.' }
+    if (given.length > LIMITS.pricesMax) return { error: `식대 단가는 ${LIMITS.pricesMax}개까지 둘 수 있습니다.` }
+    const prices = cleanPrices(given)
+    if (JSON.stringify(prices) === JSON.stringify(effectivePrices(room, priceRoom).prices)) return { same: true }
+    if (!priceRoom) return { create: { kind: 'meal-price', v: 1, prices, at: now } }
+    if (priceRoom.createdBy === id) return { shared: { kind: 'meal-price', v: 1, prices, at: now } }
+    return { entry: { v: 1, prices, at: now } }
+  }
+  /** Per person, the dates of the final meals (deadline passed) of a month: [{ id, name, deptName, manual, gone, dates: { lunch, dinner } }]. */
+  function mealDates(room, month, members, now) {
+    const config = effective(room).config
+    const out = []
+    for (const p of resolve(room, members).values()) {
+      const dates = { lunch: [], dinner: [] }
+      for (const date of Object.keys(p.days).sort()) {
+        if (!date.startsWith(month + '-')) continue
+        for (const k of MEAL_KEYS) if (p.days[date][k] && p.days[date][k].on && now >= cutoffAt(config, date, k)) dates[k].push(date)
+      }
+      if (dates.lunch.length || dates.dinner.length) out.push({ id: p.id, name: p.name, deptName: p.deptName, manual: !!p.manual, gone: !!p.gone, dates })
+    }
+    return out.sort(byDeptName)
+  }
+  /**
+   * 식대 정산 of people with their final meal dates (mealDates() or the rows of a snapshot):
+   *  { rows: [{ id, name, deptName, manual, lunch, dinner, lunchAmt, dinnerAmt, amount }],
+   *    depts: [{ dept, people, lunch, dinner, lunchAmt, dinnerAmt, amount }],
+   *    total: { people, manual, lunch, dinner, lunchAmt, dinnerAmt, amount }, unpriced }
+   * Each meal is priced on its own date; `unpriced` counts the meals no price applied to yet.
+   */
+  function settle(people, prices) {
+    const list = cleanPrices(prices)
+    const rows = []
+    let unpriced = 0
+    for (const p of people || []) {
+      const d = p.dates || { lunch: [], dinner: [] }
+      const row = { id: p.id, name: p.name, deptName: p.deptName || '', manual: !!p.manual, lunch: d.lunch.length, dinner: d.dinner.length, lunchAmt: 0, dinnerAmt: 0, amount: 0 }
+      for (const k of MEAL_KEYS) {
+        for (const date of d[k]) {
+          const price = priceAt(list, date, k)
+          if (price === null) unpriced++
+          else row[`${k}Amt`] += price
+        }
+      }
+      row.amount = row.lunchAmt + row.dinnerAmt
+      if (row.lunch || row.dinner) rows.push(row)
+    }
+    rows.sort(byDeptName)
+    const depts = []
+    const at = new Map()
+    const total = { people: rows.length, manual: rows.filter((r) => r.manual).length, lunch: 0, dinner: 0, lunchAmt: 0, dinnerAmt: 0, amount: 0 }
+    for (const r of rows) {
+      const dept = r.deptName || NO_DEPT_NAME
+      if (!at.has(dept)) {
+        at.set(dept, depts.length)
+        depts.push({ dept, people: 0, lunch: 0, dinner: 0, lunchAmt: 0, dinnerAmt: 0, amount: 0 })
+      }
+      const g = depts[at.get(dept)]
+      g.people++
+      for (const k of ['lunch', 'dinner', 'lunchAmt', 'dinnerAmt', 'amount']) {
+        g[k] += r[k]
+        total[k] += r[k]
+      }
+    }
+    return { rows, depts, total, unpriced }
+  }
+  /** 식대 정산 of a month from the requests kept now. */
+  const settlement = (room, month, members, now, prices) => settle(mealDates(room, month, members, now), prices)
+  /** The settlement of a statistics snapshot, or null when it was saved before 1.7.0 (no dates). */
+  const snapSettlement = (snap, prices) => (snap && snap.rows && snap.rows.every((r) => r.dates) ? settle(snap.rows, prices) : null)
+  /** 12,345 */
+  const wonText = (n) => String(Math.round(Number(n) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  /** The settlement as CSV: the people of each department, its subtotal, then the total. */
+  function settleCsv(s) {
+    const out = [['부서', '이름', '점심(회)', '저녁(회)', '점심 금액(원)', '저녁 금액(원)', '합계(원)']]
+    for (const d of s.depts) {
+      for (const r of s.rows.filter((x) => (x.deptName || NO_DEPT_NAME) === d.dept)) out.push([r.deptName, r.manual ? `${r.name} (미등록)` : r.name, r.lunch, r.dinner, r.lunchAmt, r.dinnerAmt, r.amount])
+      out.push([d.dept, `소계 ${d.people}명`, d.lunch, d.dinner, d.lunchAmt, d.dinnerAmt, d.amount])
+    }
+    out.push(['', `합계 ${s.total.people}명`, s.total.lunch, s.total.dinner, s.total.lunchAmt, s.total.dinnerAmt, s.total.amount])
+    return csvOf(out)
   }
 
   // ---------- people registered by hand (staff who do not use TeamHub) ----------
@@ -1144,5 +1303,5 @@
     return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n'
   }
 
-  g.Meal = { isFirm, firmRefusal, declinedList, firmAny, settled, monthDays, dailyTally, deptTally, monthSummary, personMonth, personMonths, statsSnapshot, betterOf, dailyCsv, deptCsv, personCsv, isManualId, newManualId, cleanPerson, cleanPeople, manualList, roster, nameClash, splitCount, countText, MEALS, MEAL_KEYS, MENU_SLOTS, LIMITS, deptGroups, groupState, bulkSlots, alreadySet, pickStatus, applyBulk, bulkSummary, weekStart, menuWindow, cleanMenuText, cleanMenus, pickSettings, effective, menuOf, menuStamp, weekDays, menuMeals, saveAs, fitMenus, weekText, parseBlock, placeBlock, canManage, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
+  g.Meal = { cleanPrices, isPriceRoom, pickPriceRoom, effectivePrices, priceAt, monthPrices, savePrices, mealDates, settle, settlement, snapSettlement, wonText, settleCsv, isFirm, firmRefusal, declinedList, firmAny, settled, monthDays, dailyTally, deptTally, monthSummary, personMonth, personMonths, statsSnapshot, betterOf, dailyCsv, deptCsv, personCsv, isManualId, newManualId, cleanPerson, cleanPeople, manualList, roster, nameClash, splitCount, countText, MEALS, MEAL_KEYS, MENU_SLOTS, LIMITS, deptGroups, groupState, bulkSlots, alreadySet, pickStatus, applyBulk, bulkSummary, weekStart, menuWindow, cleanMenuText, cleanMenus, pickSettings, effective, menuOf, menuStamp, weekDays, menuMeals, saveAs, fitMenus, weekText, parseBlock, placeBlock, canManage, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
 })(typeof window !== 'undefined' ? window : globalThis)

@@ -430,4 +430,147 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     await expect.poll(() => dinner.textContent(), wait).toContain('신청함')
     expect(await dinner.textContent()).toContain('서버관리자 대신')
   }, 120000)
+
+  it('the server keeps the deadline even when the screen is bypassed; 식대 단가 and the 식대 정산 table (1.7.0)', async () => {
+    const fa = frame(a.page)
+    const fb = frame(b.page)
+    const wait = { timeout: 15000 }
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    const now = new Date()
+    const today = ymd(now)
+    // the price of the month, and a new one from today (from the month before when today is the 1st)
+    const first = ymd(now.getDate() === 1 ? new Date(now.getFullYear(), now.getMonth() - 1, 1) : new Date(now.getFullYear(), now.getMonth(), 1))
+
+    // the admin opens today's lunch for a while and sets the prices
+    await open(a.page, '.day.today')
+    await fa.locator('#settingsTab').click()
+    await fa.locator('#cut-lunch').fill('23:59')
+    expect(await fa.locator('#priceEmpty').isVisible()).toBe(true)
+    await fa.locator('#priceAdd').click()
+    const row = fa.locator('#priceRows tr').first()
+    await row.locator('[data-price="from"]').fill(first)
+    await row.locator('[data-price="lunch"]').fill('8000')
+    await row.locator('[data-price="dinner"]').fill('9000')
+    await fa.locator('#priceAdd').click()
+    // a new row starts from the prices of the newest one
+    expect(await row.locator('[data-price="dinner"]').inputValue()).toBe('9000')
+    await row.locator('[data-price="from"]').fill(today)
+    await row.locator('[data-price="lunch"]').fill('8500')
+    await fa.locator('#settings button[type=submit]').click()
+    await fa.locator('.day.today').waitFor(wait)
+    await fa.locator('#settingsTab').click()
+    await expect.poll(() => fa.locator('#priceRows tr').count(), wait).toBe(2)
+    expect(await fa.locator('#priceRows tr').first().locator('[data-price="lunch"]').inputValue()).toBe('8500')
+    expect(await fa.locator('#priceStamp').textContent()).toContain('마지막 저장: 서버관리자')
+    await fa.locator('#priceCard').scrollIntoViewIfNeeded()
+    await shot(a.page, 'meal-prices')
+    await fa.locator('nav [data-tab="apply"]').click()
+
+    // today's lunch: 팀원B, the admin and somebody registered by hand
+    const lunchB = fb.locator('.day.today [data-tile$=":lunch"]')
+    await lunchB.getByRole('button', { name: '신청', exact: true }).click()
+    await expect.poll(() => lunchB.textContent(), wait).toContain('신청함')
+    const lunchA = fa.locator('.day.today [data-tile$=":lunch"]')
+    await lunchA.getByRole('button', { name: '신청', exact: true }).click()
+    await expect.poll(() => lunchA.textContent(), wait).toContain('신청함')
+    const fra = await frameOf(a.page)
+    await fra.evaluate(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const w = window as any
+      const M = w.Meal
+      const t = (await w.TeamHub.call('time')).now
+      const me = await w.TeamHub.call('me')
+      const room = M.pickRoom(await w.TeamHub.call('rooms.list'))
+      const id = M.newManualId(Math.random(), t)
+      const saved = M.saveAs(room, me.id, t, { people: [{ id, name: '정산E2E', dept: '현장E2E' }] })
+      const cur = await w.TeamHub.call('rooms.setShared', { roomId: room.id, shared: saved.shared })
+      const config = M.withHolidays(M.effective(cur).config, [])
+      const r = M.applyFor(cur.entries[me.id].value, config, { id, name: '정산E2E' }, M.ymd(t), 'lunch', true, t, cur)
+      await w.TeamHub.call('rooms.setEntry', { roomId: cur.id, value: r.entry })
+    })
+
+    // 팀원B's PC believes it is still early morning (its clock and the server clock it read are both off)
+    const frb = await frameOf(b.page)
+    await frb.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const w = window as any
+      const d = new Date()
+      const skew = Date.now() - new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 30).getTime()
+      w.__realNow = Date.now
+      w.__realCall = w.TeamHub.call
+      Date.now = () => w.__realNow.call(Date) - skew
+      w.TeamHub.call = (m: string, p: unknown) => (m === 'time' ? w.__realCall('time').then((r: { now: number }) => ({ ...r, now: r.now - skew })) : w.__realCall(m, p))
+    })
+    // the admin closes today's lunch (00:05, long past by the server's clock)
+    await fa.locator('#settingsTab').click()
+    await fa.locator('#cut-lunch').fill('00:05')
+    await fa.locator('#settings button[type=submit]').click()
+    await fa.locator('.day.today').waitFor(wait)
+    await expect.poll(() => lunchA.textContent(), wait).toContain('00:05 마감됨')
+    // 팀원B's screen still offers 취소; the server refuses it and the screen says why
+    await expect.poll(() => lunchB.textContent(), wait).toContain('00:05 마감 ·')
+    await lunchB.getByRole('button', { name: '취소', exact: true }).click()
+    await expect.poll(() => fb.locator('#toast').textContent(), wait).toMatch(/점심은 마감 시각\(00:05\)이 지나 바꿀 수 없습니다\.$/)
+    await shot(b.page, 'meal-server-refusal')
+    expect(await lunchB.textContent()).toContain('신청함')
+
+    // writing the entry straight from the frame, without the extension's checks: refused as well
+    const direct = await frb.evaluate(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const w = window as any
+      w.Date.now = w.__realNow
+      w.TeamHub.call = w.__realCall
+      const M = w.Meal
+      const room = M.pickRoom(await w.TeamHub.call('rooms.list'))
+      const me = await w.TeamHub.call('me')
+      const mine = JSON.parse(JSON.stringify(room.entries[me.id].value))
+      mine.days[M.ymd(Date.now())].lunch = { on: false, at: Date.now() }
+      try {
+        await w.TeamHub.call('rooms.setEntry', { roomId: room.id, value: mine })
+        return 'saved'
+      } catch (e) {
+        return (e as Error).message
+      }
+    })
+    expect(direct).toMatch(/^\d+\/\d+\(.\) 점심은 마감 시각\(00:05\)이 지나 바꿀 수 없습니다\.$/)
+    // and so is a cancel for 팀원B by somebody else (대신 취소)
+    const proxy = await fra.evaluate(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const w = window as any
+      const M = w.Meal
+      const room = M.pickRoom(await w.TeamHub.call('rooms.list'))
+      const me = await w.TeamHub.call('me')
+      const target = (await w.TeamHub.call('members')).find((m: { name: string }) => m.name === '팀원B')
+      const mine = JSON.parse(JSON.stringify(room.entries[me.id].value))
+      const others = mine.for || (mine.for = {})
+      others[target.id] = others[target.id] || { name: target.name, days: {} }
+      others[target.id].days[M.ymd(Date.now())] = { ...others[target.id].days[M.ymd(Date.now())], lunch: { on: false, at: Date.now() } }
+      try {
+        await w.TeamHub.call('rooms.setEntry', { roomId: room.id, value: mine })
+        return 'saved'
+      } catch (e) {
+        return (e as Error).message
+      }
+    })
+    expect(proxy).toContain('팀원B 님의')
+    expect(proxy).toContain('마감 시각(00:05)이 지나 바꿀 수 없습니다.')
+
+    // 통계 → 식대 정산: three lunches of today at today's price, the person registered by hand included
+    await fa.locator('#statsTab').click()
+    await fa.locator('[data-stats-view="settle"]').click()
+    const settle = fa.locator('[data-stats="settle"]')
+    await settle.waitFor(wait)
+    expect(await settle.locator('.th-card-header').textContent()).toContain('점심 8,500원')
+    const hand = settle.locator('tr[data-settle^="x:"]', { hasText: '정산E2E' })
+    expect(await hand.textContent()).toContain('미등록')
+    expect(await hand.locator('td').allTextContents()).toEqual(['현장E2E', '정산E2E 미등록', '1', '0', '8,500', '0', '8,500'])
+    expect(await settle.locator('tr[data-settle-dept="현장E2E"]').textContent()).toContain('소계 1명')
+    const total = settle.locator('tr[data-settle-total] td')
+    expect(await total.allTextContents()).toEqual(['합계', '3명 (미등록 1명 포함)', '3', '0', '25,500', '0', '25,500'])
+    expect(await a.page.locator('[data-testid="plugin-frame"]').count()).toBe(1)
+    expect(await fa.locator('#printSettle').isEnabled()).toBe(true)
+    await shot(a.page, 'meal-settle')
+    await fa.locator('nav [data-tab="apply"]').click()
+  }, 150000)
 })
