@@ -32,6 +32,7 @@ import { TransferPanel } from '@renderer/features/files/TransferPanel'
 import { useChatAlerts, useChatUnread } from '@renderer/features/chat/useChatAlerts'
 import { ChatDock } from '@renderer/features/chat/ChatDock'
 import { useJoinAlerts } from '@renderer/features/admin/useJoinAlerts'
+import { useBackupAlerts } from '@renderer/features/admin/useBackupAlerts'
 import { useLedgerAlerts } from '@renderer/features/ledger/useLedgerAlerts'
 import { useDocAlerts } from '@renderer/features/docs/useDocAlerts'
 import { CaptureDialog } from '@renderer/features/memos/CaptureDialog'
@@ -86,6 +87,8 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   useWarmCache(state === 'online', me ? !(me.disabledFeatures ?? []).includes('meal') : true)
   usePluginInvites()
   useJoinAlerts(me?.role === 'admin')
+  // only the server PC is told (a 서무 cannot change backups)
+  useBackupAlerts(me?.role === 'admin' && me.isOwner === true)
   useLedgerAlerts(me?.id)
   const liveMeetings = useLiveMeetings()
   const commandOn = !!me && !(me.disabledFeatures ?? []).includes('command')

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PC_UID_RE } from '../constants'
+import type { BackupAlert } from './settings'
 
 export const helloSchema = z.object({
   name: z.literal('TeamHub'),
@@ -127,6 +128,8 @@ export interface MeDto extends MemberDto {
   canSendUrgent?: boolean
   /** team ledgers somebody else changed since I last opened them */
   ledgerUnseen: number
+  /** 최종관리자 only: server backups are failing or old (the reminder card). Older servers do not send it. */
+  backupAlert?: BackupAlert | null
 }
 
 /**

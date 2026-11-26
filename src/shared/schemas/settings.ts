@@ -48,6 +48,36 @@ export const backupSettingsSchema = z.object({
 })
 export type BackupSettings = z.infer<typeof backupSettingsSchema>
 
+/** A server backup older than this (or none for this long since the team began) counts as stale. */
+export const BACKUP_STALE_MS = 2 * 24 * 3600_000
+
+/** How safe the server backups are (관리 → 백업, 상태; the 최종관리자's reminder). */
+export interface BackupHealth {
+  /** the folder backups go into */
+  root: string
+  /** no folder set: `<data folder>/backups/auto` */
+  isDefault: boolean
+  /** the backups are on the same drive (or network share) as the server data, so one disk failure loses both */
+  sameDrive: boolean
+  lastAt: number | null
+  /** message of the last run when it failed (cleared by the next successful one) */
+  lastError: string | null
+  lastErrorAt: number | null
+  /** no successful backup for more than 2 days */
+  stale: boolean
+  /** the last run failed */
+  failed: boolean
+  /** the daily job runs at its next check (within a minute), e.g. a catch-up after the server PC was off */
+  pending: boolean
+}
+
+/** What /api/me tells the 최종관리자 for the reminder card (null: nothing to remind). */
+export interface BackupAlert {
+  kind: 'failed' | 'stale'
+  lastAt: number | null
+  lastError: string | null
+}
+
 export const featureKeySchema = z.enum(FEATURES)
 
 const isFeatureKey = (k: string): k is FeatureKey => (FEATURES as readonly string[]).includes(k)

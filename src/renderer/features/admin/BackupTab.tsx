@@ -9,34 +9,43 @@ import { Button } from '@renderer/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { fmtSize } from '@renderer/features/myfiles/common'
 import { StorageCard } from '@renderer/features/settings/StorageCard'
+import type { BackupHealth } from '@shared/schemas/settings'
+import { BackupHealthNotice } from './BackupHealthNotice'
 
 interface BackupList {
   root: string
   state: { lastAt: number | null; lastPath: string | null; lastError: string | null }
+  /** older servers do not send it */
+  health?: BackupHealth
   backups: { name: string; path: string; createdAt: number; version: string; dbBytes: number; fileCount: number; fileBytes: number }[]
 }
 
 /** Admin: backups, back up now, restore, and how to move the server (6.16). */
 export function BackupTab(): React.JSX.Element {
   const qc = useQueryClient()
-  const [msg, setMsg] = useState('')
+  const [msg, setMsg] = useState<{ text: string; err?: boolean } | null>(null)
   const q = useQuery({ queryKey: ['admin', 'backups'], queryFn: () => api.get<BackupList>('/api/admin/backups') })
+  const status = useQuery({ queryKey: ['admin', 'status'], queryFn: () => api.get<{ dataDir: string }>('/api/admin/status') })
   const run = useMutation({
     mutationFn: () => api.post<{ name: string }>('/api/admin/backups'),
-    onSuccess: (r) => {
-      setMsg(`백업했습니다: ${r.name}`)
+    onSuccess: (r) => setMsg({ text: `백업했습니다: ${r.name}` }),
+    onError: (e) => setMsg({ text: q.data?.health ? '백업하지 못했습니다. 맨 위의 경고에서 까닭을 확인하세요.' : errorMessage(e), err: true }),
+    // success or failure is now the last state: the warnings here and in 서버 상태 follow it
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: ['admin', 'backups'] })
-    },
-    onError: (e) => setMsg(errorMessage(e))
+      void qc.invalidateQueries({ queryKey: ['admin', 'status'] })
+      void qc.invalidateQueries({ queryKey: ['me'] })
+    }
   })
   const restore = useMutation({
     mutationFn: (name: string) => api.post('/api/admin/backups/restore', { name }),
-    onSuccess: () => setMsg('복구를 위해 서버를 다시 시작합니다. 잠시 뒤 자동으로 다시 연결됩니다.'),
-    onError: (e) => setMsg(errorMessage(e))
+    onSuccess: () => setMsg({ text: '복구를 위해 서버를 다시 시작합니다. 잠시 뒤 자동으로 다시 연결됩니다.' }),
+    onError: (e) => setMsg({ text: errorMessage(e), err: true })
   })
   const d = q.data
   return (
     <div className="max-w-3xl space-y-4">
+      {d?.health && <BackupHealthNotice health={d.health} dataDir={status.data?.dataDir} />}
       <Card>
         <CardHeader>
           <CardTitle>백업</CardTitle>
@@ -55,12 +64,13 @@ export function BackupTab(): React.JSX.Element {
           </p>
           <p className="text-muted-foreground">
             마지막 백업: {d?.state.lastAt ? format(d.state.lastAt, 'yyyy-MM-dd HH:mm') : '없음'}
-            {d?.state.lastError && <span className="ml-2 text-urgent">오류: {d.state.lastError}</span>}
+            {/* the warning above shows it in full (older servers: here) */}
+            {d?.state.lastError && !d.health && <span className="ml-2 text-urgent">오류: {d.state.lastError}</span>}
           </p>
           <p className="text-xs text-muted-foreground">매일 정한 시각에 자동으로 백업합니다(위치·시각·보관 개수는 조직·운영 설정의 백업 항목). 다른 드라이브나 USB를 위치로 정하면 서버 PC가 고장 나도 되살릴 수 있습니다.</p>
           {msg && (
-            <p className="text-primary" role="status">
-              {msg}
+            <p className={msg.err ? 'text-urgent' : 'text-primary'} role="status">
+              {msg.text}
             </p>
           )}
         </CardContent>

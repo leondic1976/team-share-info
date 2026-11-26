@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameS
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Db } from '../node/sqlite'
+import { BACKUP_STALE_MS, type BackupAlert, type BackupHealth } from '../shared/schemas/settings'
 import type { ServerContext } from './context'
 import { getSection } from './settings'
 
@@ -25,6 +26,7 @@ export interface BackupState {
   lastAt: number | null
   lastPath: string | null
   lastError: string | null
+  lastErrorAt?: number | null
   /** scheduled time of the last automatic run (so each day's slot runs once) */
   lastAutoDue?: number | null
 }
@@ -36,6 +38,25 @@ const stamp = (d = new Date()): string => `${d.getFullYear()}${pad(d.getMonth() 
 export function backupRoot(db: Db, dataDir: string): string {
   const dir = getSection(db, 'backup').dir.trim()
   return dir || join(dataDir, 'backups', 'auto')
+}
+
+/**
+ * The volume a path is on, for telling whether backups share a disk with the data: the drive
+ * (`c:`) or the network share root (`\\server\share`), lower case; '' when there is none.
+ */
+export function volumeOf(p: string): string {
+  let s = p.trim().replace(/\//g, '\\')
+  if (/^\\\\\?\\UNC\\/i.test(s)) s = `\\\\${s.slice(8)}`
+  else if (/^\\\\[?.]\\/.test(s)) s = s.slice(4)
+  const unc = /^\\\\([^\\]+)\\([^\\]+)/.exec(s)
+  if (unc) return `\\\\${unc[1]}\\${unc[2]}`.toLowerCase()
+  const drive = /^([a-z]):/i.exec(s)
+  return drive ? `${drive[1].toLowerCase()}:` : ''
+}
+
+/** True when `backupDir` is on the same drive or network share as `dataDir`. */
+export function sameVolume(backupDir: string, dataDir: string): boolean {
+  return volumeOf(backupDir) === volumeOf(dataDir)
 }
 
 export function readState(db: Db): BackupState {
@@ -136,26 +157,63 @@ export function runBackup(ctx: ServerContext, root = backupRoot(ctx.db, ctx.data
     const info = { createdAt: Date.now(), version: ctx.version, dbBytes: statSync(dbFile).size, fileCount: count, fileBytes: bytes }
     writeFileSync(join(folder, MANIFEST), JSON.stringify(info, null, 2))
     prune(root, getSection(ctx.db, 'backup').keep)
-    writeState(ctx.db, { ...readState(ctx.db), lastAt: info.createdAt, lastPath: folder, lastError: null })
+    writeState(ctx.db, { ...readState(ctx.db), lastAt: info.createdAt, lastPath: folder, lastError: null, lastErrorAt: null })
     return { ...info, name, path: folder }
   } catch (e) {
-    writeState(ctx.db, { ...readState(ctx.db), lastError: (e as Error).message })
+    writeState(ctx.db, { ...readState(ctx.db), lastError: (e as Error).message, lastErrorAt: Date.now() })
     throw e
   }
 }
 
+/**
+ * Whether the daily job runs at its next check: today's slot is due and has not run yet, or the
+ * last successful backup is stale (the server PC was off at the backup time, e.g. over a weekend),
+ * which runs a catch-up at once and takes today's slot.
+ */
+function jobDue(db: Db, now: Date): { due: number; run: boolean } {
+  const [h, m] = getSection(db, 'backup').time.split(':').map(Number)
+  const due = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m).getTime()
+  const st = readState(db)
+  if ((st.lastAutoDue ?? 0) >= due) return { due, run: false }
+  const stale = st.lastAt != null && now.getTime() - st.lastAt > BACKUP_STALE_MS
+  return { due, run: now.getTime() >= due || stale }
+}
+
 /** Daily automatic backup at the configured time (checked every minute). */
 export function runBackupJob(ctx: ServerContext, now = new Date()): BackupInfo | null {
-  const s = getSection(ctx.db, 'backup')
-  const [h, m] = s.time.split(':').map(Number)
-  const due = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m).getTime()
-  const st = readState(ctx.db)
-  if (now.getTime() < due || (st.lastAutoDue ?? 0) >= due) return null
+  const { due, run } = jobDue(ctx.db, now)
+  if (!run) return null
   try {
     return runBackup(ctx)
   } finally {
     writeState(ctx.db, { ...readState(ctx.db), lastAutoDue: due })
   }
+}
+
+/** Where backups go and whether they can be relied on (same disk as the data, stale, failed). */
+export function backupHealth(db: Db, dataDir: string, now = Date.now()): BackupHealth {
+  const dir = getSection(db, 'backup').dir.trim()
+  const root = backupRoot(db, dataDir)
+  const st = readState(db)
+  // never backed up: counted from when the team began
+  const since = st.lastAt ?? db.get<{ at: number | null }>('SELECT MIN(created_at) AS at FROM members')?.at ?? null
+  return {
+    root,
+    isDefault: !dir,
+    sameDrive: !dir || sameVolume(root, dataDir),
+    lastAt: st.lastAt,
+    lastError: st.lastError,
+    lastErrorAt: st.lastErrorAt ?? null,
+    stale: since != null && now - since > BACKUP_STALE_MS,
+    failed: !!st.lastError,
+    pending: jobDue(db, new Date(now)).run
+  }
+}
+
+/** The 최종관리자's reminder: failing or stale backups, unless the daily job is about to run. */
+export function backupAlert(h: BackupHealth): BackupAlert | null {
+  if (h.pending || (!h.failed && !h.stale)) return null
+  return { kind: h.failed ? 'failed' : 'stale', lastAt: h.lastAt, lastError: h.lastError }
 }
 
 function isBackupFolder(p: string): boolean {

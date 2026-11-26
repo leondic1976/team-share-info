@@ -4,6 +4,8 @@ import { ko } from 'date-fns/locale'
 import { api } from '@renderer/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Loading } from '@renderer/components/EmptyState'
+import type { BackupHealth } from '@shared/schemas/settings'
+import { BackupHealthNotice } from './BackupHealthNotice'
 
 interface StatusDto {
   version: string
@@ -14,6 +16,8 @@ interface StatusDto {
   members: number
   pendingJoins: number
   disk: { free: number; total: number } | null
+  /** the 최종관리자 only (older servers: never) */
+  backup?: BackupHealth
   recentErrors: { at: number; message: string }[]
 }
 
@@ -53,8 +57,23 @@ export function StatusTab(): React.JSX.Element {
           <span className="break-all">{s.dataDir}</span>
           <span className="text-muted-foreground">디스크</span>
           <span>{s.disk ? `남은 공간 ${gb(s.disk.free)} / 전체 ${gb(s.disk.total)}` : '-'}</span>
+          {s.backup && (
+            <>
+              <span className="text-muted-foreground">마지막 백업</span>
+              <span data-testid="status-backup">
+                {s.backup.lastAt ? `${format(s.backup.lastAt, 'yyyy-MM-dd HH:mm')} (${formatDistanceToNow(s.backup.lastAt, { locale: ko })} 전)` : '없음'}
+                {s.backup.failed && <span className="ml-2 text-urgent">마지막 시도 실패</span>}
+              </span>
+              <span className="text-muted-foreground">백업 위치</span>
+              <span className="break-all">
+                {s.backup.root}
+                {s.backup.sameDrive && <span className="ml-2 text-important">서버 자료와 같은 드라이브</span>}
+              </span>
+            </>
+          )}
         </CardContent>
       </Card>
+      {s.backup && <BackupHealthNotice health={s.backup} dataDir={s.dataDir} showOpen />}
       {diskPct >= 90 && <p className="rounded-md bg-urgent/10 px-3 py-2 text-sm text-urgent">디스크 사용량이 90%를 넘었습니다. 오래된 자료를 정리하거나 용량을 늘리세요.</p>}
       <Card>
         <CardHeader>
