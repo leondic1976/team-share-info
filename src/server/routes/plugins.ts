@@ -7,6 +7,7 @@ import { badRequest, conflict, forbidden, notFound } from '../errors'
 import { parse, ok } from '../validate'
 import { logActivity } from '../activity'
 import { audienceOf, scopeDto, setScope, visibleWhere } from '../scope'
+import { entryRefusal } from '../plugin-locks'
 
 interface Row {
   id: string
@@ -177,9 +178,18 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ServerContext, g
     const body = parse(z.object({ value: z.unknown() }), req.body)
     const r = visible(p.pluginId, p.id, req.member.id)
     if (r.closed) throw badRequest('끝난 방입니다.')
+    // a plugin may have rules the server keeps (식사 신청: nothing changes after a deadline)
+    const t = Date.now()
+    const value = body.value ?? null
+    const entries: Record<string, { value: unknown; at: number }> = Object.fromEntries(db.all<{ member_id: string; value: string; at: number }>('SELECT member_id, value, at FROM plugin_entries WHERE room_id = ?', [r.id]).map((e) => [e.member_id, { value: parseJson<unknown>(e.value, null), at: e.at }]))
+    const before = entries[req.member.id]?.value ?? null
+    if (value === null) delete entries[req.member.id]
+    else entries[req.member.id] = { value, at: t }
+    const why = entryRefusal(r.plugin_id, { createdBy: r.created_by, shared: parseJson(r.shared, {}), entries }, req.member.id, before, value, t)
+    if (why) throw conflict(why)
     if (body.value === null || body.value === undefined) db.run('DELETE FROM plugin_entries WHERE room_id = ? AND member_id = ?', [r.id, req.member.id])
     else
-      db.run('INSERT INTO plugin_entries (room_id, member_id, value, at) VALUES (?, ?, ?, ?) ON CONFLICT(room_id, member_id) DO UPDATE SET value = excluded.value, at = excluded.at', [r.id, req.member.id, json(body.value, '참여 데이터'), Date.now()])
+      db.run('INSERT INTO plugin_entries (room_id, member_id, value, at) VALUES (?, ?, ?, ?) ON CONFLICT(room_id, member_id) DO UPDATE SET value = excluded.value, at = excluded.at', [r.id, req.member.id, json(body.value, '참여 데이터'), t])
     bump(r.id)
     const n = visible(p.pluginId, p.id, req.member.id)
     changed(n)

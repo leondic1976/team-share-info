@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
+import { entryRefusal, mealCutoffs, mealEntryGuard, MEAL_LOCK_DAYS, MEAL_TRIM_FLOOR } from '../../src/server/plugin-locks'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const ctx: Record<string, any> = {}
@@ -66,7 +67,7 @@ describe('meal plugin: request, cancel, request again until the deadline', () =>
   it('changes nothing after the deadline', () => {
     const before = M.apply(null, config, MON, 'lunch', true, at(MON, 9)).entry
     const late = M.apply(before, config, MON, 'lunch', false, at(MON, 10, 30))
-    expect(late.error).toContain('10:30에 마감')
+    expect(late.error).toBe('11/23(월) 점심은 마감 시각(10:30)이 지나 바꿀 수 없습니다.')
     expect(late.entry).toBeUndefined()
     expect(M.apply(null, config, MON, 'lunch', true, at(MON, 11)).error).toContain('마감')
     // dinner of the same day is still open, tomorrow's lunch too
@@ -901,5 +902,210 @@ describe('meal plugin: 확실히 신청안함 — a "no" only the member can tak
     expect(plain(pm.declined)).toEqual({ lunch: 1, dinner: 0 })
     expect(pm.days.find((d: any) => d.date === MON).meals.lunch).toMatchObject({ on: false, firm: true, by: '' })
     expect(plain(pm.done)).toEqual({ lunch: 0, dinner: 0 })
+  })
+})
+
+describe('server: nothing changes after a deadline, whatever the client (1.7.0, src/server/plugin-locks.ts)', () => {
+  const shared = M.cleanConfig({ ...config, stewards: ['s1'] })
+  const room = (entries: Record<string, any> = {}) => ({ createdBy: 'adm', shared, entries })
+  const check = (before: unknown, after: unknown, now: number, entries: Record<string, any> = {}) => entryRefusal('meal', room(entries), 'kim', before, after, now)
+  const copy = (v: any) => JSON.parse(JSON.stringify(v))
+
+  it('own requests: free before the deadline, refused after it by the server clock', () => {
+    const e1 = M.apply(null, config, MON, 'lunch', true, at(MON, 9)).entry
+    expect(check(null, e1, at(MON, 9))).toBe('')
+    // a client whose clock or script is wrong thinks it is still open: the server says no
+    const e2 = M.apply(e1, config, MON, 'lunch', false, at(MON, 9, 30)).entry
+    expect(check(e1, e2, at(MON, 10, 30))).toBe('11/23(월) 점심은 마감 시각(10:30)이 지나 바꿀 수 없습니다.')
+    // a new request after the deadline as well
+    const e3 = copy(e1)
+    e3.days[MON].dinner = { on: true, at: at(MON, 16) }
+    expect(check(e1, e3, at(MON, 16))).toBe('11/23(월) 저녁은 마감 시각(15:30)이 지나 바꿀 수 없습니다.')
+    // the dinner of that day is still open at 11:00
+    expect(check(e1, M.apply(e1, config, MON, 'dinner', true, at(MON, 11)).entry, at(MON, 11))).toBe('')
+    // taking a closed record out (or the whole entry) is a change too
+    expect(check(e1, { v: 1, days: {} }, at(MON, 11))).toContain('마감 시각(10:30)')
+    expect(check(e1, null, at(MON, 11))).toContain('마감 시각(10:30)')
+    // the same records written again are fine (every save writes the whole entry), also without
+    // `firm`, which a client older than 1.6.0 drops
+    const firm = M.apply(e1, config, MON, 'lunch', false, at(MON, 10), true).entry
+    const noFirm = copy(firm)
+    delete noFirm.days[MON].lunch.firm
+    expect(check(firm, noFirm, at(MON, 12))).toBe('')
+    // the rest of an entry (settings, menus, people of those in charge) stays free after a deadline
+    expect(check(e1, { ...copy(e1), menus: { [MON]: { note: { t: '외식', at: at(MON, 12) } } } }, at(MON, 12))).toBe('')
+  })
+
+  it('requests made for somebody else (대신 신청·취소): refused after the deadline, with the name', () => {
+    const lee = { id: 'lee', name: '이주무' }
+    const e1 = M.applyFor(null, config, lee, MON, 'lunch', true, at(MON, 9)).entry
+    expect(check(null, e1, at(MON, 9))).toBe('')
+    const e2 = copy(e1)
+    e2.for.lee.days[MON].lunch = { on: false, at: at(MON, 11) }
+    expect(check(e1, e2, at(MON, 11))).toBe('이주무 님의 11/23(월) 점심은 마감 시각(10:30)이 지나 바꿀 수 없습니다.')
+    // a bulk request worked out with a wrong clock
+    const bulk = M.applyBulk(room(), 'kim', config, [lee], [{ date: MON, meal: 'lunch' }], true, at(MON, 9), [])
+    expect(check(null, bulk.entry, at(MON, 11))).toContain('이주무 님의 11/23(월) 점심')
+  })
+
+  it('reads the deadline that counts: the newest of the owner and the 식수서무 named', () => {
+    expect(mealCutoffs(room())).toEqual({ lunch: '10:30', dinner: '15:30' })
+    const later = M.saveAs(room(), 's1', at(MON, 8), { settings: { ...config, meals: { lunch: { on: true, cutoff: '12:00' }, dinner: { on: true, cutoff: '15:30' } } } }).entry
+    const entries = { s1: { value: later, at: at(MON, 8) } }
+    expect(mealCutoffs(room(entries))).toEqual({ lunch: '12:00', dinner: '15:30' })
+    const e1 = M.apply(null, config, MON, 'lunch', true, at(MON, 9)).entry
+    expect(check(null, e1, at(MON, 11, 59), entries)).toBe('')
+    expect(check(null, e1, at(MON, 12), entries)).toBe('11/23(월) 점심은 마감 시각(12:00)이 지나 바꿀 수 없습니다.')
+    // somebody not named cannot move it
+    expect(mealCutoffs({ createdBy: 'adm', shared: M.cleanConfig(config), entries })).toEqual({ lunch: '10:30', dinner: '15:30' })
+    // the price room and other extensions are not touched
+    expect(mealCutoffs({ createdBy: 'adm', shared: { kind: 'meal-price', prices: [] }, entries: {} })).toBeNull()
+    expect(entryRefusal('ladder', room(), 'kim', null, e1, at(MON, 23))).toBe('')
+  })
+
+  it('lets the plugin drop old days, and a save near the size limit drop old records made for others', () => {
+    const old = M.addDays(MON, -MEAL_LOCK_DAYS - 1)
+    const recent = M.addDays(MON, -3)
+    const rec = { lunch: { on: true, at: 1 } }
+    const e1 = { v: 1, days: { [old]: rec, [recent]: rec }, for: { lee: { name: '이주무', days: { [old]: rec, [recent]: rec } } } }
+    const drop = (scope: 'own' | 'lee', date: string, pad = 0) => {
+      const e = copy(e1)
+      delete (scope === 'own' ? e.days : e.for.lee.days)[date]
+      return pad ? { ...e, pad: 'x'.repeat(pad) } : e
+    }
+    expect(check(e1, drop('own', old), at(MON, 9))).toBe('')
+    expect(check(e1, drop('lee', old), at(MON, 9))).toBe('')
+    expect(check(e1, drop('own', recent), at(MON, 9))).toContain('마감 시각')
+    expect(check(e1, drop('lee', recent), at(MON, 9))).toContain('이주무 님의')
+    // near the size limit (Meal.applyBulk makes room): old records made for others may go, own never
+    expect(check(e1, drop('lee', recent, MEAL_TRIM_FLOOR), at(MON, 9))).toBe('')
+    expect(check(e1, drop('own', recent, MEAL_TRIM_FLOOR), at(MON, 9))).toContain('마감 시각')
+    expect(mealEntryGuard(room(), 'kim', e1, e1, at(MON, 9))).toBe('')
+  })
+})
+
+describe('meal plugin: 식대 단가 that change over time (1.7.0)', () => {
+  const plain = (v: unknown) => JSON.parse(JSON.stringify(v))
+  const shared = M.cleanConfig({ ...config, stewards: ['s1'] })
+  const room = { createdBy: 'adm', shared, entries: {} }
+  const list = [
+    { from: '2026-11-16', lunch: '8,500', dinner: 9000 },
+    { from: '2026-10-01', lunch: 8000, dinner: '9000원' },
+    { from: 'nope', lunch: 1 }
+  ]
+
+  it('keeps a list of price changes, oldest first; a price applies from its date until the next one', () => {
+    const p = M.cleanPrices(list)
+    expect(plain(p)).toEqual([
+      { from: '2026-10-01', lunch: 8000, dinner: 9000 },
+      { from: '2026-11-16', lunch: 8500, dinner: 9000 }
+    ])
+    expect(M.priceAt(p, '2026-09-30', 'lunch')).toBeNull()
+    expect(M.priceAt(p, '2026-10-01', 'lunch')).toBe(8000)
+    expect(M.priceAt(p, '2026-11-13', 'lunch')).toBe(8000)
+    expect(M.priceAt(p, '2026-11-16', 'lunch')).toBe(8500)
+    expect(M.priceAt(p, MON, 'dinner')).toBe(9000)
+    // a month shows the price in force on the 1st and those starting within it
+    expect(plain(M.monthPrices(p, '2026-11')).map((x: any) => x.from)).toEqual(['2026-10-01', '2026-11-16'])
+    expect(plain(M.monthPrices(p, '2026-12')).map((x: any) => x.from)).toEqual(['2026-11-16'])
+    expect(M.monthPrices(p, '2026-09')).toHaveLength(0)
+    // odd amounts are 0, very big ones capped
+    expect(plain(M.cleanPrices([{ from: MON, lunch: -5, dinner: 1e12 }]))).toEqual([{ from: MON, lunch: 0, dinner: M.LIMITS.priceMax }])
+  })
+
+  it('lives in a room of its own: its creator writes the shared data, the others in charge their entry; the newest counts', () => {
+    // nothing yet: the first save makes the room
+    const first = M.savePrices(room, null, 'adm', at(MON, 9), list.slice(0, 2))
+    expect(first.create).toMatchObject({ kind: 'meal-price', v: 1, at: at(MON, 9) })
+    expect(M.savePrices(room, null, 'kim', at(MON, 9), list.slice(0, 2)).error).toContain('식수서무만')
+    expect(M.savePrices(room, null, 'adm', at(MON, 9), [{ from: '' }]).error).toContain('적용 시작일')
+    expect(M.savePrices(room, null, 'adm', at(MON, 9), [{ from: MON }, { from: MON }]).error).toContain('두 번')
+    const pr = { id: 'p', createdBy: 'adm', createdAt: 5, updatedAt: at(MON, 9), shared: first.create, entries: {} as Record<string, any> }
+    expect(M.pickPriceRoom([{ id: 'x', createdAt: 1, shared }, pr, { ...pr, id: 'q', createdAt: 9 }]).id).toBe('p')
+    // an older version never takes it for the settings room
+    expect(M.pickRoom([pr])).toBeNull()
+    expect(plain(M.effectivePrices(room, pr))).toMatchObject({ at: at(MON, 9), by: 'adm' })
+    expect(M.effectivePrices(room, pr).prices).toHaveLength(2)
+    expect(M.savePrices(room, pr, 'adm', at(MON, 10), list.slice(0, 2)).same).toBe(true)
+    expect(M.savePrices(room, pr, 'adm', at(MON, 10), [list[1]]).shared.prices).toHaveLength(1)
+    // a 식수서무 writes their own entry; the newer list wins
+    const mine = M.savePrices(room, pr, 's1', at(MON, 11), [{ from: '2026-10-01', lunch: 7000, dinner: 7000 }])
+    expect(mine.entry).toMatchObject({ v: 1, at: at(MON, 11) })
+    const withS1 = { ...pr, entries: { s1: { name: '서무', value: mine.entry, at: at(MON, 11) } } }
+    expect(plain(M.effectivePrices(room, withS1))).toEqual({ prices: [{ from: '2026-10-01', lunch: 7000, dinner: 7000 }], at: at(MON, 11), by: 's1' })
+    // somebody not in charge: ignored; a clock ahead of the server's: taken as when it was stored
+    const kim = { name: '김', value: { v: 1, prices: [{ from: MON, lunch: 1, dinner: 1 }], at: at(MON, 12) }, at: at(MON, 12) }
+    expect(M.effectivePrices(room, { ...withS1, entries: { ...withS1.entries, kim } }).by).toBe('s1')
+    const ahead = { s1: { name: '서무', value: { ...mine.entry, at: at(MON, 23) }, at: at(MON, 8) } }
+    expect(M.effectivePrices(room, { ...pr, entries: ahead }).by).toBe('adm')
+    // once the 식수서무 is removed, what they wrote no longer counts
+    expect(M.effectivePrices({ ...room, shared: M.cleanConfig(config) }, withS1).by).toBe('adm')
+  })
+})
+
+describe('meal plugin: 식대 정산 (1.7.0)', () => {
+  const plain = (v: unknown) => JSON.parse(JSON.stringify(v))
+  const prices = [
+    { from: '2026-11-01', lunch: 8000, dinner: 9000 },
+    { from: MON, lunch: 8500, dinner: 9000 }
+  ]
+  const day = (lunch: boolean, dinner?: boolean, t = 1) => ({ lunch: { on: lunch, at: t }, ...(dinner === undefined ? {} : { dinner: { on: dinner, at: t } }) })
+  const hand = { 'x:hand0001': { name: '현장직', dept: '시설팀', at: 1 } }
+  const room = {
+    createdBy: 'adm',
+    shared: { ...M.cleanConfig(config), people: hand },
+    entries: {
+      a: { name: '가나', value: { v: 1, days: { '2026-11-20': day(true, true), [MON]: day(true, true, at(MON, 9)) } } },
+      b: { name: '다라', value: { v: 1, days: { '2026-11-19': day(true), '2026-10-30': day(true), [MON]: day(false) } } },
+      // the admin requested for somebody registered by hand (미등록 직원)
+      adm: { name: '관리', value: { v: 1, days: {}, for: { 'x:hand0001': { name: '현장직', days: { '2026-11-20': day(true), [MON]: day(true, false, at(MON, 9)) } } } }, at: at(MON, 9) }
+    }
+  }
+  const members = [
+    { id: 'a', name: '가나', deptName: '행정팀' },
+    { id: 'b', name: '다라', deptName: '행정팀' },
+    { id: 'adm', name: '관리', deptName: '민원팀' }
+  ]
+
+  it('per person: the final meals priced on their own date, subtotals per department and the total', () => {
+    // Monday 11:00: Monday's lunch is final, its dinner still open
+    const s = M.settlement(room, '2026-11', members, at(MON, 11), prices)
+    expect(plain(s.rows).map((r: any) => [r.deptName, r.name, r.manual, r.lunch, r.dinner, r.lunchAmt, r.dinnerAmt, r.amount])).toEqual([
+      ['시설팀', '현장직', true, 2, 0, 16500, 0, 16500],
+      ['행정팀', '가나', false, 2, 1, 16500, 9000, 25500],
+      ['행정팀', '다라', false, 1, 0, 8000, 0, 8000]
+    ])
+    expect(plain(s.depts)).toEqual([
+      { dept: '시설팀', people: 1, lunch: 2, dinner: 0, lunchAmt: 16500, dinnerAmt: 0, amount: 16500 },
+      { dept: '행정팀', people: 2, lunch: 3, dinner: 1, lunchAmt: 24500, dinnerAmt: 9000, amount: 33500 }
+    ])
+    expect(plain(s.total)).toEqual({ people: 3, manual: 1, lunch: 5, dinner: 1, lunchAmt: 41000, dinnerAmt: 9000, amount: 50000 })
+    expect(s.unpriced).toBe(0)
+    // the counts are those of the statistics (개인별)
+    const t = M.monthTally(room, '2026-11', members, at(MON, 11), false)
+    expect([t.lunch, t.dinner]).toEqual([s.total.lunch, s.total.dinner])
+    // after the dinner deadline it is final too
+    expect(M.settlement(room, '2026-11', members, at(MON, 16), prices).total.amount).toBe(59000)
+    // October: no price applied yet, counted apart
+    const oct = M.settlement(room, '2026-10', members, at(MON, 11), prices)
+    expect([oct.total.lunch, oct.total.amount, oct.unpriced]).toEqual([1, 0, 1])
+  })
+
+  it('CSV with the subtotals, and a saved month is priced again from its dates', () => {
+    const now = at(MON, 11)
+    const s = M.settlement(room, '2026-11', members, now, prices)
+    const csv = M.settleCsv(s)
+    expect(csv.startsWith('﻿부서,이름,점심(회),저녁(회),점심 금액(원),저녁 금액(원),합계(원)\r\n')).toBe(true)
+    expect(csv).toContain('시설팀,현장직 (미등록),2,0,16500,0,16500\r\n시설팀,소계 1명,2,0,16500,0,16500')
+    expect(csv).toContain('행정팀,소계 2명,3,1,24500,9000,33500')
+    expect(csv).toContain(',합계 3명,5,1,41000,9000,50000')
+    expect(M.wonText(1234567)).toBe('1,234,567')
+    const snap = M.statsSnapshot(room, '2026-11', members, now)
+    expect(plain(snap.rows.find((r: any) => r.id === 'a').dates)).toEqual({ lunch: ['2026-11-20', MON], dinner: ['2026-11-20'] })
+    expect(plain(M.snapSettlement(snap, prices))).toEqual(plain(s))
+    // a corrected price applies to a saved month as well
+    expect(M.snapSettlement(snap, [{ from: '2026-11-01', lunch: 1000, dinner: 1000 }]).total.amount).toBe(6000)
+    // a copy saved before 1.7.0 has no dates: the screen counts from the records kept now
+    expect(M.snapSettlement({ ...snap, rows: snap.rows.map((r: any) => ({ ...r, dates: undefined })) }, prices)).toBeNull()
   })
 })
