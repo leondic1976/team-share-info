@@ -93,9 +93,16 @@ function copyBlobs(dbFile: string, filesDir: string, store: string): { count: nu
 }
 
 export function listBackups(root: string): BackupInfo[] {
-  if (!existsSync(root)) return []
+  // a backup location that is gone or is not a folder (USB taken out, a file in its place) lists nothing
+  // instead of failing the whole 백업·복구 tab, so its warnings still show
+  let names: string[]
+  try {
+    names = statSync(root).isDirectory() ? readdirSync(root) : []
+  } catch {
+    return []
+  }
   const out: BackupInfo[] = []
-  for (const name of readdirSync(root)) {
+  for (const name of names) {
     const m = join(root, name, MANIFEST)
     if (!existsSync(m)) continue
     try {

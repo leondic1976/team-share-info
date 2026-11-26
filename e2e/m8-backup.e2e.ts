@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page } from 'playwright-core'
 import { go, launch, runWizard, type Launched } from './helpers'
@@ -78,10 +78,13 @@ describe('M8-1 backup and moving the server to another PC (profile)', () => {
   }, 90000)
 
   it('A: a failed backup is shown on 백업·복구 and 서버 상태, and the server PC gets one reminder card', async () => {
-    // a backup folder that cannot be made (under a file), like a USB drive that was taken out
-    const blocker = join(a.userData, 'not-a-folder')
-    writeFileSync(blocker, 'x')
-    expect(await apiPut(a.page, '/api/admin/settings', { backup: { dir: join(blocker, 'TeamHub 백업') } })).toBe(200)
+    // a backup folder that was fine when it was saved and is gone later, like a USB drive that was taken out
+    // (saving an unusable folder is refused, 지시 132): after saving, the folder becomes a file
+    const usb = join(a.userData, 'usb-backup')
+    mkdirSync(usb, { recursive: true })
+    expect(await apiPut(a.page, '/api/admin/settings', { backup: { dir: usb } })).toBe(200)
+    rmSync(usb, { recursive: true, force: true })
+    writeFileSync(usb, 'x')
     await go(a.page, '/admin/backup')
     await a.page.getByRole('button', { name: '지금 백업' }).click()
     await a.page.getByTestId('backup-warn-failed').filter({ hasText: '마지막 백업이 실패했습니다' }).waitFor({ timeout: 10000 })

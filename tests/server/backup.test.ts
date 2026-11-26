@@ -71,6 +71,15 @@ describe('backup and restore (M8-1)', () => {
 })
 
 describe('backup health (same drive, stale, failed)', () => {
+  it('a backup location that is a file or gone lists nothing instead of failing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'th-bk-file-'))
+    const file = join(dir, 'usb')
+    writeFileSync(file, 'x')
+    expect(listBackups(file)).toEqual([])
+    expect(listBackups(join(dir, 'missing'))).toEqual([])
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('tells drives and network shares apart', () => {
     expect(volumeOf('C:\\TeamHub\\data')).toBe('c:')
     expect(volumeOf('d:/backup')).toBe('d:')
