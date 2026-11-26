@@ -107,6 +107,7 @@ export const FEATURES = [
   'chat',
   'boards',
   'duty',
+  'collect',
   'org',
   'directory',
   'meal',

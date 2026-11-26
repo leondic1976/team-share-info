@@ -24,6 +24,7 @@ import {
   Network,
   Utensils,
   Siren,
+  FolderInput,
   type LucideIcon
 } from 'lucide-react'
 import type { FeatureKey } from '@shared/constants'
@@ -52,6 +53,8 @@ export const MENU: MenuItem[] = [
   { key: 'chat', label: '메신저', path: '/chat', icon: MessagesSquare },
   { key: 'boards', label: '게시판', path: '/boards', icon: ClipboardList },
   { key: 'duty', label: '근무현황', path: '/duty', icon: UserCheck },
+  // 자료 취합 (지시 127): collect files/answers from the people of a scope by a deadline
+  { key: 'collect', label: '자료 취합', path: '/collect', icon: FolderInput },
   { key: 'org', label: '조직도', path: '/org', icon: Network },
   { key: 'directory', label: '주소록', path: '/directory', icon: Contact },
   // a built-in extension (plugins/meal) shown as a menu of its own; installed by itself when first opened

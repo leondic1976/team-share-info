@@ -47,10 +47,19 @@ function freeName(dir: string, name: string): string {
 }
 
 async function fetchTo(id: string, dest: string): Promise<void> {
+  await fetchPathTo(`/api/attachments/${encodeURIComponent(id)}`, dest)
+}
+
+async function fetchPathTo(path: string, dest: string): Promise<void> {
   const c = readCredential()
   if (!c) throw new Error('서버에 연결되어 있지 않습니다.')
-  const res = await net.fetch(`${c.serverUrl}/api/attachments/${encodeURIComponent(id)}`, { headers: headers() })
+  const res = await net.fetch(`${c.serverUrl}${path}`, { headers: headers() })
   if (!res.ok || !res.body) {
+    // the server's own message (e.g. 자료 취합: too large to bundle, not the requester)
+    if (res.status === 413 || res.status === 403 || res.status === 409) {
+      const msg = await (res.json() as Promise<{ error?: { message?: string } }>).then((j) => j.error?.message).catch(() => undefined)
+      throw new Error(msg ?? `내려받지 못했습니다 (${res.status}).`)
+    }
     // 410: a messenger file deleted from the server PC after its retention period; the server says so
     if (res.status === 410) {
       const msg = await (res.json() as Promise<{ error?: { message?: string } }>).then((j) => j.error?.message).catch(() => undefined)
@@ -113,6 +122,35 @@ export function registerAttachIpc(): void {
       if (err) error = `저장했지만 열지 못했습니다: ${err}`
     }
     return { ok: true, token, name: basename(dest), dir: dirname(dest), opened, blocked, error }
+  })
+
+  // 자료 취합: the requester saves the ZIP of everything handed in, or the 제출 현황 as CSV.
+  // The renderer names only the request; the path on the server is made here (13.8).
+  handle('collect:save', z.object({ id: z.string().min(1).max(100), kind: z.enum(['zip', 'csv']), name: z.string().min(1).max(260) }), async ({ id, kind, name }, e) => {
+    const file = safeName(name)
+    let dest: string
+    if (process.env.TEAMHUB_E2E) {
+      const dir = join(app.getPath('userData'), 'downloads')
+      mkdirSync(dir, { recursive: true })
+      dest = freeName(dir, file)
+    } else {
+      const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
+      const filters = kind === 'zip' ? [{ name: 'ZIP 압축 파일', extensions: ['zip'] }] : [{ name: 'CSV (엑셀)', extensions: ['csv'] }]
+      const opts = { title: '저장할 위치', defaultPath: join(lastDir(), file), filters }
+      const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+      if (r.canceled || !r.filePath) return { ok: false, canceled: true }
+      dest = r.filePath
+      localDb().kv.set(KV_DIR, dirname(dest))
+    }
+    try {
+      await fetchPathTo(`/api/collects/${encodeURIComponent(id)}/${kind}`, dest)
+    } catch (err) {
+      log.warn('[collect] download failed', err)
+      return { ok: false, error: (err as Error).message }
+    }
+    const token = randomUUID()
+    saved.set(token, dest)
+    return { ok: true, token, name: basename(dest), dir: dirname(dest), opened: false, blocked: false }
   })
 
   handle('attach:open', z.object({ token: z.string().uuid() }), async ({ token }) => {

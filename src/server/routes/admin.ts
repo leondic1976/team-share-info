@@ -115,7 +115,7 @@ export function approveJoinRequest(ctx: ServerContext, id: string, req: FastifyR
 }
 
 /** The settings a 서무 may change; everything else in 조직·운영 설정 is the 최종관리자's. */
-const SECRETARY_OPS_FIELDS = ['urgentSenders', 'groupCreators']
+const SECRETARY_OPS_FIELDS = ['urgentSenders', 'groupCreators', 'collectCreators']
 
 export function registerAdminRoutes(
   app: FastifyInstance,

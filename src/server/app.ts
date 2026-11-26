@@ -22,6 +22,7 @@ import { registerTaskRoutes } from './routes/tasks'
 import { registerBoardRoutes } from './routes/boards'
 import { registerDirectoryRoutes } from './routes/directory'
 import { registerDutyRoutes } from './routes/duty'
+import { registerCollectRoutes, runCollectJobs } from './routes/collect'
 import { registerDocRoutes } from './routes/docs'
 import { registerToolRoutes, runAlarmJobs } from './routes/tools'
 import { registerLauncherRoutes } from './routes/launcher'
@@ -121,6 +122,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   registerBoardRoutes(app, ctx, { requireAuth, requireAdmin })
   registerDirectoryRoutes(app, ctx, { requireAuth, requireAdmin, requireOwner })
   registerDutyRoutes(app, ctx, { requireAuth })
+  registerCollectRoutes(app, ctx, { requireAuth })
   registerDocRoutes(app, ctx, { requireAuth, requireAdmin })
   registerToolRoutes(app, ctx, { requireAuth })
   registerLauncherRoutes(app, ctx, { requireAuth, requireAdmin })
@@ -148,6 +150,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
         try {
           runNoticeJobs(ctx)
           runAlarmJobs(ctx)
+          runCollectJobs(ctx)
         } catch (e) {
           recordError(ctx, `notice jobs: ${(e as Error).message}`)
         }

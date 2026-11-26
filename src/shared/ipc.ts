@@ -399,6 +399,8 @@ export interface IpcMap {
   'attach:save': { req: { id: string; name: string; open: boolean }; res: AttachSaveResult }
   'attach:open': { req: { token: string }; res: { ok: boolean; error?: string } }
   'attach:reveal': { req: { token: string }; res: void }
+  /** 자료 취합: the bundle of handed-in files (zip) or the 제출 현황 list (csv) of a request */
+  'collect:save': { req: { id: string; kind: 'zip' | 'csv'; name: string }; res: AttachSaveResult }
   'local:memos.list': { req: { q: string }; res: MemoDto[] }
   'local:memos.get': { req: { id: string }; res: MemoDto | null }
   'local:memos.save': { req: MemoInput; res: string }
@@ -728,6 +730,7 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'attach:save',
   'attach:open',
   'attach:reveal',
+  'collect:save',
   'local:memos.list',
   'local:memos.get',
   'local:memos.save',

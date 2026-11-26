@@ -114,7 +114,7 @@ export function SettingsTab(): React.JSX.Element {
   const submit = (): void => {
     setMsg(null)
     // a 서무 decides only who may send urgent notices and who may make groups
-    if (!owner) return save.mutate({ ops: { urgentSenders: s.ops.urgentSenders, groupCreators: s.ops.groupCreators } })
+    if (!owner) return save.mutate({ ops: { urgentSenders: s.ops.urgentSenders, groupCreators: s.ops.groupCreators, collectCreators: s.ops.collectCreators } })
     const quotaBytes = Math.round(Number(quotaGb) * GB)
     const maxFileBytes = Math.round(Number(maxFileGb) * GB)
     if (!(quotaBytes > 0) || !(maxFileBytes > 0)) return setMsg({ ok: false, text: '저장 공간의 용량은 0보다 큰 숫자로 입력하세요.' })
@@ -146,7 +146,7 @@ export function SettingsTab(): React.JSX.Element {
     <div className="max-w-3xl space-y-4">
       {!owner && (
         <OwnerOnlyNote>
-          서무는 <b>긴급알림 발송 권한</b>과 <b>그룹 만들기 권한</b>만 바꿀 수 있습니다. 조직 정보·네트워크·저장 공간·백업·사용할 기능·관리 PIN 등 흐리게 보이는 항목은 최종관리자(서버 PC)만 바꿉니다.
+          서무는 <b>긴급알림 발송 권한</b>, <b>그룹 만들기 권한</b>, <b>자료 취합 요청 권한</b>만 바꿀 수 있습니다. 조직 정보·네트워크·저장 공간·백업·사용할 기능·관리 PIN 등 흐리게 보이는 항목은 최종관리자(서버 PC)만 바꿉니다.
         </OwnerOnlyNote>
       )}
       <OwnerFields owner={owner} className="space-y-4">
@@ -285,6 +285,17 @@ export function SettingsTab(): React.JSX.Element {
                 aria-label="그룹 만들기 권한"
                 value={s.ops.groupCreators}
                 onChange={(e) => upd('ops', { groupCreators: e.target.value as 'admins' | 'everyone' })}
+              >
+                <option value="everyone">모든 팀원</option>
+                <option value="admins">최종관리자·서무만</option>
+              </select>
+            </Field>
+            <Field label="자료 취합 요청 권한">
+              <select
+                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                aria-label="자료 취합 요청 권한"
+                value={s.ops.collectCreators}
+                onChange={(e) => upd('ops', { collectCreators: e.target.value as 'admins' | 'everyone' })}
               >
                 <option value="everyone">모든 팀원</option>
                 <option value="admins">최종관리자·서무만</option>

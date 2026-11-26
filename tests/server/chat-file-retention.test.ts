@@ -231,7 +231,7 @@ describe('message file retention (지시 109)', () => {
         `INSERT INTO attachments (id, owner_type, owner_id, blob_id, name, size, created_by, created_at, updated_at) VALUES ('a1', 'notice', 'n1', 'b1', 'x.pdf', 3, NULL, ?, ?)`,
         [t, t]
       )
-      expect(db.migrate(SERVER_MIGRATIONS)).toEqual([25])
+      expect(db.migrate(SERVER_MIGRATIONS.filter((m) => m.id <= 25))).toEqual([25])
       expect(db.get('SELECT id, blob_id, name, expired_at FROM attachments')).toEqual({
         id: 'a1',
         blob_id: 'b1',
