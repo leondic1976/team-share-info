@@ -11,6 +11,7 @@ import { logActivity } from '../activity'
 import { setScope } from '../scope'
 import { readSetting, writeSetting } from '../settings'
 import { getMember, listDepartments, listMembers } from '../repos/members'
+import { requirePiiAck } from '../pii'
 
 interface AbsenceRow {
   id: string
@@ -101,6 +102,7 @@ export function registerDutyRoutes(app: FastifyInstance, ctx: ServerContext, gua
 
   app.post('/api/duty', auth, async (req) => {
     const input = parse(dutyInputSchema, req.body)
+    requirePiiAck(ctx, req, 'duty.create', [input.place, input.note])
     const memberId = input.memberId ?? req.member.id
     if (memberId !== req.member.id) {
       if (!canManage(req)) throw forbidden('다른 사람의 근무상황은 대리 등록자나 관리자(최종관리자·서무)만 올릴 수 있습니다.')
@@ -126,6 +128,7 @@ export function registerDutyRoutes(app: FastifyInstance, ctx: ServerContext, gua
     const { id } = req.params as { id: string }
     const r = load(req, id)
     const input = parse(dutyInputSchema, req.body)
+    requirePiiAck(ctx, req, 'duty.update', [input.place, input.note])
     // whose entry it is does not change; make a new one for another member
     db.run(`UPDATE events SET title = ?, start_at = ?, end_at = ?, all_day = ?, location = ?, absence_type = ?, updated_at = ? WHERE id = ?`, [
       input.note || input.type,

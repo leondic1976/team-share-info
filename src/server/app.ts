@@ -34,6 +34,7 @@ import type { FeedbackRelayConfig } from '../shared/server-host'
 import { registerLedgerRoutes } from './routes/ledgers'
 import { registerSearchRoutes } from './routes/search'
 import { pruneIdempotency, registerIdempotency } from './idempotency'
+import { registerPiiAck } from './pii'
 import { runBackupJob } from './backup'
 import { runMessageFileRetention } from './message-files'
 import { registerCommand } from './command-host'
@@ -81,7 +82,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof AppError) {
-      void reply.status(err.status).send({ error: { code: err.code, message: err.message } })
+      void reply.status(err.status).send({ error: { code: err.code, message: err.message, ...(err.details ? { details: err.details } : {}) } })
       return
     }
     const e = err as { statusCode?: number; code?: string; message: string }
@@ -98,6 +99,7 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   })
 
   registerIdempotency(app, ctx)
+  registerPiiAck(app)
   const requireAuth = makeRequireAuth(ctx)
   const requireAdmin = makeRequireAdmin(ctx)
   // 최종관리자 (the server PC) only; use after requireAuth and requireAdmin

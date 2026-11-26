@@ -300,9 +300,10 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
     if (!editing) return
     const body = editing.text
     if (!body.trim()) return setErr('내용을 입력하세요. 지우려면 삭제를 누르세요.')
-    if (!confirmPii([body], '이 대화방의 모든 사람이 보게 되며,')) return
+    const pii = confirmPii([body], '이 대화방의 모든 사람이 보게 되며,')
+    if (!pii) return
     try {
-      await api.patch(`/api/messages/${editing.id}`, { body })
+      await api.patch(`/api/messages/${editing.id}`, { body, ...pii })
       setMessages((cur) => cur.map((m) => (m.id === editing.id ? { ...m, body, editedAt: Date.now() } : m)))
       setEditing(null)
       setErr('')
@@ -337,7 +338,8 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
     const body = text
     const files = staged
     if (!body.trim() && !attachmentIds.length && !files.length) return
-    if (!confirmPii([body], '이 대화방의 모든 사람이 보게 되며,')) return
+    const pii = confirmPii([body], '이 대화방의 모든 사람이 보게 되며,')
+    if (!pii) return
     if (files.length && !online) return setErr('사진·파일은 서버에 연결되어 있을 때 보낼 수 있습니다.')
     setSending(true)
     setErr('')
@@ -346,7 +348,7 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
         // the pasted images go first (each its own message), then the text, in one send
         const ids = [...attachmentIds]
         for (const x of files) ids.push((await uploadAttachment(x.file)).id)
-        await api.post(`/api/conversations/${id}/messages`, { body, attachmentIds: ids })
+        await api.post(`/api/conversations/${id}/messages`, { body, attachmentIds: ids, ...pii })
         files.forEach((x) => x.url && URL.revokeObjectURL(x.url))
         setStaged([])
         setText('')
@@ -357,8 +359,8 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
       }
       // text can wait for the server on this PC; files cannot (they are stored on the server)
       const r = attachmentIds.length
-        ? await api.post(`/api/conversations/${id}/messages`, { body, attachmentIds }).then(() => ({ queued: false }))
-        : await sendOrQueue({ kind: 'chat.message', label: `메시지 → ${conv.data?.title || '대화'}: ${body.trim().slice(0, 60)}`, path: `/api/conversations/${id}/messages`, body: { body, attachmentIds: [] } })
+        ? await api.post(`/api/conversations/${id}/messages`, { body, attachmentIds, ...pii }).then(() => ({ queued: false }))
+        : await sendOrQueue({ kind: 'chat.message', label: `메시지 → ${conv.data?.title || '대화'}: ${body.trim().slice(0, 60)}`, path: `/api/conversations/${id}/messages`, body: { body, attachmentIds: [], ...pii } })
       if (!attachmentIds.length || body.trim()) setText('')
       stickBottom.current = true
       if (r.queued) return

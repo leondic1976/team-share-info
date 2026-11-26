@@ -17,6 +17,7 @@ import { useConn } from '@renderer/app/conn-store'
 import { useSpace } from '@renderer/app/space-store'
 import { cn } from '@renderer/lib/utils'
 import { confirmPii } from '@renderer/lib/pii'
+import type { PiiAck } from '@shared/pii'
 import { ColorPicker } from '@renderer/features/memos/ColorPicker'
 import { RoleMark } from '@renderer/components/RoleMark'
 
@@ -98,7 +99,7 @@ function SharedMemoDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const [scope, setScope] = useState<ScopeInput>(defaultScope(space))
   const [err, setErr] = useState('')
   const save = useMutation({
-    mutationFn: () => sendOrQueue({ kind: 'shared-memo', label: `공유 메모: ${body.trim().slice(0, 60)}`, path: '/api/shared-memos', body: { body, color, scope } }),
+    mutationFn: (pii: PiiAck) => sendOrQueue({ kind: 'shared-memo', label: `공유 메모: ${body.trim().slice(0, 60)}`, path: '/api/shared-memos', body: { body, color, scope, ...pii } }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['shared-memos'] })
       setBody('')
@@ -116,7 +117,11 @@ function SharedMemoDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <Button variant="outline" onClick={onClose}>
             취소
           </Button>
-          <Button disabled={!body.trim() || !scopeIsValid(scope) || save.isPending} onClick={() => confirmPii([body], '공개 범위의 모든 사람이 보게 되며,') && save.mutate()}>
+          <Button disabled={!body.trim() || !scopeIsValid(scope) || save.isPending} onClick={() => {
+              const pii = confirmPii([body], '공개 범위의 모든 사람이 보게 되며,')
+              if (pii) save.mutate(pii)
+            }}
+          >
             남기기
           </Button>
         </>

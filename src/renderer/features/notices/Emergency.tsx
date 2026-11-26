@@ -10,6 +10,7 @@ import { api, errorMessage } from '@renderer/lib/api'
 import { useMe, useMembers } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { confirmPii } from '@renderer/lib/pii'
+import type { PiiAck } from '@shared/pii'
 import { cn } from '@renderer/lib/utils'
 
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -42,7 +43,8 @@ export function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () 
   const [body, setBody] = useState('')
   const [ack, setAck] = useState(true)
   const [renotify, setRenotify] = useState('5')
-  const [sure, setSure] = useState(false)
+  // the first press checked for personal information: what the server is told about it
+  const [sure, setSure] = useState<PiiAck | null>(null)
   const [err, setErr] = useState('')
   useEffect(() => {
     if (open) {
@@ -50,15 +52,17 @@ export function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () 
       setBody('')
       setAck(true)
       setRenotify('5')
-      setSure(false)
+      setSure(null)
       setErr('')
     }
   }, [open])
+  // changed after the first press: check and confirm again
+  useEffect(() => setSure(null), [title, body])
 
   const total = members?.filter((m) => m.status === 'active').length
   const here = members?.filter((m) => m.status === 'active' && m.presence !== 'offline').length
   const send = useMutation({
-    mutationFn: () =>
+    mutationFn: (pii: PiiAck) =>
       api.post<NoticeSummaryDto>('/api/notices', {
         level: 'urgent',
         title: title.trim(),
@@ -70,7 +74,8 @@ export function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () 
         publishAt: null,
         expiresAt: null,
         renotifyMinutes: ack && renotify ? Number(renotify) : null,
-        attachmentIds: []
+        attachmentIds: [],
+        ...pii
       }),
     onSuccess: (n) => {
       void qc.invalidateQueries({ queryKey: ['notices'] })
@@ -80,7 +85,7 @@ export function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () 
     },
     onError: (e) => {
       setErr(errorMessage(e))
-      setSure(false)
+      setSure(null)
     }
   })
 
@@ -100,11 +105,11 @@ export function EmergencyDialog({ open, onClose }: { open: boolean; onClose: () 
             취소
           </Button>
           {sure ? (
-            <Button variant="destructive" onClick={() => send.mutate()} disabled={send.isPending} data-testid="emergency-confirm">
+            <Button variant="destructive" onClick={() => send.mutate(sure)} disabled={send.isPending} data-testid="emergency-confirm">
               <Send /> 지금 팀 전체 화면에 띄우기
             </Button>
           ) : (
-            <Button variant="destructive" onClick={() => confirmPii([title, body], '팀 전체의 화면에 바로 나타나며,') && setSure(true)} disabled={!title.trim() || !online}>
+            <Button variant="destructive" onClick={() => setSure(confirmPii([title, body], '팀 전체의 화면에 바로 나타나며,'))} disabled={!title.trim() || !online}>
               <Siren /> 긴급 발송
             </Button>
           )}

@@ -6,6 +6,7 @@ import type { CommentDto } from '../../shared/schemas/work'
 import type { ServerContext } from '../context'
 import { forbidden, notFound } from '../errors'
 import { parse, ok } from '../validate'
+import { requirePiiAck } from '../pii'
 
 type Check = (db: Db, ownerId: string, memberId: string) => boolean
 type Notify = (ownerId: string) => void
@@ -45,6 +46,7 @@ export function registerCommentRoutes(app: FastifyInstance, ctx: ServerContext, 
     const { type, id } = req.params as { type: string; id: string }
     const o = owner(type, id, req.member.id)
     const { body } = parse(z.object({ body: z.string().trim().min(1, '댓글을 입력하세요').max(3000) }), req.body)
+    requirePiiAck(ctx, req, 'comment', [body])
     const cid = newId()
     const t = Date.now()
     db.run('INSERT INTO comments (id, owner_type, owner_id, body, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [cid, type, id, body, req.member.id, t, t])

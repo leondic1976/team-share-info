@@ -7,6 +7,7 @@ import { badRequest, forbidden, notFound } from '../errors'
 import { parse, ok } from '../validate'
 import { logActivity } from '../activity'
 import { audienceOf, inGroupWhere, scopeDto, setScope, visibleWhere } from '../scope'
+import { requirePiiAck } from '../pii'
 
 interface SharedMemoRow {
   id: string
@@ -109,6 +110,7 @@ export function registerToolRoutes(app: FastifyInstance, ctx: ServerContext, gua
 
   app.post('/api/shared-memos', auth, async (req) => {
     const input = parse(sharedMemoInputSchema, req.body)
+    requirePiiAck(ctx, req, 'shared_memo', [input.body])
     const id = newId()
     const t = Date.now()
     db.tx(() => {
@@ -144,6 +146,7 @@ export function registerToolRoutes(app: FastifyInstance, ctx: ServerContext, gua
   // ---------- alarms sent to teammates ----------
   app.post('/api/alarms', auth, async (req) => {
     const input = parse(sendAlarmSchema, req.body)
+    requirePiiAck(ctx, req, 'alarm', [input.title, input.body])
     const now = Date.now()
     const fireAt = input.immediate ? now : input.fireAt
     if (fireAt < now - 60_000) throw badRequest('지난 시각으로는 보낼 수 없습니다.')

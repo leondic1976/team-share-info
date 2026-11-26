@@ -10,6 +10,7 @@ import { getSection } from '../settings'
 import { audienceOf, canSee, inGroupWhere, scopeDto, setScope, visibleWhere } from '../scope'
 import { cleanHtml } from '../html'
 import { deleteAttachmentsOf, linkAttachments, listAttachments } from './attachments'
+import { requirePiiAck } from '../pii'
 
 interface NoticeRow {
   id: string
@@ -242,6 +243,7 @@ export function registerNoticeRoutes(app: FastifyInstance, ctx: ServerContext, g
 
   app.post('/api/notices', auth, async (req) => {
     const input = parse(noticeCreateSchema, req.body)
+    requirePiiAck(ctx, req, input.level === 'urgent' ? 'notice.urgent' : 'notice', [input.title, input.bodyHtml])
     if (input.level === 'urgent' && getSection(db, 'ops').urgentSenders === 'admins' && req.member.role !== 'admin') {
       throw forbidden('긴급 공지는 관리자만 보낼 수 있습니다.')
     }
@@ -284,6 +286,7 @@ export function registerNoticeRoutes(app: FastifyInstance, ctx: ServerContext, g
     const r = load(req, id)
     canManage(req, r)
     const p = parse(noticePatchSchema, req.body)
+    requirePiiAck(ctx, req, 'notice.update', [p.title, p.bodyHtml])
     db.run(
       `UPDATE notices SET title = COALESCE(?, title), body_html = COALESCE(?, body_html), pinned = COALESCE(?, pinned),
        expires_at = CASE WHEN ? THEN ? ELSE expires_at END, updated_at = ? WHERE id = ?`,

@@ -3,6 +3,11 @@
  * Looked for in what is about to be sent (messages, notes, posts, comments, notices); the
  * writer is asked to confirm. It is a reminder, not a filter: patterns miss things and
  * sometimes match numbers that are not personal.
+ *
+ * The same rules run twice: on the sending PC before the request (src/renderer/lib/pii.ts) and
+ * on the server for every write that the PC checks (src/server/pii.ts). The server refuses
+ * unconfirmed personal information with 422 PII_UNCONFIRMED; the PC then asks and sends again
+ * with `piiAck: true` in the body (or `?piiAck=1` where the body has a fixed shape).
  */
 
 export type PiiKind = 'rrn' | 'foreigner' | 'passport' | 'license' | 'card' | 'account' | 'mobile' | 'email'
@@ -126,4 +131,35 @@ export function detectPii(text: string): PiiFinding[] {
 export function piiMessage(found: PiiFinding[], audience: string): string {
   const lines = found.map((f) => `· ${PII_LABEL[f.kind]} ${f.count}건: ${f.samples.join(', ')}${f.count > f.samples.length ? ' …' : ''}`)
   return `개인정보로 보이는 내용이 있습니다.\n\n${lines.join('\n')}\n\n${audience} 보내면 되돌리기 어렵습니다. 꼭 필요한 내용인지 확인하세요.\n그래도 보낼까요?`
+}
+
+/** Sent by the PC once the writer confirmed in the dialog: spread into the request body. */
+export interface PiiAck {
+  piiAck?: true
+}
+
+/** All the parts of one write (title, body, options...), each read as plain text, checked together. */
+export function detectPiiIn(parts: readonly (string | null | undefined)[]): PiiFinding[] {
+  return detectPii(parts.map((p) => plainText(p ?? '')).join('\n'))
+}
+
+/** Kinds and counts only, never the text or the samples: what may go into a log. */
+export function piiCounts(found: readonly PiiFinding[]): Partial<Record<PiiKind, number>> {
+  const out: Partial<Record<PiiKind, number>> = {}
+  for (const f of found) out[f.kind] = f.count
+  return out
+}
+
+/** What the server puts in `error.details` of a PII_UNCONFIRMED answer. */
+export interface PiiRefusalDetails {
+  found: PiiFinding[]
+}
+
+/** Is this the `details` of a PII_UNCONFIRMED answer? (an older or other server may send anything) */
+export function isPiiRefusal(details: unknown): details is PiiRefusalDetails {
+  const f = (details as { found?: unknown } | null)?.found
+  return (
+    Array.isArray(f) &&
+    f.every((x) => !!x && typeof x === 'object' && Object.hasOwn(PII_LABEL, (x as PiiFinding).kind) && Number.isInteger((x as PiiFinding).count) && Array.isArray((x as PiiFinding).samples))
+  )
 }

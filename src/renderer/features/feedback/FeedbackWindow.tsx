@@ -72,7 +72,8 @@ export function FeedbackWindow(): React.JSX.Element {
   const send = async (): Promise<void> => {
     if (!info || !lim || !joined) return
     if (problem) return setMsg({ ok: false, text: problem })
-    if (!confirmPii([title, body, author], '서버 PC를 거쳐 개발자에게 전달되고 누구나 볼 수 있는 공개 게시판에 실리며,')) return
+    const pii = confirmPii([title, body, author], '서버 PC를 거쳐 개발자에게 전달되고 누구나 볼 수 있는 공개 게시판에 실리며,')
+    if (!pii) return
     const key = JSON.stringify([kind, title, body, author, includeEnv])
     if (pending.current?.key !== key) pending.current = { key, submissionId: crypto.randomUUID(), createdAt: new Date().toISOString() }
     // the one document that leaves this PC: exactly these fields
@@ -92,7 +93,8 @@ export function FeedbackWindow(): React.JSX.Element {
     setBusy(true)
     setMsg(null)
     try {
-      const r = await request<FeedbackItemDto>('/api/feedback', { method: 'POST', body: made.value })
+      // the post has a fixed shape (older server PCs refuse any other key): the confirmation goes in the query
+      const r = await request<FeedbackItemDto>('/api/feedback', { method: 'POST', body: made.value, query: pii.piiAck ? { piiAck: 1 } : undefined })
       pending.current = null
       setMsg({ ok: true, text: `서버 PC에 접수했습니다. 접수번호 ${r.receipt}. 서버 PC가 주 1회 모아 개발자에게 보냅니다.` })
       setTitle('')

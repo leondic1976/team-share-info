@@ -81,6 +81,11 @@ export interface SendSpec {
   label: string
   method?: 'POST' | 'PUT'
   path: string
+  /**
+   * Kept and sent as it is, so the writer's confirmation of personal information (`piiAck`,
+   * src/renderer/lib/pii.ts) goes with an item sent later. An item kept without it that the
+   * server refuses is asked about when it is sent (src/renderer/lib/api.ts).
+   */
   body: unknown
 }
 

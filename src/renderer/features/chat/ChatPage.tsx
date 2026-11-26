@@ -23,6 +23,7 @@ import { SharedMemosView } from './SharedMemos'
 import { TeamAlarmsView } from './TeamAlarms'
 import { cn } from '@renderer/lib/utils'
 import { confirmPii } from '@renderer/lib/pii'
+import type { PiiAck } from '@shared/pii'
 import { RoleMark } from '@renderer/components/RoleMark'
 import { matchesHangul } from '@shared/hangul'
 
@@ -86,7 +87,7 @@ function NotesView({ composeKey, to }: { composeKey: number; to: string | null }
   }, [composeKey])
   const q = useQuery({ queryKey: ['chat', 'notes', box], queryFn: () => api.get<NoteDto[]>('/api/notes', { box }) })
   const send = useMutation({
-    mutationFn: () => sendOrQueue({ kind: 'note', label: `쪽지: ${body.trim().slice(0, 60)}`, path: '/api/notes', body: { toIds: composing!.to, body } }),
+    mutationFn: (pii: PiiAck) => sendOrQueue({ kind: 'note', label: `쪽지: ${body.trim().slice(0, 60)}`, path: '/api/notes', body: { toIds: composing!.to, body, ...pii } }),
     onSuccess: () => {
       setComposing(null)
       setBody('')
@@ -191,7 +192,13 @@ function NotesView({ composeKey, to }: { composeKey: number; to: string | null }
           onClose={() => setComposing(null)}
           title="쪽지 쓰기"
           footer={
-            <Button onClick={() => confirmPii([body]) && send.mutate()} disabled={!composing.to.length || !body.trim()}>
+            <Button
+              onClick={() => {
+                const pii = confirmPii([body])
+                if (pii) send.mutate(pii)
+              }}
+              disabled={!composing.to.length || !body.trim()}
+            >
               <Send /> 보내기
             </Button>
           }

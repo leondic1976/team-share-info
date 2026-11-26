@@ -12,6 +12,7 @@ import { cleanHtml } from '../html'
 import { deleteAttachmentsOf, linkAttachments, listAttachments, registerAttachmentOwner } from './attachments'
 import { commentCount, registerCommentOwner } from './comments'
 import { choseongOr } from '../choseong'
+import { requirePiiAck } from '../pii'
 
 interface BoardRow {
   id: string
@@ -242,6 +243,7 @@ export function registerBoardRoutes(app: FastifyInstance, ctx: ServerContext, gu
 
   app.post('/api/posts', auth, async (req) => {
     const input = parse(postInputSchema, req.body)
+    requirePiiAck(ctx, req, 'post.create', [input.title, input.bodyHtml, input.poll?.question, ...(input.poll?.options ?? [])])
     const b = loadBoard(req, input.boardId)
     if (input.pinned && !canManageBoard(b, req)) throw forbidden('고정은 게시판 관리자만 할 수 있습니다.')
     const id = newId()
@@ -282,6 +284,7 @@ export function registerBoardRoutes(app: FastifyInstance, ctx: ServerContext, gu
     if (p.created_by !== req.member.id && !canManageBoard(b, req)) throw forbidden()
     const u = parse(z.object({ title: z.string().trim().min(1).max(150).optional(), bodyHtml: z.string().max(3_000_000).optional(), pinned: z.boolean().optional() }), req.body)
     if (u.pinned !== undefined && !canManageBoard(b, req)) throw forbidden('고정은 게시판 관리자만 할 수 있습니다.')
+    requirePiiAck(ctx, req, 'post.update', [u.title, u.bodyHtml])
     db.run('UPDATE posts SET title = COALESCE(?, title), body_html = COALESCE(?, body_html), pinned = COALESCE(?, pinned), updated_at = ? WHERE id = ?', [
       u.title ?? null,
       u.bodyHtml !== undefined ? cleanHtml(u.bodyHtml) : null,

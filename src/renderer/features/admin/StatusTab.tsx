@@ -117,7 +117,8 @@ const ACTION_LABEL: Record<string, string> = {
   'member.update.self': '내 정보 변경',
   'settings.update': '설정 변경',
   'release.publish': '새 버전 배포',
-  'release.update': '배포 상태 변경'
+  'release.update': '배포 상태 변경',
+  'pii.refused': '개인정보 확인 없이 보내려다 막힘'
 }
 
 export function ActivityTab(): React.JSX.Element {
