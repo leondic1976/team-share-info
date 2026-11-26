@@ -16,6 +16,7 @@ import { serverDeviceId } from './repos/devices'
 import { deleteAttachmentsOf, linkAttachments, listAttachments, registerAttachmentOwner } from './routes/attachments'
 import { logActivity } from './activity'
 import { recordError } from './context'
+import { addUnregistered, listUnregistered, onUnregisteredChange } from './unregistered'
 import { getSection } from './settings'
 import { parseJson } from '../node/sqlite'
 import { expand } from '../shared/recurrence'
@@ -57,6 +58,22 @@ export function registerCommand(app: FastifyInstance, ctx: ServerContext, guards
         // the 서무 mark everywhere a name is shown (an admin who is not the server PC's account)
         ...(m.role === 'admin' && !owners.has(m.id) ? { mark: '서무' } : {})
       }))
+    },
+    // 미등록 인원 (지시 134): the one list of staff who do not use TeamHub, kept in 관리
+    guests: {
+      label: '미등록 인원',
+      where: '관리 → 구성원·PC → 미등록 인원',
+      list: () => listUnregistered(ctx.db).map((p) => ({ id: p.id, name: p.name, title: p.title, dept: p.dept, memo: p.memo, ...(p.deleted ? { gone: true } : {}), ...(p.mergedInto ? { as: p.mergedInto } : {}) })),
+      add: (p, o) => {
+        // the command post's 임시 인원 of before: registered as the server PC's account did it
+        const r = addUnregistered(ctx.db, { name: p.name, dept: p.dept, title: p.title, memo: p.memo }, host.ownerIds()[0] ?? '', { key: o.key })
+        if ('id' in r && !r.existed) {
+          logActivity(ctx, null, 'unregistered.create', { type: 'unregistered', id: r.id }, { from: 'command' })
+          ctx.hub.broadcast('unregistered.changed', {})
+        }
+        return r
+      },
+      onChange: (cb) => void onUnregisteredChange(ctx, cb)
     },
     ownerIds: () => {
       const id = serverDeviceId(ctx.db)

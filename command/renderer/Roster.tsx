@@ -3,7 +3,7 @@ import type { CmdTeam } from '../shared/types'
 import { periodText, rolePath, substitutionPhase, ymd } from '../shared/logic'
 import type { Model } from './model'
 import { useHost } from './host'
-import { Badge, Button, Card, CardHeader, CardTitle, EmptyNote, EmptyState, cn, titled } from './ui'
+import { Badge, Button, Card, CardHeader, CardTitle, EmptyNote, EmptyState, PersonName, Unreg, cn, titled, titledText } from './ui'
 import { PlacedName, SubstitutionsToday, coverNote, placedText } from './Substitutions'
 
 /** The role tree of a mode, a column per 조, the people in each cell as it is today (substitutes marked). */
@@ -66,13 +66,13 @@ export function Roster({ m, modeId, now }: { m: Model; modeId: string; now: numb
     for (const { role } of m.tree(modeId)) rows.push([rolePath(m.s.roles, role.id), ...m.s.teams.map((t) => m.placedNow(role.id, t.id).map((x) => placedText(m, x)).join(', '))])
     rows.push([])
     rows.push(['공통업무', '방식', '담당'])
-    for (const c of m.commonNow) rows.push([c.name, c.perTeam ? '조별' : '고정', c.assign.map((a) => `${c.perTeam ? `${m.team(a.teamId)?.name ?? ''}: ` : ''}${a.cover ? `대리 ${titled(m.person(a.personId))} (${coverNote(m, a.cover)})` : titled(m.person(a.personId))}`).join(', ')])
+    for (const c of m.commonNow) rows.push([c.name, c.perTeam ? '조별' : '고정', c.assign.map((a) => `${c.perTeam ? `${m.team(a.teamId)?.name ?? ''}: ` : ''}${a.cover ? `대리 ${titledText(m.person(a.personId))} (${coverNote(m, a.cover)})` : titledText(m.person(a.personId))}`).join(', ')])
     rows.push([])
     rows.push(['예외자', '사유', '기간'])
-    for (const e of m.s.exceptions) rows.push([titled(m.person(e.personId)), e.reason, `${e.fromDate} ~ ${e.toDate ?? '계속'}`])
+    for (const e of m.s.exceptions) rows.push([titledText(m.person(e.personId)), e.reason, `${e.fromDate} ~ ${e.toDate ?? '계속'}`])
     rows.push([])
     rows.push(['부재자', '사유', '대리자', '기간', '상태'])
-    for (const x of m.s.substitutions.filter((y) => substitutionPhase(y, today) !== 'past')) rows.push([titled(m.person(x.personId)), x.reason, titled(m.person(x.substituteId)), periodText(x.fromDate, x.toDate), substitutionPhase(x, today) === 'now' ? '진행 중' : '예정'])
+    for (const x of m.s.substitutions.filter((y) => substitutionPhase(y, today) !== 'past')) rows.push([titledText(m.person(x.personId)), x.reason, titledText(m.person(x.substituteId)), periodText(x.fromDate, x.toDate), substitutionPhase(x, today) === 'now' ? '진행 중' : '예정'])
     host.saveCsv(`편성표_${mode?.name ?? ''}.csv`, rows)
   }
   return (
@@ -113,7 +113,7 @@ export function Roster({ m, modeId, now }: { m: Model; modeId: string; now: numb
                   return (
                     <li key={pid} className={placed ? '' : 'text-important'}>
                       {titled(p)}
-                      {p?.temp && <Badge className="ml-1">임시</Badge>}
+                      <Unreg p={p} />
                       {!placed && <span className="ml-1 text-xs">(미배치)</span>}
                       {away && (
                         <span className="ml-1 text-xs text-muted-foreground">
@@ -185,7 +185,9 @@ export function Roster({ m, modeId, now }: { m: Model; modeId: string; now: numb
             <tbody>
               {m.s.exceptions.map((e) => (
                 <tr key={e.id} className={cn('border-b border-border last:border-0', !m.excepted.has(e.personId) && 'text-muted-foreground')}>
-                  <td className="px-3 py-1.5 font-medium">{titled(m.person(e.personId))}</td>
+                  <td className="px-3 py-1.5 font-medium">
+                    <PersonName p={m.person(e.personId)} />
+                  </td>
                   <td className="px-3 py-1.5">{e.reason}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap">
                     {e.fromDate} ~ {e.toDate ?? '계속'}

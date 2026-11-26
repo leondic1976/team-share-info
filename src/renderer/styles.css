@@ -540,3 +540,22 @@ textarea,
   font-weight: 400;
   letter-spacing: 0.01em;
 }
+
+/* Rows of tables and of lists marked .hover-rows tint under the pointer (user rule 2026-11-26).
+   In the components layer, so a row's own hover:/bg- utility (a selected row) still wins.
+   Calendars (FullCalendar renders tables) and tables marked .no-row-hover are left alone. */
+@layer components {
+  :where(table:not(.no-row-hover)) > tbody > tr:hover,
+  .hover-rows > :hover {
+    background-color: color-mix(in srgb, var(--muted) 70%, transparent);
+  }
+  .fc :where(table) > tbody > tr:hover {
+    background-color: transparent;
+  }
+}
+@media print {
+  :where(table) > tbody > tr:hover,
+  .hover-rows > :hover {
+    background-color: transparent;
+  }
+}

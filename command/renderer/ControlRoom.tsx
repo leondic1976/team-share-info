@@ -254,7 +254,7 @@ export function ControlRoom({ m, id }: { m: Model; id: string }): React.JSX.Elem
                     <b className="truncate">{titled({ ...mb, mark: m.person(mb.memberId)?.mark })}</b>
                     {mb.common && <Badge>공통</Badge>}
                     {mb.coverFor && (
-                      <Badge tone="important" title={`원 담당 ${mb.coverFor}`}>
+                      <Badge tone="primary" title={`원 담당 ${mb.coverFor}`}>
                         대리
                       </Badge>
                     )}

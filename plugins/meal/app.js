@@ -84,7 +84,7 @@
   /** Members and the people registered by hand: everybody a request can be made for. */
   const everyone = () => M.roster(room, members)
   /** The mark of somebody registered by hand (staff who do not use TeamHub). */
-  const MANUAL_TIP = 'TeamHub를 쓰지 않는 직원 — 식사 신청용으로 직접 등록함'
+  const MANUAL_TIP = 'TeamHub를 쓰지 않는 직원(미등록 인원) — TeamHub 관리에 등록됨'
   const manualMark = (p) => (p && p.manual ? ` <span class="th-badge th-badge-important" title="${MANUAL_TIP}">미등록</span>` : '')
   /** " (미등록 3명 포함)" after a count, when there are any. */
   const manualNote = (list) => (M.splitCount(list).manual ? ` <span class="th-xs th-muted">(미등록 ${M.splitCount(list).manual}명 포함)</span>` : '')
@@ -106,6 +106,14 @@
       holidays = await call('holidays', { from: w.from, to: w.to })
     } catch {
       holidays = [] // an older TeamHub without the call: no holiday is skipped
+    }
+  }
+  /** 1.8.0: TeamHub's one list of 미등록 인원 (관리); an older TeamHub without it: the room's own list as before. */
+  async function loadPeople() {
+    try {
+      M.setCorePeople(await call('unregistered'))
+    } catch {
+      M.setCorePeople(null)
     }
   }
   async function load() {
@@ -738,6 +746,16 @@
   function peopleCard() {
     if (!room || !canManage()) return ''
     const people = eff().people
+    // 1.8.0: TeamHub keeps the list (관리 → 구성원·PC → 미등록 인원); here it is only shown
+    if (M.usesCorePeople()) {
+      const listed = M.manualList(people)
+      const rows = listed.map((p) => `<tr data-person="${esc(p.id)}"><td>${esc(p.name)}${manualMark(p)}</td><td class="th-muted">${esc(p.deptName)}</td><td class="th-muted">${esc([p.title, p.memo].filter(Boolean).join(' · '))}</td></tr>`).join('')
+      return `<section class="th-card people-card" id="peopleCard">
+      <div class="th-card-header" style="align-items:center"><h2 class="th-card-title">미등록 인원</h2><span class="th-xs th-muted">${listed.length}명</span></div>
+      <div class="th-card-body"><p class="th-hint">TeamHub를 쓰지 않는 직원(미등록 인원)은 TeamHub의 <b>관리 → 구성원·PC → 미등록 인원</b>에서 서버 PC와 서무가 등록·고치기·삭제·구성원과 합치기를 합니다. 긴급구조지휘대와 함께 쓰는 하나의 명단이며, 여기서는 [여러 명 대신 신청]이나 현황의 [대신 신청]으로 식사를 넣습니다. 이름 옆에 "미등록"이 붙습니다.</p></div>
+      ${rows ? `<div class="th-table-wrap" style="border-top:1px solid var(--border)"><table class="th-table people"><thead><tr><th>이름</th><th>부서</th><th>직위·메모</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}
+    </section>`
+    }
     const list = M.manualList(people)
     const linked = Object.keys(people).filter((id) => people[id].as && !people[id].gone)
     const act = (attr, text, cls) => `<button type="button" class="th-btn th-btn-ghost th-btn-sm ${cls || ''}" ${attr}>${text}</button>`
@@ -830,7 +848,7 @@
     const own = M.deptGroups(everyone(), me.deptName).find((g) => g.own)
     bulk.open = new Set(own ? [own.dept] : [])
     $('bulkFilter').value = ''
-    $('bulkAddPerson').hidden = !canManage()
+    $('bulkAddPerson').hidden = !canManage() || M.usesCorePeople()
     $('bulkResult').hidden = true
     $('bulkError').textContent = ''
     renderBulk()
@@ -1237,6 +1255,12 @@
     else if ($('bulkDlg').open && !$('personDlg').open && !busy) renderBulkPeople()
     else if (tab === 'settings' && !$('personDlg').open) redrawPeople()
   })
+  // the 서무 changed the list of 미등록 인원 (관리)
+  window.TeamHub.on('unregistered.changed', async () => {
+    await loadPeople()
+    if (!typing()) render()
+    else if ($('bulkDlg').open && !busy) renderBulkPeople()
+  })
   // countdowns, and the lock at the deadline
   setInterval(() => {
     // not while a list or a date field is open: a redraw would close it
@@ -1250,6 +1274,7 @@
       me = await call('me')
       await syncClock()
       members = await call('members').catch(() => [])
+      await loadPeople()
       await loadHolidays()
       await load()
       render()

@@ -214,7 +214,7 @@ function StartDialog({ m, now, value, onClose, onStarted }: { m: Model; now: num
           <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
             <input type="checkbox" checked={f.withCommon} onChange={(e) => setF({ ...f, withCommon: e.target.checked })} /> 공통업무 담당자도 참가
           </label>
-          <p className="mt-1 text-xs text-muted-foreground">참가자는 시작하는 순간의 편성으로 정해집니다(예외자·임시 인원 제외). 대리 기간인 부재자 대신 대리자가 그 분류로 참가합니다.</p>
+          <p className="mt-1 text-xs text-muted-foreground">참가자는 시작하는 순간의 편성으로 정해집니다(예외자·미등록 인원 제외). 대리 기간인 부재자 대신 대리자가 그 분류로 참가합니다.</p>
           {covers.length > 0 && (
             <ul className="mt-1.5 space-y-0.5 rounded-md border border-border bg-muted/40 px-3 py-1.5 text-xs" data-testid="cmd-drill-covers">
               {covers.map((x) => {
@@ -223,7 +223,7 @@ function StartDialog({ m, now, value, onClose, onStarted }: { m: Model; now: num
                 return sub?.temp ? (
                   <li key={x.id} className="text-important">
                     {absent}
-                    {x.reason ? `(${x.reason})` : ''}의 대리자 {titled(sub)}은(는) 임시 인원이라 훈련에 참가할 수 없습니다. 그 자리는 비게 됩니다.
+                    {x.reason ? `(${x.reason})` : ''}의 대리자 {titled(sub)}은(는) 미등록 인원이라 훈련에 참가할 수 없습니다. 그 자리는 비게 됩니다.
                   </li>
                 ) : (
                   <li key={x.id}>

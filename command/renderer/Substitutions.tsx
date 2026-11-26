@@ -10,19 +10,19 @@ import { checkSubstitution, periodText, periodsOverlap, rolePath, substitutionPh
 import type { Model, PlacedNow } from './model'
 import { useAct } from './data'
 import { useHost } from './host'
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Dialog, EmptyNote, Field, Input, Select, cn, titled } from './ui'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Dialog, EmptyNote, Field, Input, PersonName, Select, Unreg, cn, titled, titledText } from './ui'
 
 export const PHASE_LABEL = { now: '진행 중', later: '예정', past: '지난' } as const
 const REASONS = ['휴가', '교육', '출장', '병가', '훈련 파견']
 
 /** "원 담당 소방위 김지휘 · 휴가" */
 export function coverNote(m: Model, x: CmdSubstitution): string {
-  return `원 담당 ${titled(m.person(x.personId))}${x.reason ? ` · ${x.reason}` : ''}`
+  return `원 담당 ${titledText(m.person(x.personId))}${x.reason ? ` · ${x.reason}` : ''}`
 }
 
-/** For text (CSV): "대리 소방장 이대리 (원 담당 소방위 김지휘 · 휴가)" or the name. */
+/** For text (CSV): "대리 소방장 이대리 (원 담당 소방위 김지휘 · 휴가)" or the name (with " (미등록)"). */
 export function placedText(m: Model, x: PlacedNow): string {
-  return x.cover ? `대리 ${titled(x.p)} (${coverNote(m, x.cover)})` : titled(x.p)
+  return x.cover ? `대리 ${titledText(x.p)} (${coverNote(m, x.cover)})` : titledText(x.p)
 }
 
 /** A name in a place today, marked when a substitute stands in. */
@@ -30,12 +30,12 @@ export function PlacedName({ m, x }: { m: Model; x: PlacedNow }): React.JSX.Elem
   return (
     <span className="whitespace-nowrap" data-testid={x.cover ? 'cmd-cover' : undefined}>
       {x.cover && (
-        <Badge tone="important" className="mr-1">
+        <Badge tone="primary" className="mr-1">
           대리
         </Badge>
       )}
       {titled(x.p)}
-      {x.p.temp && <Badge className="ml-1">임시</Badge>}
+      <Unreg p={x.p} />
       {x.cover && <span className="ml-1 text-xs text-muted-foreground">({coverNote(m, x.cover)})</span>}
     </span>
   )
@@ -54,12 +54,16 @@ export function placesOf(m: Model, personId: string): string[] {
   return out
 }
 
-/** People grouped by 조 for a select (임시 인원 and 조 없음 last). */
-function groupedPeople(m: Model): { label: string; people: CmdPerson[] }[] {
-  const groups = m.s.teams.map((t) => ({ label: t.name, people: t.members.map((id) => m.person(id)).filter((p): p is CmdPerson => !!p) }))
+/**
+ * People grouped by 조 for a select (조 없음 and 미등록 인원 last). Those who left the host's
+ * list are not offered, unless the record names them already (`keep`).
+ */
+function groupedPeople(m: Model, keep: string[]): { label: string; people: CmdPerson[] }[] {
+  const ok = (p: CmdPerson): boolean => !p.left || keep.includes(p.id)
+  const groups = m.s.teams.map((t) => ({ label: t.name, people: t.members.map((id) => m.person(id)).filter((p): p is CmdPerson => !!p && ok(p)) }))
   const placed = new Set(m.s.teams.flatMap((t) => t.members))
-  const rest = m.s.people.filter((p) => !placed.has(p.id))
-  groups.push({ label: '조 없음', people: rest.filter((p) => !p.temp) }, { label: '임시 인원', people: rest.filter((p) => p.temp) })
+  const rest = m.s.people.filter((p) => !placed.has(p.id) && ok(p))
+  groups.push({ label: '조 없음', people: rest.filter((p) => !p.temp) }, { label: m.s.guests?.label ?? '미등록 인원', people: rest.filter((p) => p.temp) })
   return groups.filter((g) => g.people.length)
 }
 
@@ -77,7 +81,8 @@ export function SubstitutionDialog({ m, value, onClose }: { m: Model; value: Par
     setF({ personId: '', substituteId: '', reason: '', fromDate: ymd(Date.now()), toDate: ymd(Date.now()), ...value })
     setErr('')
   }, [value, setErr])
-  const groups = useMemo(() => groupedPeople(m), [m])
+  const keepIds = useMemo(() => [value?.personId ?? '', value?.substituteId ?? ''].filter(Boolean), [value])
+  const groups = useMemo(() => groupedPeople(m, keepIds), [m, keepIds])
   const ctx = { substitutions: m.s.substitutions, exceptions: m.s.exceptions, teams: m.s.teams, assignments: m.s.assignments, common: m.s.common, roles: m.s.roles, people: m.s.people }
   const check = f.personId && f.substituteId ? checkSubstitution(f, ctx) : null
   const badPeriod = !!f.toDate && f.toDate < f.fromDate
@@ -123,8 +128,7 @@ export function SubstitutionDialog({ m, value, onClose }: { m: Model; value: Par
               <optgroup key={g.label} label={g.label}>
                 {g.people.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {titled(p)}
-                    {p.temp ? ' (임시)' : ''}
+                    {titledText(p)}
                   </option>
                 ))}
               </optgroup>
@@ -162,8 +166,7 @@ export function SubstitutionDialog({ m, value, onClose }: { m: Model; value: Par
                   const why = notFor(p)
                   return (
                     <option key={p.id} value={p.id} disabled={!!why}>
-                      {titled(p)}
-                      {p.temp ? ' (임시)' : ''}
+                      {titledText(p)}
                       {why ? ` — ${why}` : ''}
                     </option>
                   )
@@ -228,11 +231,14 @@ export function SubstitutionsCard({ m, now }: { m: Model; now: number }): React.
           const sub = m.person(x.substituteId)
           return (
             <div key={x.id} className={cn('flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm', phase === 'past' && 'text-muted-foreground')} data-testid="cmd-sub-row">
-              <b className="min-w-0 truncate">{titled(absent)}</b>
+              <b className="min-w-0 truncate">
+                <PersonName p={absent} />
+              </b>
               {x.reason && <Badge>{x.reason}</Badge>}
               <span className="text-muted-foreground">대리</span>
-              <b className="min-w-0 truncate">{titled(sub)}</b>
-              {sub?.temp && <Badge>임시</Badge>}
+              <b className="min-w-0 truncate">
+                <PersonName p={sub} />
+              </b>
               <span className="ml-auto whitespace-nowrap text-xs tabular-nums">{periodText(x.fromDate, x.toDate)}</span>
               <Button size="icon-sm" variant="ghost" aria-label="대리 고치기" onClick={() => setEdit(x)}>
                 <Pencil />
@@ -276,7 +282,13 @@ export function SubstitutionsToday({ m, now, upcoming = false }: { m: Model; now
           list.map((x) => (
             <div key={x.id} className="flex flex-wrap gap-x-2">
               <span>
-                <b>{titled(m.person(x.personId))}</b> {x.reason && <span className="text-muted-foreground">({x.reason})</span>} → 대리 <b>{titled(m.person(x.substituteId))}</b>
+                <b>
+                  <PersonName p={m.person(x.personId)} />
+                </b>{' '}
+                {x.reason && <span className="text-muted-foreground">({x.reason})</span>} → 대리{' '}
+                <b>
+                  <PersonName p={m.person(x.substituteId)} />
+                </b>
               </span>
               <span className="text-muted-foreground">
                 {periodText(x.fromDate, x.toDate)}

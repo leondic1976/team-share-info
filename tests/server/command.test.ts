@@ -16,7 +16,7 @@ const call = async (who: Cred, method: string, url: string, payload?: Body) => {
 }
 
 describe('긴급구조지휘대 (command module through TeamHub)', () => {
-  it('편성: 지휘대담당, 근무 유형, 조, 순환, 분류, 배치, 공통업무, 예외자, 임시 인원', async () => {
+  it('편성: 지휘대담당, 근무 유형, 조, 순환, 분류, 배치, 공통업무, 예외자, 미등록 인원', async () => {
     s = await createTestServer()
     const admin = s.admin
     const a = await s.join('김지휘')
@@ -76,13 +76,15 @@ describe('긴급구조지휘대 (command module through TeamHub)', () => {
     const cm2 = (await call(a, 'POST', '/api/command/common', { name: '콤비버스 운전', perTeam: true })).data.id
     expect((await call(a, 'PUT', `/api/command/common/${cm2}/assign`, { teamId: tB, personIds: [c.memberId] })).status).toBe(400)
 
-    // 임시 인원: placed, then merged into a member who joined later
-    const tmp = (await call(a, 'POST', '/api/command/people', { name: '최미등', title: '소방위' })).data.id
-    expect(tmp.startsWith('x:')).toBe(true)
-    await call(a, 'PUT', `/api/command/teams/${tB}/members`, [tmp].length ? { personIds: [tmp] } : {})
+    // 미등록 인원 (관리, 지시 134): placed, then merged in 관리 into a member who joined later
+    const unreg = (await call(admin, 'POST', '/api/unregistered', { name: '최미등', title: '소방위' })).data.id
+    const tmp = `g:${unreg}`
+    await call(a, 'PUT', `/api/command/teams/${tB}/members`, { personIds: [tmp] })
     await call(a, 'PUT', '/api/command/assignments', { modeId: mode, teamId: tB, roleId: r1, personIds: [tmp] })
     const d = await s.join('최미등')
-    expect((await call(a, 'POST', `/api/command/people/${encodeURIComponent(tmp)}/merge`, { memberId: d.memberId })).status).toBe(200)
+    // merging is done in 관리, not here
+    expect((await call(a, 'POST', `/api/command/people/${encodeURIComponent(tmp)}/merge`, { memberId: d.memberId })).status).toBe(400)
+    expect((await call(admin, 'PUT', `/api/unregistered/${unreg}/merge`, { memberId: d.memberId })).status).toBe(200)
     st = (await call(a, 'GET', '/api/command')).data
     expect(st.teams.find((t: { id: string }) => t.id === tB).members).toEqual([d.memberId])
     expect(st.assignments).toContainEqual({ roleId: r1, teamId: tB, personId: d.memberId })
@@ -257,7 +259,9 @@ describe('긴급구조지휘대 (command module through TeamHub)', () => {
     // the one covering cannot be put on exception in the period
     expect((await call(admin, 'POST', '/api/command/exceptions', { personId: lee.memberId, reason: '교육', fromDate: tomorrow, toDate: null })).error).toContain('김부재의 대리자입니다')
     // a substitute on exception then is refused
-    const temp = (await call(admin, 'POST', '/api/command/people', { name: '정임시' })).data.id
+    // a 미등록 person (the host's list) can be a substitute like a member
+    const unreg = (await call(admin, 'POST', '/api/unregistered', { name: '정미등', title: '소방장' })).data.id
+    const temp = `g:${unreg}`
     const ex = (await call(admin, 'POST', '/api/command/exceptions', { personId: temp, reason: '파견', fromDate: '2099-01-01', toDate: null })).data.id
     expect((await call(admin, 'POST', '/api/command/substitutions', { ...body, substituteId: temp, fromDate: '2099-02-01', toDate: '2099-02-02' })).error).toContain('예외자(파견')
     await call(admin, 'DELETE', `/api/command/exceptions/${ex}`)
@@ -274,16 +278,23 @@ describe('긴급구조지휘대 (command module through TeamHub)', () => {
     expect(members.find((x: { memberId: string }) => x.memberId === lee.memberId)).toMatchObject({ teamId: tA, roleIds: [r1], common: false, coverFor: '김부재' })
     await call(admin, 'POST', `/api/command/drills/${d1}/end`)
 
-    // a temporary substitute cannot join: the place stays empty, the absent one is not in it either
+    // a 미등록 substitute cannot join: the place stays empty, the absent one is not in it either
     const tmp = await call(admin, 'POST', '/api/command/substitutions', { ...body, personId: park.memberId, substituteId: temp, reason: '출장' })
-    expect(tmp.data.warnings.some((w: string) => w.includes('임시 인원이라 훈련에는 참가하지 못합니다'))).toBe(true)
-    const d2 = (await call(admin, 'POST', '/api/command/drills', { modeId: mode, title: '임시 대리 훈련', teamIds: [tA] })).data.id
+    expect(tmp.data.warnings.some((w: string) => w.includes('미등록 인원이라 훈련에는 참가하지 못합니다'))).toBe(true)
+    expect((await call(park, 'GET', '/api/command')).data.people.find((x: { id: string }) => x.id === temp)).toMatchObject({ name: '정미등', temp: true })
+    const d2 = (await call(admin, 'POST', '/api/command/drills', { modeId: mode, title: '미등록 대리 훈련', teamIds: [tA] })).data.id
     expect((await call(admin, 'GET', `/api/command/drills/${d2}`)).data.members.map((x: { name: string }) => x.name)).toEqual(['이대리'])
     await call(admin, 'POST', `/api/command/drills/${d2}/end`)
 
     // deleting it gives the places back
     expect((await call(admin, 'DELETE', `/api/command/substitutions/${id}`)).status).toBe(200)
     expect((await call(admin, 'GET', '/api/command')).data.substitutions.map((x: { id: string }) => x.id)).toEqual([tmp.data.id])
+
+    // the 미등록 person merged into a member in 관리: the substitution follows
+    const jung = await s.join('정미등')
+    expect((await call(admin, 'PUT', `/api/unregistered/${unreg}/merge`, { memberId: jung.memberId })).status).toBe(200)
+    const after = (await call(admin, 'GET', '/api/command')).data.substitutions
+    expect(after).toEqual([expect.objectContaining({ id: tmp.data.id, personId: park.memberId, substituteId: jung.memberId })])
   })
 
   it('대리자 hint: who is away today by 근무현황 goes to those in charge only', async () => {

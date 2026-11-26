@@ -655,3 +655,13 @@ textarea.th-input {
 .th-ui main > .th-empty:only-child {
   min-height: calc(100vh - 11rem);
 }
+
+/* rows tint under the pointer, as in the app (user rule 2026-11-26) */
+.th-table tbody tr:hover {
+  background-color: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+@media print {
+  .th-table tbody tr:hover {
+    background-color: transparent;
+  }
+}

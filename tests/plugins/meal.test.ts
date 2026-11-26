@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import { entryRefusal, mealCutoffs, mealEntryGuard, MEAL_LOCK_DAYS, MEAL_TRIM_FLOOR } from '../../src/server/plugin-locks'
+import { mealPeopleOf } from '../../src/server/meal-people'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const ctx: Record<string, any> = {}
@@ -902,6 +903,52 @@ describe('meal plugin: 확실히 신청안함 — a "no" only the member can tak
     expect(plain(pm.declined)).toEqual({ lunch: 1, dinner: 0 })
     expect(pm.days.find((d: any) => d.date === MON).meals.lunch).toMatchObject({ on: false, firm: true, by: '' })
     expect(plain(pm.done)).toEqual({ lunch: 0, dinner: 0 })
+  })
+})
+
+describe('1.8.0: the people registered by hand are TeamHub\'s one list of 미등록 인원 (지시 134)', () => {
+  const X1 = 'x:park000001'
+  const X2 = 'x:jung000002'
+  const X3 = 'x:gone000003'
+  const members = [
+    { id: 'adm', name: '박관리', deptName: '총무과' },
+    { id: 'kim', name: '김주무', deptName: '민원팀' }
+  ]
+  const shared = { ...M.cleanConfig({ ...config, stewards: ['s1'] }), since: { s1: 1 }, people: { [X1]: { name: '방의 옛 명단', at: 5, by: 'adm' } } }
+  const room = (entries: Record<string, any> = {}) => ({ createdBy: 'adm', shared, entries })
+  afterEach(() => M.setCorePeople(null))
+
+  it("the server reads the plugin's old list the way the plugin does (meal-people.ts mirrors effective().people)", () => {
+    const steward = { v: 1, days: {}, people: { [X1]: { name: '고친 이름', dept: '시설팀', at: 9 }, [X2]: { name: '정미화', at: 7, as: 'kim' }, [X3]: { name: '지운 사람', at: 8, gone: true }, 'x:late00004': { name: '나중', at: 99 } } }
+    const r = room({ s1: { name: '김서무', value: steward, at: 50 }, kim: { name: '김주무', value: { people: { 'x:forged005': { name: '가짜', at: 9 } } }, at: 60 } })
+    const fromPlugin = JSON.parse(JSON.stringify(M.effective(r).people))
+    const fromServer = mealPeopleOf(r)
+    expect(Object.keys(fromServer).sort()).toEqual(Object.keys(fromPlugin).sort())
+    for (const id of Object.keys(fromPlugin)) {
+      const p = fromServer[id]
+      expect({ name: p.name, dept: p.dept, title: p.title, memo: p.memo, at: p.at, by: p.by, ...(p.gone ? { gone: true } : {}), ...(p.as ? { as: p.as } : {}) }).toEqual(fromPlugin[id])
+    }
+    // the time of a record is never later than the moment the server stored the entry
+    expect(fromServer['x:late00004'].at).toBe(50)
+  })
+
+  it('with the list from TeamHub, the room\'s own list is not read; old records still name the same person', () => {
+    // a request made for X1 before 1.8.0 (the id is the same in TeamHub's list)
+    const entry = M.applyFor({ v: 1, days: {} }, config, { id: X1, name: '방의 옛 명단' }, MON, 'lunch', true, at(MON, 9)).entry
+    M.setCorePeople([
+      { id: X1, name: '박운전', dept: '시설팀', title: '', memo: '', at: 10, by: 'adm' },
+      { id: X2, name: '정미화', dept: '민원팀', title: '', memo: '', at: 10, by: 'adm', as: 'kim' },
+      { id: X3, name: '지운 사람', dept: '', title: '', memo: '', at: 10, by: 'adm', gone: true },
+      { id: 'kim', name: '구성원 id는 아님', at: 10 }
+    ])
+    expect(M.usesCorePeople()).toBe(true)
+    const r = room({ adm: { name: '박관리', value: entry, at: at(MON, 9) } })
+    expect(M.manualList(M.effective(r).people).map((p: any) => [p.id, p.name, p.deptName])).toEqual([[X1, '박운전', '시설팀']])
+    expect(M.dayList(r, MON, 'lunch', members).map((p: any) => [p.name, p.manual])).toEqual([['박운전', true]])
+    expect(M.roster(r, members).map((m: any) => m.id)).toEqual(['adm', 'kim', X1])
+    // an older TeamHub without the list: the room's own list as before
+    M.setCorePeople(null)
+    expect(M.manualList(M.effective(r).people).map((p: any) => p.name)).toEqual(['방의 옛 명단'])
   })
 })
 

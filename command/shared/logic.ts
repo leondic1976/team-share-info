@@ -220,7 +220,7 @@ export function checkSubstitution(
   const commons = o.common.filter((c) => c.assign.some((a) => a.personId === input.substituteId && (!c.perTeam || a.teamId === teamA?.id))).map((c) => c.name)
   if (commons.length) warnings.push(`${S}은(는) 공통업무 ${commons.join(', ')}도 맡고 있습니다.`)
   for (const x of others.filter((y) => y.substituteId === input.substituteId)) warnings.push(`${S}은(는) ${periodText(x.fromDate, x.toDate)}에 ${name(x.personId)}의 대리도 맡고 있습니다.`)
-  if (o.people.find((p) => p.id === input.substituteId)?.temp) warnings.push(`${S}은(는) 임시 인원이라 훈련에는 참가하지 못합니다. 그 기간에 시작하는 훈련에서 ${A}의 자리는 비게 됩니다.`)
+  if (o.people.find((p) => p.id === input.substituteId)?.temp) warnings.push(`${S}은(는) 미등록 인원이라 훈련에는 참가하지 못합니다. 그 기간에 시작하는 훈련에서 ${A}의 자리는 비게 됩니다.`)
   if (!teamA && !o.common.some((c) => c.assign.some((a) => a.personId === input.personId))) warnings.push(`${A}은(는) 조·공통업무에 들어 있지 않아 대신 맡을 것이 없습니다.`)
   return { error: '', warnings }
 }
@@ -247,13 +247,15 @@ export interface Headcount {
  * 공통업무 count is of the people doing it that day.
  */
 export function headcount(o: { teams: CmdTeam[]; people: CmdPerson[]; assignments: CmdAssignment[]; roles: CmdRole[]; common: CmdCommon[]; exceptions: CmdException[]; substitutions?: CmdSubstitution[]; modeId: string; today: string }): Headcount {
-  const temp = new Set(o.people.filter((p) => p.temp).map((p) => p.id))
   const modeRoles = new Set(o.roles.filter((r) => r.modeId === o.modeId).map((r) => r.id))
   const placed = new Set(o.assignments.filter((a) => modeRoles.has(a.roleId)).map((a) => `${a.teamId}|${a.personId}`))
   const excepted = new Set(activeExceptions(o.exceptions, o.today).map((e) => e.personId))
   const subs = activeSubstitutions(o.substitutions ?? [], o.today).filter((x) => !excepted.has(x.personId))
   const absent = new Set(subs.map((x) => x.personId))
   const inTeam = new Set(o.teams.flatMap((t) => t.members))
+  // people of a host's list (e.g. 식수관리 등록자) count only once they have a place here
+  const used = new Set([...inTeam, ...excepted, ...o.common.flatMap((c) => c.assign.map((a) => a.personId)), ...(o.substitutions ?? []).flatMap((y) => [y.personId, y.substituteId])])
+  const temp = new Set(o.people.filter((p) => p.temp && (!p.source || used.has(p.id))).map((p) => p.id))
   const teams = o.teams.map((t) => {
     const ms = t.members.filter((p) => !excepted.has(p))
     const placedN = ms.filter((p) => placed.has(`${t.id}|${p}`)).length

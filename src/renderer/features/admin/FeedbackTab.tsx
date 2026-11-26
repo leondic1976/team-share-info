@@ -88,7 +88,7 @@ export function FeedbackTab(): React.JSX.Element {
 
       <div>
         <h3 className="mb-1 text-sm font-semibold">받은 글</h3>
-        <Card className="divide-y divide-border">
+        <Card className="hover-rows divide-y divide-border">
           {items.map((i) => (
             <div key={i.id} className="text-sm" data-testid="admin-feedback-item">
               <div className="flex items-center gap-3 px-4 py-1.5">
@@ -126,7 +126,7 @@ export function FeedbackTab(): React.JSX.Element {
 
       <div>
         <h3 className="mb-1 text-sm font-semibold">주간 묶음</h3>
-        <Card className="divide-y divide-border">
+        <Card className="hover-rows divide-y divide-border">
           {(d?.bundles ?? []).map((b) => {
             const s = bundleState(b)
             return (

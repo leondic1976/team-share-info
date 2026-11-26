@@ -39,7 +39,6 @@ export const exceptionSchema = z
 export const substitutionSchema = z
   .object({ personId, substituteId: personId, reason: z.string().trim().max(100).default(''), fromDate: ymdStr, toDate: ymdStr.nullable().default(null) })
   .refine((e) => !e.toDate || e.toDate >= e.fromDate, { message: '끝 날짜가 시작보다 빠릅니다.', path: ['toDate'] })
-export const tempPersonSchema = z.object({ name: name(30, '이름'), title: z.string().trim().max(30).default(''), memo: z.string().trim().max(100).default('') })
 export const mergeSchema = z.object({ memberId: z.string().min(1).max(64) })
 
 export const noticeSchema = z.object({ title: name(150, '제목'), bodyHtml: html, pinned: z.boolean().default(false), attachmentIds: ids.default([]) })

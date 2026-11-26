@@ -2,7 +2,7 @@ import { CalendarClock, ShieldAlert, Siren, Users } from 'lucide-react'
 import { headcount } from '../shared/logic'
 import type { Model } from './model'
 import { when, ymdOf } from './model'
-import { Badge, Card, CardContent, CardHeader, CardTitle, EmptyNote, titled } from './ui'
+import { Badge, Card, CardContent, CardHeader, CardTitle, EmptyNote, PersonName } from './ui'
 import { RoleTable } from './Roster'
 import { AbsenceHints, PlacedName, SubstitutionsToday } from './Substitutions'
 
@@ -73,7 +73,7 @@ export function Overview({ m, modeId, now, onOpenDrill }: { m: Model; modeId: st
                 <tr className="border-b border-border text-xs text-muted-foreground">
                   <th className="px-3 py-1.5 text-left font-medium">구분</th>
                   <th className="px-2 py-1.5 text-right font-medium">인원</th>
-                  <th className="px-2 py-1.5 text-right font-medium">임시</th>
+                  <th className="px-2 py-1.5 text-right font-medium" title="TeamHub를 쓰지 않는 직원(미등록 인원)">미등록</th>
                   <th className="px-2 py-1.5 text-right font-medium">배치</th>
                   <th className="px-2 py-1.5 text-right font-medium">미배치</th>
                   <th className="px-2 py-1.5 text-right font-medium" title="부재 중이고 대리자가 임무를 맡은 조원">대리</th>
@@ -146,7 +146,9 @@ export function Overview({ m, modeId, now, onOpenDrill }: { m: Model; modeId: st
             {ex.length ? (
               ex.map((e) => (
                 <div key={e.id} className="flex gap-2">
-                  <b>{titled(m.person(e.personId))}</b>
+                  <b>
+                    <PersonName p={m.person(e.personId)} />
+                  </b>
                   <span className="text-muted-foreground">
                     {e.reason} · {e.fromDate} ~ {e.toDate ?? '계속'}
                   </span>

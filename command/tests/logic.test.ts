@@ -80,6 +80,21 @@ describe('인원총괄현황', () => {
     expect([h.common, h.exceptions, h.outside, h.total]).toEqual([2, 1, 1, 6])
     expect(activeExceptions([{ id: 'e', personId: 'p', reason: '', fromDate: '2026-11-01', toDate: '2026-11-24' }], '2026-11-25')).toEqual([])
   })
+  it("people of the host's list (미등록 인원) count only once they have a place", () => {
+    const g = (id: string) => ({ id, name: '', title: '', dept: '', temp: true, source: '미등록 인원' })
+    const h = headcount({
+      teams: [{ id: 'A', name: 'A조', color: '', sort: 0, members: ['p1', 'g:1'] }],
+      people: [{ id: 'p1', name: '', title: '', dept: '', temp: false }, g('g:1'), g('g:2'), g('g:3'), g('g:4')],
+      assignments: [],
+      roles,
+      common: [{ id: 'c', name: '운전', description: '', perTeam: false, sort: 0, assign: [{ teamId: '', personId: 'g:2' }] }],
+      exceptions: [{ id: 'e', personId: 'g:3', reason: '교육', fromDate: '2026-11-01', toDate: null }],
+      modeId: 'm',
+      today: '2026-11-25'
+    })
+    // g:4 is on the list but nowhere here
+    expect([h.teams[0].temps, h.outside, h.total]).toEqual([1, 0, 4])
+  })
 })
 
 const members: DrillMember[] = [

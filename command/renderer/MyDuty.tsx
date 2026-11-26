@@ -15,7 +15,7 @@ function Duty({ role, roles, cover }: { role: CmdRole; roles: CmdRole[]; cover?:
     <Card data-testid={cover ? 'cmd-cover-role' : 'cmd-my-role'}>
       <CardHeader>
         <CardTitle className="flex items-center gap-1.5">
-          {cover && <Badge tone="important">대리</Badge>}
+          {cover && <Badge tone="primary">대리</Badge>}
           {rolePath(roles, role.id)}
         </CardTitle>
         {cover && <span className="text-xs text-muted-foreground">{cover}</span>}
@@ -70,7 +70,7 @@ function CoverDuty({ m, x, modeId, now }: { m: Model; x: CmdSubstitution; modeId
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-1.5">
-              <Badge tone="important">대리</Badge> 공통업무
+              <Badge tone="primary">대리</Badge> 공통업무
             </CardTitle>
             <span className="text-xs text-muted-foreground">{note}</span>
           </CardHeader>

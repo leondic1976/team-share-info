@@ -173,7 +173,7 @@ export function ReleasesTab(): React.JSX.Element {
         <CardHeader>
           <CardTitle>배포 기록</CardTitle>
         </CardHeader>
-        <div className="divide-y divide-border">
+        <div className="hover-rows divide-y divide-border">
           {releases.data?.length === 0 && <EmptyNote>배포한 버전이 없습니다.</EmptyNote>}
           {releases.data?.map((r) => (
             <div key={r.id} className="flex items-start gap-3 px-4 py-3 text-sm">

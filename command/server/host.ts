@@ -14,6 +14,23 @@ export interface CommandMember {
 }
 
 /**
+ * Somebody on a list the host keeps of its own who is not a member (TeamHub: 미등록 인원, the
+ * staff who do not use TeamHub). The list is edited only in the host.
+ */
+export interface CommandGuest {
+  /** stable and unique within the list */
+  id: string
+  name: string
+  title: string
+  dept: string
+  memo: string
+  /** taken off the list (still named, so places left in the module can be shown) */
+  gone?: boolean
+  /** turned out to be this member of the host */
+  as?: string
+}
+
+/**
  * What the command module needs from the program that runs it (TeamHub today, a program of its
  * own later). The module never reaches into the host otherwise.
  */
@@ -26,6 +43,25 @@ export interface CommandServerHost {
   user(req: FastifyRequest): { id: string; name: string; isOwner: boolean }
   /** the active members */
   members(): CommandMember[]
+  /**
+   * optional: the people the host keeps a list of who are not members (TeamHub: 미등록 인원,
+   * kept in 관리). The module places them like members (not in drills) and marks them 미등록;
+   * the list is edited only in the host. Without it the module has no such people.
+   */
+  guests?: {
+    /** the name of the list in the screens, e.g. '미등록 인원' */
+    label: string
+    /** where the host edits it, e.g. '관리 → 구성원·PC → 미등록 인원' */
+    where: string
+    list(): CommandGuest[]
+    /**
+     * puts somebody on the list (the module's own 임시 인원 of before move there once); the same
+     * `key` always gives the same person, so a move that is done again registers nobody twice
+     */
+    add?(p: { name: string; title: string; dept: string; memo: string }, o: { key: string }): { id: string } | { error: string }
+    /** the list changed (the module follows a merge and refreshes the screens) */
+    onChange?(cb: () => void): void
+  }
   /** member ids of the server PC's own account(s): they manage the module like a 지휘대담당 */
   ownerIds(): string[]
   /** files kept by the host: link uploaded ones to an owner, list, remove, and who may download */

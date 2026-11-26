@@ -79,6 +79,10 @@ describe('긴급구조지휘대', () => {
 
   it('the server PC sets up a 조, its rotation, 분류 and 배치', async () => {
     const p = a.page
+    // a colleague who does not use TeamHub, from the one list of 미등록 인원 (관리, 지시 134)
+    await call(p, 'POST', '/api/unregistered', { name: '미등록지휘', dept: '현장E2E', title: '주무관' })
+    await expect.poll(() => p.getByTestId('cmd-unreg-row').count(), { timeout: 10000 }).toBe(1)
+    expect(await p.getByTestId('cmd-unreg-card').textContent()).toContain('관리 → 구성원·PC → 미등록 인원')
     await p.getByTestId('cmd-team-add').click()
     await ask(p, 'A조')
     const row = p.getByTestId('cmd-team-row').filter({ hasText: 'A조' })
@@ -86,8 +90,14 @@ describe('긴급구조지휘대', () => {
     await row.getByRole('button', { name: '조원' }).click()
     await p.getByRole('checkbox', { name: '서버관리자' }).check()
     await p.getByRole('checkbox', { name: '이훈련' }).check()
+    expect(await p.getByRole('dialog').textContent()).toContain('미등록 인원')
+    await p.getByRole('checkbox', { name: '미등록지휘' }).check()
     await p.getByTestId('picker-save').click()
-    await expect.poll(() => row.textContent()).toContain('2명')
+    await expect.poll(() => row.textContent()).toContain('3명')
+    // the name carries the mark wherever it is shown
+    expect(await row.getByTestId('cmd-unreg').textContent()).toBe('미등록')
+    await p.getByTestId('cmd-unreg-card').scrollIntoViewIfNeeded()
+    await shot(p, 'command-unregistered')
     await p.getByTestId('cmd-rotation-save').click()
     await expect.poll(() => p.getByTestId('cmd-rotation-preview').textContent()).toContain('A조')
 
@@ -119,6 +129,51 @@ describe('긴급구조지휘대', () => {
     await p.locator('[data-tab="mine"]').click()
     await expect.poll(() => p.getByTestId('command-page').textContent()).toContain('상황요원')
   }, 60000)
+
+  it('대리자: 이훈련 away today, 서버관리자 covers — marked in 현황, 내 임무 and the drill start', async () => {
+    const st = await call<{ people: { id: string; name: string }[] }>(a.page, 'GET', '/api/command')
+    const away = st.people.find((x) => x.name === '이훈련')!.id
+    const sub = st.people.find((x) => x.name === '서버관리자')!.id
+    const p = a.page
+    await p.locator('[data-tab="settings"]').click()
+    await p.getByTestId('cmd-sub-add').click()
+    const dlg = p.getByRole('dialog', { name: '대리자 등록' })
+    await dlg.getByTestId('cmd-sub-person').selectOption(away)
+    await expect.poll(() => dlg.getByTestId('cmd-sub-places').textContent()).toContain('상황요원')
+    await dlg.getByLabel('부재 사유').fill('휴가')
+    // the absent person is not offered as their own substitute
+    expect(await dlg.getByTestId('cmd-sub-substitute').locator(`option[value="${away}"]`).isDisabled()).toBe(true)
+    await dlg.getByTestId('cmd-sub-substitute').selectOption(sub)
+    // 서버관리자 is 조장 of A조 too: allowed, with a warning
+    await expect.poll(() => dlg.getByTestId('cmd-sub-warnings').textContent()).toContain('두 임무를 함께 맡습니다')
+    await shot(p, 'command-substitution-dialog')
+    await dlg.getByTestId('cmd-sub-save').click()
+    await expect.poll(() => p.getByTestId('cmd-sub-row').count()).toBe(1)
+    await p.getByTestId('cmd-subs').scrollIntoViewIfNeeded()
+    await shot(p, 'command-substitution-settings')
+
+    await p.locator('[data-tab="overview"]').click()
+    await expect.poll(() => p.getByTestId('cmd-roster').getByTestId('cmd-cover').first().textContent()).toContain('원 담당 이훈련 · 휴가')
+    expect(await p.getByTestId('cmd-headcount').textContent()).toContain('대리 1명')
+    await shot(p, 'command-substitution-overview')
+
+    // the absent member sees who covers them
+    await b.page.locator('[data-tab="mine"]').click()
+    await expect.poll(() => b.page.getByTestId('cmd-covered-by').textContent(), { timeout: 10000 }).toContain('서버관리자')
+
+    // a drill started now would take the substitute
+    await p.locator('[data-tab="drills"]').click()
+    await p.getByTestId('cmd-drill-new').click()
+    const start = p.getByRole('dialog', { name: '훈련 시작' })
+    await expect.poll(() => start.getByTestId('cmd-drill-covers').textContent()).toContain('대신 대리자 서버관리자')
+    await start.getByRole('button', { name: '취소' }).click()
+
+    // taken off again so the drill below runs with 이훈련
+    const list = (await call<{ substitutions: { id: string }[] }>(a.page, 'GET', '/api/command')).substitutions
+    for (const x of list) await call(a.page, 'DELETE', `/api/command/substitutions/${x.id}`, {})
+    await p.locator('[data-tab="overview"]').click()
+    await b.page.locator('[data-tab="overview"]').click()
+  }, 90000)
 
   it('a drill: the 훈련 창 pops up for the member, who reports from it', async () => {
     const st = await call<{ modes: { id: string; name: string }[]; roles: { id: string; name: string }[] }>(a.page, 'GET', '/api/command')

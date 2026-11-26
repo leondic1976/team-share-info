@@ -37,6 +37,7 @@ const INVALIDATE: Partial<Record<EventName, string[][]>> = {
   'launcher.changed': [['launcher']],
   'meeting.changed': [['meetings']],
   'collect.changed': [['collect']],
+  'unregistered.changed': [['unregistered']],
   'update.available': [['updates']]
 }
 

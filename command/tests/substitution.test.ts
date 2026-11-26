@@ -113,8 +113,8 @@ describe('대리자: rules', () => {
     const fixed = checkSubstitution(sub({ personId: 'park', substituteId: 'kim' }), ctx())
     expect(fixed.warnings.some((w) => w.includes('공통업무 장비운반차 운전, 콤비버스 운전'))).toBe(true)
   })
-  it('a temporary substitute and an absent person with nothing to cover get warnings; covering two at once too', () => {
-    expect(checkSubstitution(sub({ substituteId: 'x:t' }), ctx()).warnings.some((w) => w.includes('임시 인원이라 훈련에는 참가하지 못합니다'))).toBe(true)
+  it('a 미등록 substitute and an absent person with nothing to cover get warnings; covering two at once too', () => {
+    expect(checkSubstitution(sub({ substituteId: 'x:t' }), ctx()).warnings.some((w) => w.includes('미등록 인원이라 훈련에는 참가하지 못합니다'))).toBe(true)
     expect(checkSubstitution(sub({ personId: 'han', substituteId: 'park' }), ctx()).warnings).toContain('한바깥은(는) 조·공통업무에 들어 있지 않아 대신 맡을 것이 없습니다.')
     const other = sub({ id: 'o', personId: 'park', substituteId: 'han' })
     expect(checkSubstitution(sub({ substituteId: 'han' }), ctx([other])).warnings.some((w) => w.includes('박조원의 대리도 맡고 있습니다'))).toBe(true)
