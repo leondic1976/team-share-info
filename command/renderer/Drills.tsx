@@ -205,7 +205,7 @@ function StartDialog({ m, now, value, onClose, onStarted }: { m: Model; now: num
           <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
             <input type="checkbox" checked={f.withCommon} onChange={(e) => setF({ ...f, withCommon: e.target.checked })} /> 공통업무 담당자도 참가
           </label>
-          <p className="mt-1 text-xs text-muted-foreground">참가자는 시작하는 순간의 편성으로 정해집니다(예외자·임시 인원 제외).</p>
+          <p className="mt-1 text-xs text-muted-foreground">참가자는 시작하는 순간의 편성으로 정해집니다(예외자·미등록 인원 제외).</p>
         </div>
         <div className="space-y-1 text-sm">
           <label className="flex cursor-pointer items-center gap-2">

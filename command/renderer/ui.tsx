@@ -191,3 +191,49 @@ export function Tabs<T extends string>({ value, onChange, items, className }: { 
 
 /** "직위 성명" */
 export const titled = (p: { name: string; title?: string; mark?: string } | undefined | null): string => (p ? `${p.title ? `${p.title} ` : ''}${p.name}${p.mark ? ` (${p.mark})` : ''}` : '(알 수 없음)')
+
+type Named = { name: string; title?: string; mark?: string; temp?: boolean; source?: string; left?: 'removed' | 'old' }
+/** The tip of the 미등록 mark. */
+export const unregTip = (p: Named): string =>
+  p.left === 'removed' ? `${p.source ?? '미등록 인원'} 명단에서 지워진 사람 — 설정에서 편성에서 빼세요` : p.left === 'old' ? '예전 임시 인원 — 미등록 인원 명단으로 옮겨지는 중' : 'TeamHub를 쓰지 않는 직원(미등록 인원) — 편성·표시만 되고 훈련에는 참여하지 못함'
+/** "직위 성명" with " (미등록)" for somebody who is not a member: for text (CSV, the options of a list). */
+export const titledText = (p: Named | undefined | null): string => `${titled(p)}${p?.temp ? ' (미등록)' : ''}${p?.left === 'removed' ? ' (명단에서 지워짐)' : ''}`
+/** The 미등록 mark next to a name (the same mark 식사 신청 shows). */
+export function Unreg({ p, className }: { p: Named | undefined | null; className?: string }): React.JSX.Element | null {
+  if (!p?.temp) return null
+  return (
+    <>
+      <Badge tone="important" className={cn('ml-1', className)} title={unregTip(p)} data-testid="cmd-unreg">
+        미등록
+      </Badge>
+      {p.left === 'removed' && (
+        <Badge tone="urgent" className="ml-1" title={unregTip(p)}>
+          명단에서 지워짐
+        </Badge>
+      )}
+    </>
+  )
+}
+/** A person's name with their 미등록 mark. */
+export function PersonName({ p }: { p: Named | undefined | null }): React.JSX.Element {
+  return (
+    <span>
+      {titled(p)}
+      <Unreg p={p} />
+    </span>
+  )
+}
+/** Names separated by commas, each with its 미등록 mark. */
+export function Names({ people, empty }: { people: (Named | undefined | null)[]; empty?: ReactNode }): React.JSX.Element {
+  if (!people.length) return <>{empty ?? null}</>
+  return (
+    <>
+      {people.map((p, i) => (
+        <span key={i}>
+          {i > 0 && ', '}
+          <PersonName p={p} />
+        </span>
+      ))}
+    </>
+  )
+}

@@ -8,6 +8,9 @@ import { parse, ok } from '../validate'
 import { logActivity } from '../activity'
 import { audienceOf, scopeDto, setScope, visibleWhere } from '../scope'
 import { entryRefusal } from '../plugin-locks'
+import { MEAL_PLUGIN_ID } from '../meal-people'
+import { runMealImport } from '../unregistered'
+import { recordError } from '../context'
 
 interface Row {
   id: string
@@ -121,7 +124,18 @@ export function registerPluginRoutes(app: FastifyInstance, ctx: ServerContext, g
     return ok(out)
   })
 
-  const changed = (r: Row): void => ctx.hub.sendTo(audienceOf(db, 'plugin_rooms', 'plugin_room', r.id), 'plugin.room', { pluginId: r.plugin_id, roomId: r.id })
+  const changed = (r: Row): void => {
+    ctx.hub.sendTo(audienceOf(db, 'plugin_rooms', 'plugin_room', r.id), 'plugin.room', { pluginId: r.plugin_id, roomId: r.id })
+    // 식사 신청 before 1.8.0 (a PC not updated yet) may still register people in its own list:
+    // they join the one list of 미등록 인원 at once
+    if (r.plugin_id === MEAL_PLUGIN_ID) {
+      try {
+        runMealImport(ctx)
+      } catch (e) {
+        recordError(ctx, `unregistered import: ${(e as Error).message}`)
+      }
+    }
+  }
   const bump = (id: string): void => {
     db.run('UPDATE plugin_rooms SET version = version + 1, updated_at = ? WHERE id = ?', [Date.now(), id])
   }

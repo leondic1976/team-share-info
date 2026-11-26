@@ -52,6 +52,7 @@ export type EventName =
   | 'command.changed'
   | 'command.drill'
   | 'collect.changed'
+  | 'unregistered.changed'
   | 'plugin.invite'
   | 'meeting.invite'
   | 'meeting.changed'

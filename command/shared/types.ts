@@ -3,16 +3,27 @@
  * Nothing here depends on the host program (TeamHub); see host.ts for what the host gives.
  */
 
-/** A person who can be placed: a member of the host (`memberId`) or a temporary person (`x:` id). */
+/**
+ * A person who can be placed: a member of the host (`memberId`), a temporary person of the
+ * module (`x:` id) or somebody of a list the host keeps (`g:` id, `source` = that list).
+ */
 export interface CmdPerson {
   id: string
   name: string
   /** 직위 (rank or position) as the host knows it; for temporary people as typed */
   title: string
   dept: string
-  /** a temporary person (not registered in the host): placed and shown, cannot answer in drills */
+  /** not a member of the host (임시 인원 or a host list's person): placed and shown as 미등록, cannot answer in drills */
   temp: boolean
   memo?: string
+  /** from the list the host keeps (e.g. '미등록 인원'): edited there, not here */
+  source?: string
+  /**
+   * not offered for new places, shown until taken out: 'removed' = deleted from the host's list
+   * (or not found) while still placed here; 'old' = a 임시 인원 of the module from before the
+   * host's list, not moved there yet
+   */
+  left?: 'removed' | 'old'
   /** a short mark the host shows next to the name (e.g. '서무') */
   mark?: string
 }
@@ -108,6 +119,8 @@ export interface CmdDrillBrief {
 
 /** Everything the screens need at once (GET /api/command). */
 export interface CommandState {
+  /** the host's list of people who are not members (미등록), and where it is edited; null: the host has none */
+  guests: { label: string; where: string } | null
   modes: CmdMode[]
   teams: CmdTeam[]
   roles: CmdRole[]

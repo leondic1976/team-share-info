@@ -15,7 +15,7 @@ const call = async (who: Cred, method: string, url: string, payload?: Body) => {
 }
 
 describe('긴급구조지휘대 (command module through TeamHub)', () => {
-  it('편성: 지휘대담당, 근무 유형, 조, 순환, 분류, 배치, 공통업무, 예외자, 임시 인원', async () => {
+  it('편성: 지휘대담당, 근무 유형, 조, 순환, 분류, 배치, 공통업무, 예외자, 미등록 인원', async () => {
     s = await createTestServer()
     const admin = s.admin
     const a = await s.join('김지휘')
@@ -75,13 +75,15 @@ describe('긴급구조지휘대 (command module through TeamHub)', () => {
     const cm2 = (await call(a, 'POST', '/api/command/common', { name: '콤비버스 운전', perTeam: true })).data.id
     expect((await call(a, 'PUT', `/api/command/common/${cm2}/assign`, { teamId: tB, personIds: [c.memberId] })).status).toBe(400)
 
-    // 임시 인원: placed, then merged into a member who joined later
-    const tmp = (await call(a, 'POST', '/api/command/people', { name: '최미등', title: '소방위' })).data.id
-    expect(tmp.startsWith('x:')).toBe(true)
-    await call(a, 'PUT', `/api/command/teams/${tB}/members`, [tmp].length ? { personIds: [tmp] } : {})
+    // 미등록 인원 (관리, 지시 134): placed, then merged in 관리 into a member who joined later
+    const unreg = (await call(admin, 'POST', '/api/unregistered', { name: '최미등', title: '소방위' })).data.id
+    const tmp = `g:${unreg}`
+    await call(a, 'PUT', `/api/command/teams/${tB}/members`, { personIds: [tmp] })
     await call(a, 'PUT', '/api/command/assignments', { modeId: mode, teamId: tB, roleId: r1, personIds: [tmp] })
     const d = await s.join('최미등')
-    expect((await call(a, 'POST', `/api/command/people/${encodeURIComponent(tmp)}/merge`, { memberId: d.memberId })).status).toBe(200)
+    // merging is done in 관리, not here
+    expect((await call(a, 'POST', `/api/command/people/${encodeURIComponent(tmp)}/merge`, { memberId: d.memberId })).status).toBe(400)
+    expect((await call(admin, 'PUT', `/api/unregistered/${unreg}/merge`, { memberId: d.memberId })).status).toBe(200)
     st = (await call(a, 'GET', '/api/command')).data
     expect(st.teams.find((t: { id: string }) => t.id === tB).members).toEqual([d.memberId])
     expect(st.assignments).toContainEqual({ roleId: r1, teamId: tB, personId: d.memberId })

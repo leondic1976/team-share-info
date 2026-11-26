@@ -1,6 +1,6 @@
 /**
  * 설정 (the server PC and the 지휘대담당): 지휘대담당, 근무 유형, 조, 순환, 분류와 임무, 배치,
- * 공통업무, 예외자, 임시 인원.
+ * 공통업무, 예외자, 미등록 인원 (the host's list, read only here).
  */
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, Copy, FileText, Pencil, Plus, Search, Trash2, UserPlus, Users } from 'lucide-react'
@@ -11,7 +11,7 @@ import { when } from './model'
 import { useAct, useRoleDuty } from './data'
 import { useHost } from './host'
 import { Editor } from './rich'
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Dialog, EmptyNote, Field, Input, Select, Textarea, cn, titled, useAsk } from './ui'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Dialog, EmptyNote, Field, Input, Names, PersonName, Select, Textarea, Unreg, cn, titled, titledText, useAsk } from './ui'
 
 const COLORS = ['#dc2626', '#ea580c', '#ca8a04', '#16a34a', '#2563eb', '#7c3aed', '#db2777', '#475569']
 const pad = (n: number): string => String(n).padStart(2, '0')
@@ -107,7 +107,7 @@ export function PeoplePicker({ open, title, people, value, onClose, onSave, note
                       <label key={p.id} className={cn('flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-muted', off && 'cursor-not-allowed opacity-50')} title={p.why}>
                         <input type="checkbox" checked={on} disabled={off || (!on && !!max && sel.length >= max)} onChange={(e) => setSel(e.target.checked ? [...sel, p.id] : sel.filter((x) => x !== p.id))} aria-label={p.name} />
                         <span className="truncate">{titled(p)}</span>
-                        {p.temp && <Badge>임시</Badge>}
+                        <Unreg p={p} />
                         {p.why && <span className="truncate text-xs text-muted-foreground">{p.why}</span>}
                       </label>
                     )
@@ -155,7 +155,7 @@ export function Settings({ m, now }: { m: Model; now: number }): React.JSX.Eleme
       </Card>
       <CommonCard m={m} />
       <ExceptionsCard m={m} now={now} />
-      <TempPeopleCard m={m} />
+      <UnregisteredCard m={m} />
     </div>
   )
 }
@@ -248,7 +248,7 @@ function TeamsCard({ m }: { m: Model }): React.JSX.Element {
     () =>
       m.s.people.map((p) => {
         const t = m.team(m.teamOf(p.id))
-        return { ...p, group: p.temp ? '임시 인원' : (p.dept || '소속 없음'), why: m.excepted.has(p.id) ? '예외자' : t && t.id !== members?.id ? `${t.name} (옮겨짐)` : undefined }
+        return { ...p, group: p.temp ? unregGroup(p) : p.dept || '소속 없음', why: leftWhy(p) ?? (m.excepted.has(p.id) ? '예외자' : t && t.id !== members?.id ? `${t.name} (옮겨짐)` : undefined) }
       }),
     [m, members]
   )
@@ -271,7 +271,9 @@ function TeamsCard({ m }: { m: Model }): React.JSX.Element {
             </span>
             <b>{t.name}</b>
             <span className="text-muted-foreground">{t.members.length}명</span>
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t.members.map((p) => m.person(p)?.name).join(', ')}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+              <Names people={t.members.map((p) => m.person(p))} />
+            </span>
             <Button size="sm" variant="outline" onClick={() => setMembers(t)}>
               <Users /> 조원
             </Button>
@@ -603,7 +605,9 @@ function AssignEditor({ m, modeId }: { m: Model; modeId: string }): React.JSX.El
             return (
               <div key={role.id} className="flex items-center gap-2 px-2 py-1.5 text-sm" style={{ paddingLeft: 8 + depth * 18 }} data-testid="cmd-assign-row">
                 <span className="w-48 shrink-0 truncate font-medium">{role.name}</span>
-                <span className="min-w-0 flex-1 truncate">{ps.length ? ps.map((p) => titled(p)).join(', ') : <span className="text-muted-foreground">-</span>}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  <Names people={ps} empty={<span className="text-muted-foreground">-</span>} />
+                </span>
                 <Button size="sm" variant="outline" onClick={() => setPick(role)} data-testid="cmd-assign-pick">
                   <UserPlus /> 담당자
                 </Button>
@@ -612,7 +616,11 @@ function AssignEditor({ m, modeId }: { m: Model; modeId: string }): React.JSX.El
           })}
         </div>
       )}
-      {team && unplaced.length > 0 && <p className="text-xs text-important">미배치 {unplaced.length}명: {unplaced.map((p) => m.person(p)?.name).join(', ')}</p>}
+      {team && unplaced.length > 0 && (
+        <p className="text-xs text-important">
+          미배치 {unplaced.length}명: <Names people={unplaced.map((p) => m.person(p))} />
+        </p>
+      )}
       <ErrorLine err={act.err} />
       <PeoplePicker
         open={!!pick}
@@ -621,7 +629,7 @@ function AssignEditor({ m, modeId }: { m: Model; modeId: string }): React.JSX.El
         people={(team?.members ?? []).map((pid) => {
           const p = m.person(pid) ?? { id: pid, name: '(알 수 없음)', title: '', dept: '', temp: false }
           const other = m.s.assignments.find((a) => a.personId === pid && a.teamId === teamId && roleIds.has(a.roleId) && a.roleId !== pick?.id)
-          return { ...p, why: other ? `${m.s.roles.find((r) => r.id === other.roleId)?.name}에 배치됨` : undefined }
+          return { ...p, why: leftWhy(p) ?? (other ? `${m.s.roles.find((r) => r.id === other.roleId)?.name}에 배치됨` : undefined) }
         })}
         value={pick ? m.placed(pick.id, teamId).map((p) => p.id) : []}
         onClose={() => setPick(null)}
@@ -663,7 +671,9 @@ function CommonCard({ m }: { m: Model }): React.JSX.Element {
               m.s.teams.map((t) => (
                 <div key={t.id} className="flex items-center gap-2">
                   <span className="w-16 text-xs text-muted-foreground">{t.name}</span>
-                  <span className="min-w-0 flex-1 truncate">{c.assign.filter((a) => a.teamId === t.id).map((a) => titled(m.person(a.personId))).join(', ') || '-'}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    <Names people={c.assign.filter((a) => a.teamId === t.id).map((a) => m.person(a.personId))} empty="-" />
+                  </span>
                   <Button size="sm" variant="ghost" onClick={() => setPick({ c, teamId: t.id })}>
                     <UserPlus /> 지정
                   </Button>
@@ -671,7 +681,9 @@ function CommonCard({ m }: { m: Model }): React.JSX.Element {
               ))
             ) : (
               <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate">{c.assign.map((a) => titled(m.person(a.personId))).join(', ') || <span className="text-muted-foreground">지정 안 됨</span>}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  <Names people={c.assign.map((a) => m.person(a.personId))} empty={<span className="text-muted-foreground">지정 안 됨</span>} />
+                </span>
                 <Button size="sm" variant="ghost" onClick={() => setPick({ c, teamId: '' })} data-testid="cmd-common-pick">
                   <UserPlus /> 지정
                 </Button>
@@ -685,7 +697,7 @@ function CommonCard({ m }: { m: Model }): React.JSX.Element {
       <PeoplePicker
         open={!!pick}
         title={`${pick?.c.name ?? ''} 담당자${pick?.teamId ? ` · ${m.team(pick.teamId)?.name}` : ''}`}
-        people={(pick?.teamId ? (m.team(pick.teamId)?.members ?? []).map((id) => m.person(id)).filter((p): p is CmdPerson => !!p) : m.s.people).map((p) => ({ ...p, group: pick?.teamId ? '' : p.temp ? '임시 인원' : m.team(m.teamOf(p.id))?.name ?? '조 없음', why: m.excepted.has(p.id) ? '예외자' : undefined }))}
+        people={(pick?.teamId ? (m.team(pick.teamId)?.members ?? []).map((id) => m.person(id)).filter((p): p is CmdPerson => !!p) : m.s.people).map((p) => ({ ...p, group: pick?.teamId ? '' : p.temp ? unregGroup(p) : (m.team(m.teamOf(p.id))?.name ?? '조 없음'), why: leftWhy(p) ?? (m.excepted.has(p.id) ? '예외자' : undefined) }))}
         value={pick ? pick.c.assign.filter((a) => a.teamId === pick.teamId).map((a) => a.personId) : []}
         onClose={() => setPick(null)}
         onSave={(ids) => pick && void act.run(() => host.api.put(`/api/command/common/${pick.c.id}/assign`, { teamId: pick.teamId, personIds: ids }), () => setPick(null))}
@@ -763,7 +775,9 @@ function ExceptionsCard({ m, now }: { m: Model; now: number }): React.JSX.Elemen
         {!list.length && <EmptyNote>예외자가 없습니다.</EmptyNote>}
         {list.map((e) => (
           <div key={e.id} className={cn('flex items-center gap-2 text-sm', !m.excepted.has(e.personId) && 'text-muted-foreground')}>
-            <b className="w-40 truncate">{titled(m.person(e.personId))}</b>
+            <b className="w-40 truncate">
+              <PersonName p={m.person(e.personId)} />
+            </b>
             <span className="min-w-0 flex-1 truncate">{e.reason}</span>
             <span className="whitespace-nowrap text-xs">
               {e.fromDate} ~ {e.toDate ?? '계속'}
@@ -799,10 +813,11 @@ function ExceptionsCard({ m, now }: { m: Model; now: number }): React.JSX.Elemen
             <Field label="사람">
               <Select value={edit.personId ?? ''} onChange={(e) => setEdit({ ...edit, personId: e.target.value })} aria-label="예외자">
                 <option value="">고르세요</option>
-                {m.s.people.map((p) => (
+                {m.s.people
+                  .filter((p) => !p.left || p.id === edit.personId)
+                  .map((p) => (
                   <option key={p.id} value={p.id}>
-                    {titled(p)}
-                    {p.temp ? ' (임시)' : ''}
+                    {titledText(p)}
                     {m.team(m.teamOf(p.id)) ? ` · ${m.team(m.teamOf(p.id))?.name}` : ''}
                   </option>
                 ))}
@@ -827,71 +842,75 @@ function ExceptionsCard({ m, now }: { m: Model; now: number }): React.JSX.Elemen
   )
 }
 
-function TempPeopleCard({ m }: { m: Model }): React.JSX.Element {
+/** The group of somebody who is not a member in the pickers. */
+const unregGroup = (p: CmdPerson): string => (p.left === 'old' ? '예전 임시 인원' : (p.source ?? '미등록 인원'))
+/** Why somebody is not offered for a new place (they stay where they are until taken out). */
+const leftWhy = (p: CmdPerson): string | undefined => (p.left === 'removed' ? '명단에서 지워짐' : p.left === 'old' ? '예전 임시 인원' : undefined)
+
+/**
+ * 미등록 인원: the host's list (TeamHub: 관리 → 구성원·PC → 미등록 인원), read only here. Those
+ * taken off that list while still placed here, and 임시 인원 of before not moved yet, can be
+ * taken out of every place.
+ */
+function UnregisteredCard({ m }: { m: Model }): React.JSX.Element {
   const host = useHost()
   const act = useAct()
-  const [edit, setEdit] = useState<{ id?: string; name: string; title: string; memo: string } | null>(null)
   const [merge, setMerge] = useState<CmdPerson | null>(null)
   const [target, setTarget] = useState('')
-  const temps = m.s.people.filter((p) => p.temp)
+  const g = m.s.guests
+  const listed = m.s.people.filter((p) => p.temp && !p.left)
+  const left = m.s.people.filter((p) => p.temp && p.left)
   return (
-    <Card>
+    <Card data-testid="cmd-unreg-card">
       <CardHeader>
-        <CardTitle>임시 인원 (TeamHub에 아직 등록하지 않은 사람)</CardTitle>
-        <Button size="sm" variant="outline" onClick={() => setEdit({ name: '', title: '', memo: '' })}>
-          <Plus /> 임시 인원 추가
-        </Button>
+        <CardTitle>{g?.label ?? '미등록 인원'} (TeamHub를 쓰지 않는 직원)</CardTitle>
+        {g && <span className="text-xs text-muted-foreground">{listed.length}명</span>}
       </CardHeader>
-      <CardContent className="space-y-1">
-        <p className="text-xs text-muted-foreground">원칙은 모두 TeamHub에 등록하는 것입니다. 만약을 위해 임시로 넣어 편성·표시는 되지만 훈련에는 참여하지 못합니다. 등록하면 구성원과 합치세요.</p>
-        {!temps.length && <EmptyNote>임시 인원이 없습니다.</EmptyNote>}
-        {temps.map((p) => (
-          <div key={p.id} className="flex items-center gap-2 text-sm">
-            <b>{titled(p)}</b>
-            <Badge>임시</Badge>
-            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{p.memo}</span>
-            <Button size="sm" variant="ghost" onClick={() => (setMerge(p), setTarget(''))}>
-              구성원과 합치기
-            </Button>
-            <Button size="icon-sm" variant="ghost" aria-label="고치기" onClick={() => setEdit({ id: p.id, name: p.name, title: p.title, memo: p.memo ?? '' })}>
-              <Pencil />
-            </Button>
-            <Button size="icon-sm" variant="ghost" className="text-urgent" aria-label="삭제" onClick={() => window.confirm(`${p.name}을(를) 편성에서 모두 빼고 지울까요?`) && void act.run(() => host.api.del(`/api/command/people/${encodeURIComponent(p.id)}`))}>
-              <Trash2 />
-            </Button>
-          </div>
-        ))}
-        <ErrorLine err={act.err} />
-      </CardContent>
-      <Dialog
-        open={!!edit}
-        onClose={() => setEdit(null)}
-        title={edit?.id ? '임시 인원 고치기' : '임시 인원 추가'}
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setEdit(null)}>
-              취소
-            </Button>
-            <Button disabled={!edit?.name.trim()} onClick={() => edit && void act.run(() => (edit.id ? host.api.patch(`/api/command/people/${encodeURIComponent(edit.id)}`, edit) : host.api.post('/api/command/people', edit)), () => setEdit(null))}>
-              저장
-            </Button>
-          </>
-        }
-      >
-        {edit && (
-          <div className="space-y-3">
-            <Field label="이름">
-              <Input value={edit.name} maxLength={30} onChange={(e) => setEdit({ ...edit, name: e.target.value })} aria-label="임시 인원 이름" />
-            </Field>
-            <Field label="계급/직위">
-              <Input value={edit.title} maxLength={30} onChange={(e) => setEdit({ ...edit, title: e.target.value })} placeholder="예: 소방위" />
-            </Field>
-            <Field label="메모 (선택)">
-              <Input value={edit.memo} maxLength={100} onChange={(e) => setEdit({ ...edit, memo: e.target.value })} />
-            </Field>
+      <CardContent className="space-y-2">
+        {g ? (
+          <p className="text-xs text-muted-foreground">
+            식사 신청과 함께 쓰는 하나의 명단입니다. 등록·고치기·삭제·구성원과 합치기는 <b>{g.where}</b>에서 서버 PC와 서무가 합니다. 여기서는 조원·배치·공통업무·예외자로 고를 수 있고, 이름 옆에 항상 <b>미등록</b>이 붙으며 훈련에는 참여하지 못합니다. 그 명단에서 구성원과 합치면 이 사람의 조·배치·공통업무·예외가 그 구성원으로 옮겨집니다.
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">이 프로그램에는 미등록 인원 명단이 없습니다.</p>
+        )}
+        {g && !listed.length && <EmptyNote>미등록 인원이 없습니다. {g.where}에서 등록합니다.</EmptyNote>}
+        {listed.length > 0 && (
+          <div className="divide-y divide-border rounded-md border border-border">
+            {listed.map((p) => (
+              <div key={p.id} className="flex items-center gap-2 px-2 py-1 text-sm" data-testid="cmd-unreg-row">
+                <b className="whitespace-nowrap">
+                  <PersonName p={p} />
+                </b>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{[p.dept, p.memo].filter(Boolean).join(' · ')}</span>
+                {m.team(m.teamOf(p.id)) && <span className="text-xs text-muted-foreground">{m.team(m.teamOf(p.id))?.name}</span>}
+              </div>
+            ))}
           </div>
         )}
-      </Dialog>
+        {left.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-important">편성에 남아 있는 사람 (새로 고를 수 없음)</p>
+            {left.map((p) => (
+              <div key={p.id} className="flex items-center gap-2 text-sm">
+                <b>
+                  <PersonName p={p} />
+                </b>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{p.left === 'removed' ? '미등록 인원 명단에서 지워졌습니다.' : '예전 임시 인원입니다. 미등록 인원 명단으로 옮겨지면 사라집니다.'}</span>
+                {p.left === 'old' && (
+                  <Button size="sm" variant="ghost" onClick={() => (setMerge(p), setTarget(''))}>
+                    구성원과 합치기
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" className="text-urgent" onClick={() => window.confirm(`${p.name}을(를) 조·배치·공통업무·예외에서 모두 뺄까요?`) && void act.run(() => host.api.del(`/api/command/people/${encodeURIComponent(p.id)}`))}>
+                  <Trash2 /> 편성에서 빼기
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+        <ErrorLine err={act.err} />
+      </CardContent>
       <Dialog
         open={!!merge}
         onClose={() => setMerge(null)}
@@ -908,7 +927,7 @@ function TempPeopleCard({ m }: { m: Model }): React.JSX.Element {
         }
       >
         <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">조·배치·공통업무·예외가 고른 구성원의 것으로 옮겨지고 임시 인원은 사라집니다. 그 구성원이 이미 조에 있으면 임시 인원의 조·배치는 버려집니다.</p>
+          <p className="text-sm text-muted-foreground">조·배치·공통업무·예외가 고른 구성원의 것으로 옮겨집니다. 그 구성원이 이미 조에 있으면 이 사람의 조·배치는 버려집니다.</p>
           <Select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="합칠 구성원">
             <option value="">구성원 고르기</option>
             {m.s.people
@@ -924,3 +943,4 @@ function TempPeopleCard({ m }: { m: Model }): React.JSX.Element {
     </Card>
   )
 }
+

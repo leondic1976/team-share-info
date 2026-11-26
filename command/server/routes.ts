@@ -49,6 +49,94 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
   const changed = (what: CommandChangedPayload['what'], to: string[] | null = null): void => host.emit(to, 'command.changed', { what } satisfies CommandChangedPayload)
   const drillEvent = (drillId: string, p: Omit<CommandDrillPayload, 'drillId'>, to?: string[]): void => host.emit(to ?? S.drillAudience(db, drillId, host.ownerIds()), 'command.drill', { drillId, ...p } satisfies CommandDrillPayload)
   const managerIds = (): string[] => [...new Set([...host.ownerIds(), ...S.managers(db, host.members()).map((m) => m.memberId)])]
+  /** the host's own list of people who are not members (optional); a failure to read it is an empty list */
+  const guests = (): S.GuestList | null => {
+    if (!host.guests) return null
+    try {
+      return { label: host.guests.label, where: host.guests.where, list: host.guests.list() }
+    } catch (e) {
+      host.report?.(`guests: ${(e as Error).message}`)
+      return { label: host.guests.label, where: host.guests.where, list: [] }
+    }
+  }
+  /** Everything `pid` had becomes the member's (when the member already has a 조, pid's 조 and 배치 are dropped). */
+  const mergePlaces = (pid: string, memberId: string): void => {
+    if (S.teamOf(db, memberId)) {
+      for (const t of ['cmd_team_members', 'cmd_assignments']) db.run(`DELETE FROM ${t} WHERE person_id = ?`, [pid])
+    } else {
+      db.run('UPDATE cmd_team_members SET person_id = ? WHERE person_id = ?', [memberId, pid])
+      db.run('UPDATE OR IGNORE cmd_assignments SET person_id = ? WHERE person_id = ?', [memberId, pid])
+    }
+    db.run('UPDATE OR IGNORE cmd_common_assign SET person_id = ? WHERE person_id = ?', [memberId, pid])
+    db.run('UPDATE cmd_exceptions SET person_id = ? WHERE person_id = ?', [memberId, pid])
+    for (const t of ['cmd_assignments', 'cmd_common_assign']) db.run(`DELETE FROM ${t} WHERE person_id = ?`, [pid])
+  }
+  /**
+   * Follows the host's list: somebody merged there into a member (구성원과 합치기) has their
+   * places here moved to that member. Returns whether anything moved.
+   */
+  const follow = (g: S.GuestList | null): boolean => {
+    if (!g?.list.length) return false
+    const active = new Set(host.members().map((m) => m.id))
+    const merged = new Map(g.list.filter((x) => !x.gone && x.as && active.has(x.as)).map((x) => [S.GUEST + x.id, x.as!]))
+    const todo = S.usedGuestIds(db).filter((id) => merged.has(id))
+    if (!todo.length) return false
+    db.tx(() => todo.forEach((id) => mergePlaces(id, merged.get(id)!)))
+    return true
+  }
+  /**
+   * The module's own 임시 인원 of before (cmd_people) move to the host's list once: each is put
+   * there (the same key gives the same person, so doing it again registers nobody twice) and
+   * their places (조, 배치, 공통업무, 예외) follow. Returns how many moved.
+   */
+  let moveError = ''
+  const moveOldTemps = (): number => {
+    const add = host.guests?.add
+    if (!add) return 0
+    const temps = db.all<{ id: string; name: string; title: string; memo: string }>('SELECT id, name, title, memo FROM cmd_people ORDER BY created_at')
+    let moved = 0
+    for (const t of temps) {
+      const r = add({ name: t.name, title: t.title, dept: '', memo: t.memo }, { key: t.id })
+      if ('error' in r) {
+        if (r.error !== moveError) host.report?.(`move 임시 인원: ${r.error}`)
+        moveError = r.error
+        break
+      }
+      const from = S.TEMP + t.id
+      const to = S.GUEST + r.id
+      db.tx(() => {
+        for (const tb of S.PERSON_TABLES) db.run(`UPDATE OR IGNORE ${tb} SET person_id = ? WHERE person_id = ?`, [to, from])
+        for (const tb of S.PERSON_TABLES) db.run(`DELETE FROM ${tb} WHERE person_id = ?`, [from])
+        db.run('DELETE FROM cmd_people WHERE id = ?', [t.id])
+      })
+      moved++
+    }
+    return moved
+  }
+  /** at start and whenever the host's list changes: move, follow; whether places changed */
+  let syncing = false
+  const sync = (): boolean => {
+    // putting people on the host's list makes it tell us again
+    if (syncing) return false
+    syncing = true
+    try {
+      const moved = moveOldTemps()
+      return follow(guests()) || moved > 0
+    } catch (e) {
+      host.report?.(`guests sync: ${(e as Error).message}`)
+      return false
+    } finally {
+      syncing = false
+    }
+  }
+  if (host.guests) {
+    sync()
+    host.guests.onChange?.(() => {
+      sync()
+      // names and the list shown in the pickers change too
+      changed('setup')
+    })
+  }
 
   // every file of the module may be read by any member (the module is open to the whole team)
   for (const t of Object.values(OWNER)) host.attachments.registerOwner(t, () => true)
@@ -61,7 +149,11 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
   app.get('/api/command', auth, async (req) => {
     const u = who(req)
     const members = host.members()
+    // a merge in the host's list whose news was missed is followed here too
+    if (host.guests && sync()) changed('setup')
+    const g = guests()
     const state: CommandState = {
+      guests: g ? { label: g.label, where: g.where } : null,
       modes: S.modes(db),
       teams: S.teams(db),
       roles: S.roles(db),
@@ -70,7 +162,7 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
       exceptions: S.exceptions(db),
       overrides: S.overrides(db),
       rotation: S.rotation(db),
-      people: S.people(db, members),
+      people: S.people(db, members, g),
       managers: S.managers(db, members),
       me: { id: u.id, isManager: u.manager, isOwner: u.isOwner },
       unreadNotices: S.unreadNotices(db, u.id),
@@ -185,13 +277,15 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
     const members = host.members()
     const list = [...new Set(personIds)]
     const excepted = new Set(S.exceptions(db).filter((e) => e.fromDate <= ymd(Date.now()) && (!e.toDate || e.toDate >= ymd(Date.now()))).map((e) => e.personId))
-    const names = new Map(S.people(db, members).map((p) => [p.id, p.name]))
+    const g = guests()
+    const names = new Map(S.people(db, members, g).map((p) => [p.id, p.name]))
+    const before = db.all<{ person_id: string }>('SELECT person_id FROM cmd_team_members WHERE team_id = ?', [teamId]).map((r) => r.person_id)
     for (const p of list) {
-      if (!S.personExists(db, members, p)) throw bad('없는 사람이 들어 있습니다.')
+      // somebody already in this 조 may stay (e.g. one who left the host's list and is not taken out yet)
+      if (!S.personExists(db, members, p, g) && !before.includes(p)) throw bad('없는 사람이 들어 있습니다.')
       if (excepted.has(p)) throw bad(`${names.get(p)}은(는) 예외자입니다. 예외를 먼저 끝내세요.`)
     }
     db.tx(() => {
-      const before = db.all<{ person_id: string }>('SELECT person_id FROM cmd_team_members WHERE team_id = ?', [teamId]).map((r) => r.person_id)
       for (const p of before.filter((x) => !list.includes(x))) {
         db.run('DELETE FROM cmd_team_members WHERE person_id = ?', [p])
         db.run('DELETE FROM cmd_assignments WHERE team_id = ? AND person_id = ?', [teamId, p])
@@ -290,7 +384,7 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
     const role = db.get<{ mode_id: string }>('SELECT mode_id FROM cmd_roles WHERE id = ?', [b.roleId])
     if (!role || role.mode_id !== b.modeId) throw notFound('분류')
     const list = [...new Set(b.personIds)]
-    const names = new Map(S.people(db, host.members()).map((p) => [p.id, p.name]))
+    const names = new Map(S.people(db, host.members(), guests()).map((p) => [p.id, p.name]))
     const modeRoles = S.roles(db).filter((r) => r.modeId === b.modeId).map((r) => r.id)
     for (const p of list) {
       if (S.teamOf(db, p) !== b.teamId) throw bad(`${names.get(p) ?? '그 사람'}은(는) 이 조의 조원이 아닙니다.`)
@@ -367,9 +461,11 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
     const teamId = c.per_team ? b.teamId : ''
     if (c.per_team && !db.get('SELECT 1 FROM cmd_teams WHERE id = ?', [teamId])) throw bad('조를 고르세요.')
     const members = host.members()
-    const names = new Map(S.people(db, members).map((p) => [p.id, p.name]))
+    const g = guests()
+    const names = new Map(S.people(db, members, g).map((p) => [p.id, p.name]))
+    const before = new Set(db.all<{ person_id: string }>('SELECT person_id FROM cmd_common_assign WHERE common_id = ? AND team_id = ?', [id, teamId]).map((r) => r.person_id))
     for (const p of b.personIds) {
-      if (!S.personExists(db, members, p)) throw bad('없는 사람이 들어 있습니다.')
+      if (!S.personExists(db, members, p, g) && !before.has(p)) throw bad('없는 사람이 들어 있습니다.')
       if (c.per_team && S.teamOf(db, p) !== teamId) throw bad(`${names.get(p)}은(는) 이 조의 조원이 아닙니다.`)
     }
     db.tx(() => {
@@ -384,7 +480,7 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
   app.post('/api/command/exceptions', auth, async (req) => {
     const u = manage(req)
     const b = parse(V.exceptionSchema, req.body)
-    if (!S.personExists(db, host.members(), b.personId)) throw notFound('사람')
+    if (!S.personExists(db, host.members(), b.personId, guests())) throw notFound('사람')
     const id = newId()
     db.tx(() => {
       db.run('INSERT INTO cmd_exceptions (id, person_id, reason, from_date, to_date, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, b.personId, b.reason, b.fromDate, b.toDate, u.id, Date.now()])
@@ -414,55 +510,39 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
     return ok({ id: param(req, 'id') })
   })
 
-  // ---------- 임시 인원 ----------
-  app.post('/api/command/people', auth, async (req) => {
-    manage(req)
-    const b = parse(V.tempPersonSchema, req.body)
-    const id = newId()
-    db.run('INSERT INTO cmd_people (id, name, title, memo, created_at) VALUES (?, ?, ?, ?, ?)', [id, b.name, b.title, b.memo, Date.now()])
-    changed('setup')
-    return ok({ id: S.TEMP + id })
-  })
-  app.patch('/api/command/people/:id', auth, async (req) => {
-    manage(req)
-    const b = parse(V.tempPersonSchema, req.body)
-    const r = db.run('UPDATE cmd_people SET name = ?, title = ?, memo = ? WHERE id = ?', [b.name, b.title, b.memo, param(req, 'id').replace(S.TEMP, '')])
-    if (!r.changes) throw notFound('임시 인원')
-    changed('setup')
-    return ok({ id: param(req, 'id') })
-  })
-  /** Removes a temporary person from everything. */
+  // ---------- 미등록 인원 (the host's list: placed here, edited there) ----------
+  // The module keeps no list of its own any more: its 임시 인원 of before moved to the host's list
+  // (moveOldTemps). Here they are only taken out of every place, or - 임시 인원 of before, when
+  // the host has no list - merged into a member.
+  /** the person of a ':id' route: of the host's list ('g:…', raw null) or a 임시 인원 of before ('x:…', raw = cmd_people id) */
+  const personParam = (req: FastifyRequest): { pid: string; raw: string | null } => {
+    const id = param(req, 'id')
+    if (S.isGuest(id)) return { pid: id, raw: null }
+    const raw = id.replace(S.TEMP, '')
+    return { pid: S.TEMP + raw, raw }
+  }
+  /** 편성에서 빼기: out of every 조, 배치, 공통업무 and 예외 (a 임시 인원 of before is removed too). The host's list is not changed. */
   app.delete('/api/command/people/:id', auth, async (req) => {
     manage(req)
-    const raw = param(req, 'id').replace(S.TEMP, '')
-    const pid = S.TEMP + raw
+    const { pid, raw } = personParam(req)
     db.tx(() => {
-      for (const t of ['cmd_team_members', 'cmd_assignments', 'cmd_common_assign', 'cmd_exceptions']) db.run(`DELETE FROM ${t} WHERE person_id = ?`, [pid])
-      db.run('DELETE FROM cmd_people WHERE id = ?', [raw])
+      for (const t of S.PERSON_TABLES) db.run(`DELETE FROM ${t} WHERE person_id = ?`, [pid])
+      if (raw !== null) db.run('DELETE FROM cmd_people WHERE id = ?', [raw])
     })
     changed('setup')
     return ok({ id: pid })
   })
-  /** The temporary person registered in the host: everything they had becomes the member's. */
+  /** A 임시 인원 of before is this member: everything they had becomes the member's. (People of the host's list are merged there.) */
   app.post('/api/command/people/:id/merge', auth, async (req) => {
     manage(req)
-    const raw = param(req, 'id').replace(S.TEMP, '')
-    const pid = S.TEMP + raw
+    const { pid, raw } = personParam(req)
+    const g = guests()
+    if (raw === null) throw bad(`${g?.label ?? '미등록 인원'}은(는) ${g?.where ?? '등록한 곳'}에서 구성원과 합칩니다.`)
     const { memberId } = parse(V.mergeSchema, req.body)
     if (!db.get('SELECT 1 FROM cmd_people WHERE id = ?', [raw])) throw notFound('임시 인원')
     if (!host.members().some((m) => m.id === memberId)) throw notFound('구성원')
     db.tx(() => {
-      const memberTeam = S.teamOf(db, memberId)
-      if (memberTeam) {
-        // the member already has a 조: the temporary person's places are dropped
-        for (const t of ['cmd_team_members', 'cmd_assignments']) db.run(`DELETE FROM ${t} WHERE person_id = ?`, [pid])
-      } else {
-        db.run('UPDATE cmd_team_members SET person_id = ? WHERE person_id = ?', [memberId, pid])
-        db.run('UPDATE OR IGNORE cmd_assignments SET person_id = ? WHERE person_id = ?', [memberId, pid])
-      }
-      db.run('UPDATE OR IGNORE cmd_common_assign SET person_id = ? WHERE person_id = ?', [memberId, pid])
-      db.run('UPDATE cmd_exceptions SET person_id = ? WHERE person_id = ?', [memberId, pid])
-      for (const t of ['cmd_assignments', 'cmd_common_assign']) db.run(`DELETE FROM ${t} WHERE person_id = ?`, [pid])
+      mergePlaces(pid, memberId)
       db.run('DELETE FROM cmd_people WHERE id = ?', [raw])
     })
     changed('setup')

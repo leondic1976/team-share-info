@@ -4,7 +4,7 @@
  */
 import type { CmdDb } from './sqlite'
 import { newId, parseJson } from './sqlite'
-import type { CommandMember } from './host'
+import type { CommandGuest, CommandMember } from './host'
 import type {
   CmdAssignment,
   CmdCommon,
@@ -34,6 +34,19 @@ import { activeExceptions, msgDone, resolveTargets, ymd } from '../shared/logic'
 
 export const TEMP = 'x:'
 export const isTemp = (id: string): boolean => id.startsWith(TEMP)
+/** somebody of the host's own list (CommandServerHost.guests): 'g:' + their id there */
+export const GUEST = 'g:'
+export const isGuest = (id: string): boolean => id.startsWith(GUEST)
+
+/** The host's list as read for one request. */
+export interface GuestList {
+  label: string
+  where: string
+  list: CommandGuest[]
+}
+/** Tables that hold a person id. */
+export const PERSON_TABLES = ['cmd_team_members', 'cmd_assignments', 'cmd_common_assign', 'cmd_exceptions'] as const
+const activeGuest = (g: CommandGuest): boolean => !g.gone && !g.as
 
 // ---------- 편성 ----------
 export function managers(db: CmdDb, members: CommandMember[]): CmdManager[] {
@@ -85,17 +98,50 @@ export function rotation(db: CmdDb): CmdRotation | null {
   return r && r.order ? r : null
 }
 
-export function people(db: CmdDb, members: CommandMember[]): CmdPerson[] {
+/**
+ * Everybody the screens may show: members, the host's list now (미등록), and - still placed
+ * here - those taken off that list and 임시 인원 of before not moved to it yet.
+ */
+export function people(db: CmdDb, members: CommandMember[], guests: GuestList | null = null): CmdPerson[] {
   const temps = db.all<{ id: string; name: string; title: string; memo: string }>('SELECT id, name, title, memo FROM cmd_people ORDER BY created_at')
-  return [...members.map((m) => ({ id: m.id, name: m.name, title: m.title, dept: m.dept, temp: false, ...(m.mark ? { mark: m.mark } : {}) })), ...temps.map((t) => ({ id: TEMP + t.id, name: t.name, title: t.title, dept: '', temp: true, memo: t.memo }))]
+  const out: CmdPerson[] = [
+    ...members.map((m) => ({ id: m.id, name: m.name, title: m.title, dept: m.dept, temp: false, ...(m.mark ? { mark: m.mark } : {}) })),
+    // with a list of the host, the module's own 임시 인원 wait to be moved there (moveOldTemps)
+    ...temps.map((t): CmdPerson => ({ id: TEMP + t.id, name: t.name, title: t.title, dept: '', temp: true, memo: t.memo, ...(guests ? { left: 'old' as const } : {}) }))
+  ]
+  if (!guests) return out
+  const byId = new Map(guests.list.map((g) => [GUEST + g.id, g]))
+  const shown = new Set<string>()
+  for (const [id, g] of byId) {
+    if (!activeGuest(g)) continue
+    out.push({ id, name: g.name, title: g.title, dept: g.dept, temp: true, memo: g.memo, source: guests.label })
+    shown.add(id)
+  }
+  for (const id of usedGuestIds(db)) {
+    if (shown.has(id)) continue
+    const g = byId.get(id)
+    out.push({ id, name: g?.name || '(알 수 없음)', title: g?.title ?? '', dept: g?.dept ?? '', temp: true, memo: g?.memo ?? '', source: guests.label, left: 'removed' })
+  }
+  return out
+}
+
+/** Every 'g:' person id that has a place (조, 배치, 공통업무, 예외). */
+export function usedGuestIds(db: CmdDb): string[] {
+  const ids = new Set<string>()
+  for (const t of PERSON_TABLES) for (const r of db.all<{ person_id: string }>(`SELECT DISTINCT person_id FROM ${t} WHERE person_id LIKE 'g:%'`)) ids.add(r.person_id)
+  return [...ids]
 }
 
 /** The 조 a person is in (or null). */
 export const teamOf = (db: CmdDb, personId: string): string | null => db.get<{ team_id: string }>('SELECT team_id FROM cmd_team_members WHERE person_id = ?', [personId])?.team_id ?? null
 
-/** A person may be placed: an active member or an existing temporary person. */
-export function personExists(db: CmdDb, members: CommandMember[], id: string): boolean {
-  if (isTemp(id)) return !!db.get('SELECT 1 FROM cmd_people WHERE id = ?', [id.slice(TEMP.length)])
+/**
+ * A person may be given a new place: an active member, somebody on the host's list now (not
+ * one who left it), or - only without such a list - an existing temporary person.
+ */
+export function personExists(db: CmdDb, members: CommandMember[], id: string, guests: GuestList | null = null): boolean {
+  if (isTemp(id)) return !guests && !!db.get('SELECT 1 FROM cmd_people WHERE id = ?', [id.slice(TEMP.length)])
+  if (isGuest(id)) return !!guests?.list.some((g) => GUEST + g.id === id && activeGuest(g))
   return members.some((m) => m.id === id)
 }
 

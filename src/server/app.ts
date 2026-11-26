@@ -34,6 +34,8 @@ import { runFeedbackJob } from './feedback'
 import type { FeedbackRelayConfig } from '../shared/server-host'
 import { registerLedgerRoutes } from './routes/ledgers'
 import { registerSearchRoutes } from './routes/search'
+import { registerUnregisteredRoutes } from './routes/unregistered'
+import { runMealImport } from './unregistered'
 import { pruneIdempotency, registerIdempotency } from './idempotency'
 import { registerPiiAck } from './pii'
 import { runBackupJob } from './backup'
@@ -132,6 +134,13 @@ export async function buildApp(opts: BuildOptions): Promise<BuiltApp> {
   registerFeedbackRoutes(app, ctx, { requireAuth, requireAdmin })
   registerLedgerRoutes(app, ctx, { requireAuth })
   registerSearchRoutes(app, ctx, { requireAuth })
+  registerUnregisteredRoutes(app, ctx, { requireAuth, requireAdmin })
+  // 미등록 인원: take over the list the 식사 신청 plugin kept itself before 1.8.0 (once; safe again)
+  try {
+    runMealImport(ctx)
+  } catch (e) {
+    recordError(ctx, `unregistered import: ${(e as Error).message}`)
+  }
   // 긴급구조지휘대: a module of its own (command/), data in command.db next to teamhub.db
   const command = registerCommand(app, ctx, { requireAuth })
   hub.onMemberOffline = (memberId) => leaveAllMeetings(ctx, memberId)
