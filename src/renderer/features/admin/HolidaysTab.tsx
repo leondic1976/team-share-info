@@ -44,7 +44,7 @@ export function HolidaysTab(): React.JSX.Element {
         </Button>
       </div>
       {err && <p className="text-sm text-urgent">{err}</p>}
-      <Card className="divide-y divide-border">
+      <Card className="hover-rows divide-y divide-border">
         {(q.data ?? []).map((h) => (
           <div key={h.date} className="flex items-center gap-3 px-4 py-1.5 text-sm">
             <span className="w-28 text-muted-foreground">{h.date}</span>

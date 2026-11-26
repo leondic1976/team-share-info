@@ -38,7 +38,7 @@ export function TemplatesTab(): React.JSX.Element {
         <CardHeader>
           <CardTitle>양식 목록</CardTitle>
         </CardHeader>
-        <div className="divide-y divide-border">
+        <div className="hover-rows divide-y divide-border">
           {(q.data ?? []).map((t) => (
             <div key={t.id} className="px-4 py-2 text-sm">
               <div className="flex items-center gap-2">

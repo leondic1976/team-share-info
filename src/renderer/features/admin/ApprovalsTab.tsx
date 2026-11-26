@@ -35,7 +35,7 @@ export function ApprovalsTab(): React.JSX.Element {
   return (
     <div className="space-y-2">
       {err && <p className="text-sm text-urgent">{err}</p>}
-      <Card className="divide-y divide-border">
+      <Card className="hover-rows divide-y divide-border">
         {list.map((r) => (
           <div key={r.id} className="flex items-center gap-4 px-4 py-3" data-testid="join-request">
             <div className="min-w-0 flex-1">

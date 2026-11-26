@@ -180,7 +180,7 @@ export function BackupCard(): React.JSX.Element {
         <div className="space-y-1">
           <div className="text-sm font-medium">백업 목록</div>
           {snaps.length ? (
-            <ul className="max-h-64 divide-y divide-border overflow-y-auto rounded-md border border-border text-sm" data-testid="backup-rows">
+            <ul className="hover-rows max-h-64 divide-y divide-border overflow-y-auto rounded-md border border-border text-sm" data-testid="backup-rows">
               {snaps.map((s) => (
                 <li key={s.id} className="flex items-center gap-2 px-3 py-1.5" data-testid={`backup-row-${s.kind}`}>
                   <span className="tabular-nums">{when(s.at)}</span>

@@ -99,7 +99,7 @@ export function MemberOrderCard(): React.JSX.Element {
                 <span className="ml-auto truncate text-xs font-normal text-muted-foreground">{open === key ? '접기' : list.map((m) => m.name).join(' · ')}</span>
               </button>
               {open === key && (
-                <ol className="divide-y divide-border border-t border-border">
+                <ol className="hover-rows divide-y divide-border border-t border-border">
                   {list.map((m, i) => (
                     <li key={m.id} className="flex items-center gap-2 px-3 py-1" data-testid={`order-row-${m.name}`}>
                       <span className="w-6 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>

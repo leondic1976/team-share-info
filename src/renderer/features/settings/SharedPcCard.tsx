@@ -332,7 +332,7 @@ export function SharedPcCard(): React.JSX.Element | null {
                 사용자를 지우거나 PIN을 초기화하려면 그 줄의 단추를 누르세요{ownerHasPin ? '(PC 책임자의 PIN을 묻습니다)' : ''}. {ownerHasPin ? '사용자 추가·시간 바꾸기·끄기는 아래 칸에 PC 책임자의 PIN을 넣고 누릅니다. ' : ''}사용자를 지우면 이 PC에 있던 그 사람의 개인 자료와 접속 정보를{' '}
                 {KEEP}일 동안 보관했다가 완전히 지웁니다. 그 안에는 아래 &quot;지운 사용자&quot;에서 복구할 수 있습니다. 서버의 계정은 그대로 남습니다(관리자가 관리 화면에서 사용 중지). 지금 사용 중인 사용자와 PC 책임자는 여기서 지울 수 없습니다.
               </p>
-              <ul className="divide-y divide-border rounded-md border border-border text-sm" data-testid="seat-rows">
+              <ul className="hover-rows divide-y divide-border rounded-md border border-border text-sm" data-testid="seat-rows">
                 {st.seats.map((s) => (
                   <li key={s.id} className="flex items-center gap-2 px-3 py-1.5">
                     <span className="font-medium">{s.name}</span>

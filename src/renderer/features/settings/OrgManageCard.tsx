@@ -309,7 +309,7 @@ export function OrgManageCard(): React.JSX.Element | null {
               {flat.length === 0 ? (
                 <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">부서가 없습니다. 부서 추가를 눌러 만드세요.</p>
               ) : (
-                <div className="divide-y divide-border rounded-md border border-border">
+                <div className="hover-rows divide-y divide-border rounded-md border border-border">
                   {flat.map((n) => {
                     const sib = siblingsOf(n)
                     const i = sib.findIndex((x) => x.dept.id === n.dept.id)
@@ -368,7 +368,7 @@ export function OrgManageCard(): React.JSX.Element | null {
                     <div className="border-b border-border bg-muted px-3 py-1 text-xs font-semibold">
                       {g.name} <span className="font-normal text-muted-foreground">{g.list.length}명</span>
                     </div>
-                    <div className="divide-y divide-border">
+                    <div className="hover-rows divide-y divide-border">
                       {g.list.map((m, i) => (
                         <div key={m.id} className="flex items-center gap-1 px-2 py-1 text-sm" data-testid={`org-member-row-${m.name}`}>
                           <Button size="icon-sm" variant="ghost" aria-label={`${m.name} 위로`} disabled={i === 0 || m.id === g.headId || g.list[i - 1]?.id === g.headId} onClick={() => moveMember(g.list, g.deptId, i, -1)}>
