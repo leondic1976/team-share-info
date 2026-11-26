@@ -136,7 +136,7 @@ describe('메신저: edit and delete (shown to everybody), pasted images wait fo
     await a.page.getByRole('button', { name: '이모티콘' }).click()
   }, 60000)
 
-  it('a new message while the window is hidden: a card at the top right, the 팀뿌요 sound, a click opens it', async () => {
+  it('a new message while the window is hidden: a card at the top right, the chime and "새로운 메시지 도착입니다.", a click opens it', async () => {
     const mainOf = (l: Launched) => l.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => !w.webContents.getURL().includes('/popup/'))!.id)
     const bMain = await mainOf(b)
     await b.app.evaluate(({ BrowserWindow }, id) => BrowserWindow.fromId(id)!.hide(), bMain)
@@ -158,6 +158,8 @@ describe('메신저: edit and delete (shown to everybody), pasted images wait fo
     expect(pos.right).toBeLessThan(40)
     expect(pos.top).toBe(40)
     await expect.poll(() => b.page.evaluate(() => (window as unknown as { __thSounds?: number }).__thSounds ?? 0), { timeout: 5000 }).toBeGreaterThan(before)
+    // a message is announced as a message (지시 131)
+    expect(await b.page.evaluate(() => (window as unknown as { __thSoundTexts?: string[] }).__thSoundTexts?.at(-1))).toBe('새로운 메시지 도착입니다.')
     // a second message of the same conversation adds to the same card
     await sendText(a.page, '두번째E2E')
     await expect.poll(() => w.getByTestId('preview-card').count(), { timeout: 10000 }).toBe(1)
@@ -190,11 +192,15 @@ describe('메신저: edit and delete (shown to everybody), pasted images wait fo
     expect(await cards()).toContain('새 일정 · 서버관리자')
     const sounds = () => b.page.evaluate(() => (window as unknown as { __thSounds?: number }).__thSounds ?? 0)
     await expect.poll(sounds, { timeout: 5000 }).toBeGreaterThanOrEqual(before + 1)
+    // an event is not announced as a message (지시 131)
+    const lastText = () => b.page.evaluate(() => (window as unknown as { __thSoundTexts?: string[] }).__thSoundTexts?.at(-1))
+    expect(await lastText()).toBe('새로운 알림 도착입니다.')
     // sounds within 1.5 s of each other are played once
     await new Promise((r) => setTimeout(r, 1700))
     expect(await post('/api/notices', { level: 'important', title: '중요공지알림E2E', bodyHtml: '<p>x</p>', scope: TEAM, requireAck: false, replyOptions: [], pinned: false, publishAt: null, expiresAt: null, renotifyMinutes: null, attachmentIds: [] })).toBe(200)
     await expect.poll(cards, { timeout: 15000 }).toContain('중요공지알림E2E')
     await expect.poll(sounds, { timeout: 5000 }).toBeGreaterThanOrEqual(before + 2)
+    expect(await lastText()).toBe('새로운 알림 도착입니다.')
     // the one who registered it gets nothing for their own event
     expect(await a.app.evaluate(() => ((globalThis as unknown as { __teamhubPreviews?: { title: string }[] }).__teamhubPreviews ?? []).filter((x) => x.title.startsWith('새 일정')).length)).toBe(0)
   }, 60000)

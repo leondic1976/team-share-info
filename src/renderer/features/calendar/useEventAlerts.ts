@@ -13,7 +13,7 @@ const NEW_MS = 3 * 60_000
 
 /**
  * 일정 등록 (지시 85): when somebody else registers a shared event this member can see, the card
- * near the tray and the "팀뿌요~" sound. Changes of an existing event and 근무현황 entries (부재,
+ * near the tray and the alert sound ("새로운 알림 도착입니다."). Changes of an existing event and 근무현황 entries (부재,
  * the whole team sees those) do not alert.
  */
 export function useEventAlerts(): void {

@@ -1,32 +1,43 @@
 /**
- * The sound of a new message (지시 83): a short two-note chime and a voice that says "팀뿌요~".
- * The voice is the Korean voice of Windows (Microsoft Heami, part of Korean Windows), so no
- * recording is shipped. Without a Korean voice only the chime plays.
+ * The alert sound (지시 83, 131): a short soft chime made with Web Audio, followed right after by
+ * a voice that says "새로운 메시지 도착입니다." (messages, notes) or "새로운 알림 도착입니다."
+ * (every other alert). The voice is the Korean voice of Windows (Microsoft Heami, part of Korean
+ * Windows), so no recording is shipped. Without a Korean voice only the chime plays.
  */
+import { alertSentence, soundPlays, type AlertSoundKind } from '@shared/alert-sound'
 
-let last = 0
+let last = -Infinity
 
+/** length of the chime in seconds; the voice starts as it fades */
+const CHIME_S = 0.5
+
+/** Two soft bell-like tones (G5, then C6), each a sine with a quiet octave above it. */
 function chime(): void {
   try {
     const ctx = new AudioContext()
     const notes = [
-      [1318.5, 0],
-      [1760, 0.11]
+      [783.99, 0],
+      [1046.5, 0.16]
     ] as const
     for (const [f, t] of notes) {
-      const o = ctx.createOscillator()
-      const g = ctx.createGain()
-      o.type = 'sine'
-      o.frequency.value = f
-      const at = ctx.currentTime + t
-      g.gain.setValueAtTime(0.0001, at)
-      g.gain.exponentialRampToValueAtTime(0.12, at + 0.015)
-      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.22)
-      o.connect(g).connect(ctx.destination)
-      o.start(at)
-      o.stop(at + 0.25)
+      for (const [mult, peak] of [
+        [1, 0.1],
+        [2, 0.025]
+      ] as const) {
+        const o = ctx.createOscillator()
+        const g = ctx.createGain()
+        o.type = 'sine'
+        o.frequency.value = f * mult
+        const at = ctx.currentTime + t
+        g.gain.setValueAtTime(0.0001, at)
+        g.gain.exponentialRampToValueAtTime(peak, at + 0.02)
+        g.gain.exponentialRampToValueAtTime(0.0001, at + 0.34)
+        o.connect(g).connect(ctx.destination)
+        o.start(at)
+        o.stop(at + 0.36)
+      }
     }
-    setTimeout(() => void ctx.close(), 800)
+    setTimeout(() => void ctx.close(), 1000)
   } catch {
     // no audio device
   }
@@ -37,17 +48,17 @@ function koreanVoice(): SpeechSynthesisVoice | null {
   return voices.find((v) => v.lang.toLowerCase().startsWith('ko') && /heami/i.test(v.name)) ?? voices.find((v) => v.lang.toLowerCase().startsWith('ko')) ?? null
 }
 
-function say(): void {
+function say(text: string): void {
   const synth = window.speechSynthesis
   if (!synth) return
   const speak = (): void => {
     const voice = koreanVoice()
+    // no Korean voice installed: the chime alone
     if (!voice) return
-    const u = new SpeechSynthesisUtterance('팀뿌요~')
+    const u = new SpeechSynthesisUtterance(text)
     u.voice = voice
     u.lang = voice.lang
-    u.pitch = 1.7
-    u.rate = 1.25
+    u.rate = 1.05
     u.volume = 0.9
     synth.cancel()
     synth.speak(u)
@@ -57,14 +68,16 @@ function say(): void {
   else synth.addEventListener('voiceschanged', speak, { once: true })
 }
 
-/** Plays the message sound; several messages in a moment make one sound. */
-export function playMessageSound(): void {
+/** Plays the alert sound; several alerts in a moment make one sound (the first one's sentence). */
+export function playMessageSound(kind: AlertSoundKind = 'message'): void {
   const now = Date.now()
-  if (now - last < 1500) return
+  if (!soundPlays(now, last)) return
   last = now
-  // counted for the tests (E2E reads it)
-  const w = window as unknown as { __thSounds?: number }
+  const text = alertSentence(kind)
+  // counted for the tests (E2E reads them)
+  const w = window as unknown as { __thSounds?: number; __thSoundTexts?: string[] }
   w.__thSounds = (w.__thSounds ?? 0) + 1
+  ;(w.__thSoundTexts ??= []).push(text)
   chime()
-  setTimeout(say, 260)
+  setTimeout(() => say(text), CHIME_S * 1000)
 }
