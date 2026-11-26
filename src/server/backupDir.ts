@@ -3,6 +3,9 @@ import { mkdir, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, parse, relative, resolve } from 'node:path'
 import { isProtectedPath } from '../shared/fm'
+import { longPath } from '../node/longpath'
+
+export { longPath }
 
 /**
  * Checking a new server backup folder (관리 → 조직·운영 설정 → 백업 위치) before it is saved:
@@ -22,8 +25,8 @@ const env = (): Parameters<typeof isProtectedPath>[1] => ({
   systemRoot: process.env.SystemRoot ?? 'C:\\Windows',
   programFiles: [process.env.ProgramFiles ?? 'C:\\Program Files', process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'],
   programData: process.env.ProgramData ?? 'C:\\ProgramData',
-  usersDir: join(homedir(), '..'),
-  home: homedir()
+  usersDir: join(longPath(homedir()), '..'),
+  home: longPath(homedir())
 })
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -50,7 +53,7 @@ export async function checkBackupDir(dir: string, dataDir: string, opts: { timeo
   if (!unc && !/^[a-z]:[\\/]/i.test(d)) return '백업 위치는 전체 경로(예: E:\\TeamHub 백업 또는 \\\\NAS\\공유\\TeamHub 백업)로 적으세요.'
   if (/[<>"|?*]/.test(d.slice(2))) return '백업 위치에 쓸 수 없는 문자(< > " | ? *)가 있습니다.'
   const isProtected = opts.isProtected ?? ((p: string) => isProtectedPath(p, env()))
-  if (isProtected(d)) return '드라이브 맨 위나 시스템 폴더, 다른 사용자 폴더에는 백업할 수 없습니다. 그 안에 폴더를 만들어 고르세요(예: E:\\TeamHub 백업).'
+  if (isProtected(unc ? d : longPath(d))) return '드라이브 맨 위나 시스템 폴더, 다른 사용자 폴더에는 백업할 수 없습니다. 그 안에 폴더를 만들어 고르세요(예: E:\\TeamHub 백업).'
   if (!unc && !existsSync(parse(resolve(d)).root)) return `${d.slice(0, 2)} 드라이브를 찾을 수 없습니다. USB나 외장 드라이브라면 연결한 뒤 저장하세요.`
   // the live files folder of the server is not a place for copies of itself
   if (inside(d, join(dataDir, 'files'))) return '서버 자료의 files 폴더 안에는 백업할 수 없습니다. 다른 폴더를 고르세요.'

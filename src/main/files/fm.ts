@@ -1,4 +1,5 @@
 import { app, shell } from 'electron'
+import { longPath } from '../../node/longpath'
 import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import os from 'node:os'
@@ -11,10 +12,10 @@ const env = () => ({
   systemRoot: process.env.SystemRoot ?? 'C:\\Windows',
   programFiles: [process.env.ProgramFiles ?? 'C:\\Program Files', process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'],
   programData: process.env.ProgramData ?? 'C:\\ProgramData',
-  usersDir: join(os.homedir(), '..'),
-  home: os.homedir()
+  usersDir: join(longPath(os.homedir()), '..'),
+  home: longPath(os.homedir())
 })
-export const isProtected = (p: string): boolean => isProtectedPath(p, env())
+export const isProtected = (p: string): boolean => isProtectedPath(longPath(p), env())
 
 const HIDDEN = new Set(['desktop.ini', 'thumbs.db', '$recycle.bin', 'system volume information', 'ntuser.dat', 'pagefile.sys', 'hiberfil.sys', 'swapfile.sys', 'dumpstack.log.tmp'])
 const isHidden = (name: string): boolean => name.startsWith('.') || name.startsWith('~$') || HIDDEN.has(name.toLowerCase()) || /^ntuser\./i.test(name)

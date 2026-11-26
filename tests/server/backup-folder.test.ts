@@ -3,8 +3,9 @@ import { DatabaseSync } from 'node:sqlite'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { createTestServer, type TestServer } from './helpers'
-import { checkBackupDir } from '../../src/server/backupDir'
+import { checkBackupDir, longPath } from '../../src/server/backupDir'
 import { installBackup, listBackups, runBackup } from '../../src/server/backup'
 
 /** Changing the server backup folder and restoring right after (instruction 132). */
@@ -39,6 +40,16 @@ describe('backup folder check', () => {
     expect(await checkBackupDir(ok, data)).toBeNull()
     expect(existsSync(ok)).toBe(true)
     expect(readdirSync(ok)).toEqual([]) // the write test leaves nothing
+  })
+
+  it('a path given in its 8.3 short form (like RUNNER~1) is treated like its long form', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'th-long name folder-'))
+    // the short name Windows gives the folder (none when 8.3 names are off on that drive)
+    const short = spawnSync('cmd.exe', ['/d', '/c', `for %I in ("${dir}") do @echo %~sI`], { windowsVerbatimArguments: true }).stdout.toString().trim()
+    expect(longPath(short).toLowerCase()).toBe(longPath(dir).toLowerCase())
+    expect(longPath(join(short, '새 백업')).toLowerCase()).toBe(join(longPath(dir), '새 백업').toLowerCase())
+    expect(await checkBackupDir(join(short, 'TeamHub 백업'), join(dir, 'server-data'))).toBeNull()
+    rmSync(dir, { recursive: true, force: true })
   })
 
   it('a network folder that is not there is refused within the time limit', async () => {
