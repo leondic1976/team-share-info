@@ -15,6 +15,7 @@ import type { NoticeLevel, NoticeSummaryDto } from '@shared/schemas/notices'
 import type { ScopeInput } from '@shared/schemas/scope'
 import { cn } from '@renderer/lib/utils'
 import { confirmPii } from '@renderer/lib/pii'
+import type { PiiAck } from '@shared/pii'
 import { DateTimeInput } from '@renderer/components/DateTimeInput'
 
 const LEVELS: { v: NoticeLevel; label: string; hint: string; cls: string }[] = [
@@ -60,7 +61,7 @@ export function NoticeCompose({ open, onClose, onCreated }: { open: boolean; onC
   }
 
   const send = useMutation({
-    mutationFn: () =>
+    mutationFn: (pii: PiiAck) =>
       sendOrQueue<NoticeSummaryDto>({
         kind: 'notice',
         label: `공지: ${title.trim().slice(0, 60)}`,
@@ -81,7 +82,8 @@ export function NoticeCompose({ open, onClose, onCreated }: { open: boolean; onC
           publishAt: schedule ? new Date(schedule).getTime() : null,
           expiresAt: expires ? new Date(expires).getTime() : null,
           renotifyMinutes: level === 'urgent' && renotify ? Number(renotify) : null,
-          attachmentIds: atts.map((a) => a.id)
+          attachmentIds: atts.map((a) => a.id),
+          ...pii
         }
       }),
     onSuccess: (r) => {
@@ -105,7 +107,12 @@ export function NoticeCompose({ open, onClose, onCreated }: { open: boolean; onC
           <Button variant="ghost" onClick={onClose}>
             취소
           </Button>
-          <Button onClick={() => confirmPii([title, body], '공지를 받는 모든 사람이 보게 되며,') && send.mutate()} disabled={!title.trim() || !scopeIsValid(scope) || send.isPending} variant={level === 'urgent' ? 'destructive' : 'default'}>
+          <Button
+            onClick={() => {
+              const pii = confirmPii([title, body], '공지를 받는 모든 사람이 보게 되며,')
+              if (pii) send.mutate(pii)
+            }}
+            disabled={!title.trim() || !scopeIsValid(scope) || send.isPending} variant={level === 'urgent' ? 'destructive' : 'default'}>
             <Send /> {schedule ? '예약 발송' : level === 'urgent' ? '긴급 발송' : '게시'}
           </Button>
         </>

@@ -4,7 +4,9 @@ export class AppError extends Error {
   constructor(
     readonly code: ErrorCode,
     message: string,
-    readonly status = 400
+    readonly status = 400,
+    /** extra facts for the client, sent as `error.details` (e.g. the kinds of PII_UNCONFIRMED) */
+    readonly details?: Record<string, unknown>
   ) {
     super(message)
   }

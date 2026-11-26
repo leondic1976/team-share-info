@@ -67,6 +67,64 @@ describe('M5 messenger and notes', () => {
     await expect.poll(() => a.page.getByTestId('message-list').textContent(), { timeout: 10000 }).toContain('반갑습니다')
   })
 
+  it('personal information: asked before sending, and checked on the server too', async () => {
+    const box = b.page.getByLabel('메시지 입력')
+    // no: nothing is sent, the text stays
+    let asked = ''
+    b.page.once('dialog', (d) => {
+      asked = d.message()
+      void d.dismiss()
+    })
+    await sendText(b.page, '연락처 010-1234-5678 E2E')
+    await expect.poll(() => asked).toContain('휴대폰 번호 1건: 010-****-****')
+    expect(await box.inputValue()).toBe('연락처 010-1234-5678 E2E')
+    // yes: it goes with the confirmation, and the server takes it
+    b.page.once('dialog', (d) => void d.accept())
+    await box.press('Enter')
+    await expect.poll(() => a.page.getByTestId('message-list').textContent(), { timeout: 10000 }).toContain('연락처 010-1234-5678 E2E')
+
+    const convId = (await b.page.evaluate(() => window.location.hash)).split('/chat/')[1]!
+    const path = `/api/conversations/${convId}/messages`
+    // a program that leaves the question out is refused by the server
+    const raw = await b.page.evaluate(async (path) => {
+      const c = await window.teamhub.invoke('conn:get', undefined as never)
+      const r = await fetch(`${c.serverUrl}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.deviceId}.${c.deviceKey}`, 'X-Win-User': encodeURIComponent(c.winUser), 'X-Protocol': '2' },
+        body: JSON.stringify({ body: '몰래 보냄 010-2222-3333', attachmentIds: [] })
+      })
+      const j = (await r.json()) as { error?: { code: string; details?: { found: { kind: string }[] } } }
+      return { status: r.status, code: j.error?.code, kinds: j.error?.details?.found.map((f) => f.kind) }
+    }, path)
+    expect(raw).toEqual({ status: 422, code: 'PII_UNCONFIRMED', kinds: ['mobile'] })
+    expect(await a.page.getByTestId('message-list').textContent()).not.toContain('몰래 보냄')
+
+    // kept on this PC without the confirmation (e.g. by an older version): when it is sent the
+    // server refuses it, the PC asks the same question and sends it again once confirmed
+    await b.page.evaluate(async (path) => {
+      const c = await window.teamhub.invoke('conn:get', undefined as never)
+      await window.teamhub.invoke('local:outbox.add', {
+        id: crypto.randomUUID(),
+        owner: c.memberId!,
+        kind: 'chat.message',
+        label: '보관된 메시지',
+        body: JSON.stringify({ method: 'POST', path, body: { body: '보관된 메시지 010-3333-4444', attachmentIds: [] } })
+      })
+    }, path)
+    let askedAgain = ''
+    b.page.once('dialog', (d) => {
+      askedAgain = d.message()
+      void d.accept()
+    })
+    // connecting again sends what is kept
+    await b.page.reload()
+    await expect.poll(() => askedAgain, { timeout: 20000 }).toContain('휴대폰 번호 1건')
+    await expect.poll(() => a.page.getByTestId('message-list').textContent(), { timeout: 15000 }).toContain('보관된 메시지 010-3333-4444')
+    await b.page.getByTestId('conn-state').filter({ hasText: '서버 연결됨' }).waitFor({ timeout: 20000 })
+    await go(b.page, '/chat')
+    await b.page.getByTestId('conv-서버관리자').click()
+  }, 90000)
+
   it('file message', async () => {
     writeFileSync(attach, 'attachment body')
     await a.page.getByLabel('보낼 파일').setInputFiles(attach)

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { detectPii, piiMessage, plainText } from '../../src/shared/pii'
+import { detectPii, detectPiiIn, isPiiRefusal, piiCounts, piiMessage, plainText } from '../../src/shared/pii'
 
 const kinds = (t: string): string[] => detectPii(t).map((f) => f.kind)
 
@@ -42,6 +42,26 @@ describe('personal information check before sending', () => {
     const msg = piiMessage(detectPii('010-1234-5678 / 010-2222-3333 / 010-4444-5555 / 010-6666-7777'), '받는 사람 모두가 보게 되며,')
     expect(msg).toContain('· 휴대폰 번호 4건: 010-****-****, 010-****-****, 010-****-**** …')
     expect(msg).toContain('그래도 보낼까요?')
+  })
+
+  it('checks the parts of one write together, the same way on the PC and on the server', () => {
+    // title, rich-text body, empty poll fields: each read as plain text, joined by lines
+    const found = detectPiiIn(['회의', '<p>담당</p><p>010-1234-5678</p>', null, undefined, '900101-1234567'])
+    expect(found.map((f) => [f.kind, f.count])).toEqual([
+      ['rrn', 1],
+      ['mobile', 1]
+    ])
+    expect(detectPiiIn([])).toEqual([])
+  })
+
+  it('logs only kinds and counts, and knows the refusal the server sends', () => {
+    const found = detectPii('010-1234-5678, 010-2222-3333, hong@example.go.kr')
+    expect(piiCounts(found)).toEqual({ mobile: 2, email: 1 })
+    expect(JSON.stringify(piiCounts(found))).not.toMatch(/010|hong/)
+    expect(isPiiRefusal({ found })).toBe(true)
+    expect(isPiiRefusal(JSON.parse(JSON.stringify({ found })))).toBe(true)
+    for (const bad of [undefined, null, {}, { found: 'x' }, { found: [{ kind: 'nope', count: 1, samples: [] }] }, { found: [{ kind: 'toString', count: 1, samples: [] }] }, { found: [{ kind: 'rrn', count: 1.5, samples: [] }] }, { found: [{ kind: 'rrn', count: 1 }] }])
+      expect(isPiiRefusal(bad), JSON.stringify(bad)).toBe(false)
   })
 })
 

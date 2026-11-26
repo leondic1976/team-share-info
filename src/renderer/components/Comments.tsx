@@ -10,6 +10,7 @@ import { Button } from './ui/button'
 import { MemberLink } from './MemberLink'
 import { Textarea } from './ui/input'
 import { confirmPii } from '@renderer/lib/pii'
+import type { PiiAck } from '@shared/pii'
 
 /** Comment thread of a board post (6.9). */
 export function Comments({ type, id }: { type: 'post'; id: string }): React.JSX.Element {
@@ -24,7 +25,7 @@ export function Comments({ type, id }: { type: 'post'; id: string }): React.JSX.
     void qc.invalidateQueries({ queryKey: ['boards'] })
   }
   const add = useMutation({
-    mutationFn: () => sendOrQueue({ kind: 'comment', label: `댓글: ${body.trim().slice(0, 60)}`, path: `/api/comments/${type}/${id}`, body: { body } }),
+    mutationFn: (pii: PiiAck) => sendOrQueue({ kind: 'comment', label: `댓글: ${body.trim().slice(0, 60)}`, path: `/api/comments/${type}/${id}`, body: { body, ...pii } }),
     onSuccess: () => {
       setBody('')
       setErr('')
@@ -52,7 +53,10 @@ export function Comments({ type, id }: { type: 'post'; id: string }): React.JSX.
       ))}
       <div className="flex gap-2">
         <Textarea aria-label="댓글 입력" className="min-h-10" rows={2} value={body} onChange={(e) => setBody(e.target.value)} placeholder="댓글을 입력하세요" />
-        <Button size="icon" aria-label="댓글 등록" onClick={() => confirmPii([body], '이 글을 보는 모든 사람이 보게 되며,') && add.mutate()} disabled={!body.trim() || add.isPending}>
+        <Button size="icon" aria-label="댓글 등록" onClick={() => {
+            const pii = confirmPii([body], '이 글을 보는 모든 사람이 보게 되며,')
+            if (pii) add.mutate(pii)
+          }} disabled={!body.trim() || add.isPending}>
           <Send />
         </Button>
       </div>

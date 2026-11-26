@@ -26,6 +26,7 @@ import type { ScopeInput } from '@shared/schemas/scope'
 import { cn } from '@renderer/lib/utils'
 import { FavoriteStar } from '@renderer/features/memos/widgets'
 import { confirmPii } from '@renderer/lib/pii'
+import type { PiiAck } from '@shared/pii'
 import { DateTimeInput } from '@renderer/components/DateTimeInput'
 import { RoleMark } from '@renderer/components/RoleMark'
 
@@ -112,7 +113,7 @@ function PostCompose({ board, onClose, onCreated }: { board: BoardDto; onClose: 
   const [closes, setCloses] = useState('')
   const [err, setErr] = useState('')
   const save = useMutation({
-    mutationFn: () =>
+    mutationFn: (pii: PiiAck) =>
       sendOrQueue<{ id: string }>({
         kind: 'post',
         label: `게시글(${board.name}): ${title.trim().slice(0, 60)}`,
@@ -123,7 +124,8 @@ function PostCompose({ board, onClose, onCreated }: { board: BoardDto; onClose: 
           bodyHtml: body,
           pinned,
           attachmentIds: atts.map((a) => a.id),
-          poll: withPoll ? { question: question || title, options: options.map((o) => o.trim()).filter(Boolean), multiple, anonymous, closesAt: closes ? fromInputValue(closes) : null } : null
+          poll: withPoll ? { question: question || title, options: options.map((o) => o.trim()).filter(Boolean), multiple, anonymous, closesAt: closes ? fromInputValue(closes) : null } : null,
+          ...pii
         }
       }),
     // kept for later (server off): there is no post to open yet
@@ -137,7 +139,13 @@ function PostCompose({ board, onClose, onCreated }: { board: BoardDto; onClose: 
       title={`${board.name}에 글쓰기`}
       width="max-w-3xl"
       footer={
-        <Button onClick={() => confirmPii([title, body, question, ...options], '이 게시판을 보는 모든 사람이 보게 되며,') && save.mutate()} disabled={!title.trim() || save.isPending}>
+        <Button
+          onClick={() => {
+            const pii = confirmPii([title, body, question, ...options], '이 게시판을 보는 모든 사람이 보게 되며,')
+            if (pii) save.mutate(pii)
+          }}
+          disabled={!title.trim() || save.isPending}
+        >
           등록
         </Button>
       }

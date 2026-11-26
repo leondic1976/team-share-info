@@ -1,11 +1,14 @@
 import { PROTOCOL_VERSION } from '@shared/constants'
+import { isPiiRefusal, piiMessage } from '@shared/pii'
 import { useConn } from '@renderer/app/conn-store'
 
 export class ApiError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    readonly status: number
+    readonly status: number,
+    /** `error.details` of the answer, when the server sent any */
+    readonly details?: unknown
   ) {
     super(message)
   }
@@ -64,7 +67,7 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
     throw new ApiError('NETWORK', '서버에 연결할 수 없습니다.', 0)
   }
   const text = await res.text()
-  let json: { data?: T; error?: { code: string; message: string } } = {}
+  let json: { data?: T; error?: { code: string; message: string; details?: unknown } } = {}
   try {
     json = text ? JSON.parse(text) : {}
   } catch {
@@ -75,9 +78,25 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
     const message = json.error?.message ?? `요청이 실패했습니다 (${res.status})`
     if (code === 'UPDATE_REQUIRED') useConn.getState().setState('update-required')
     if (code === 'DEVICE_REVOKED' || code === 'MEMBER_SUSPENDED') useConn.getState().setState('rejected', message)
-    throw new ApiError(code, message, res.status)
+    const details = json.error?.details
+    // the server found personal information that was not confirmed here (e.g. its rules are newer,
+    // or the item was kept by an older version): ask now, the way the PC asks before sending
+    if (code === 'PII_UNCONFIRMED' && isPiiRefusal(details) && !hasPiiAck(opts)) {
+      if (!window.confirm(piiMessage(details.found, '받는 사람 모두가 보게 되며,'))) throw new ApiError('PII_CANCELLED', '보내지 않았습니다.', 0)
+      return request<T>(path, withPiiAck(opts))
+    }
+    throw new ApiError(code, message, res.status, details)
   }
   return json.data as T
+}
+
+const plainObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+function hasPiiAck(opts: RequestOpts): boolean {
+  return (plainObject(opts.body) && opts.body.piiAck === true) || opts.query?.piiAck === 1
+}
+/** The same request with the writer's confirmation: in the JSON body, else in the query. */
+function withPiiAck(opts: RequestOpts): RequestOpts {
+  return plainObject(opts.body) ? { ...opts, body: { ...opts.body, piiAck: true } } : { ...opts, query: { ...opts.query, piiAck: 1 } }
 }
 
 export const api = {

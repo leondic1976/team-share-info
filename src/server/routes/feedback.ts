@@ -21,6 +21,7 @@ import {
   type FeedbackItemRow
 } from '../feedback'
 import { parse, ok } from '../validate'
+import { requirePiiAck } from '../pii'
 
 const MAX_PER_DAY = 10
 const MIN_GAP_MS = 60_000
@@ -69,7 +70,11 @@ export function registerFeedbackRoutes(app: FastifyInstance, ctx: ServerContext,
     return toItemDto(row)
   }
 
-  app.post('/api/feedback', { ...auth, bodyLimit: BODY_LIMIT }, async (req) => ok(receive(req, parse(feedbackItemSchema, req.body))))
+  app.post('/api/feedback', { ...auth, bodyLimit: BODY_LIMIT }, async (req) => {
+    const item = parse(feedbackItemSchema, req.body)
+    requirePiiAck(ctx, req, 'feedback', [item.title, item.body, item.author])
+    return ok(receive(req, item))
+  })
 
   app.get('/api/feedback/mine', auth, async (req) =>
     ok(ctx.db.all<FeedbackItemRow>('SELECT * FROM feedback_items WHERE member_id = ? ORDER BY received_at DESC LIMIT 50', [req.member.id]).map((r) => toItemDto(r)))

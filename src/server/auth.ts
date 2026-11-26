@@ -14,6 +14,8 @@ declare module 'fastify' {
     member: MemberRow
     device: DeviceRow
     clientIp: string
+    /** X-Protocol of the calling program (undefined: it did not say, e.g. very old builds) */
+    clientProtocol?: number
   }
 }
 
@@ -72,6 +74,7 @@ export function makeRequireAuth(ctx: ServerContext): preHandlerAsyncHookHandler 
     const r = authenticate(ctx, { ...cred, winUser, ip: req.ip, protocol, appVersion })
     req.member = r.member
     req.device = r.device
+    req.clientProtocol = protocol !== undefined && Number.isFinite(protocol) ? protocol : undefined
     const uid = req.headers['x-pc-uid']
     if (!r.device.pc_uid && typeof uid === 'string' && PC_UID_RE.test(uid)) learnPcUid(ctx.db, r.device.id, uid)
     req.clientIp = normalizeIp(req.ip)

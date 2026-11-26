@@ -20,6 +20,7 @@ import { Field } from '@renderer/features/setup/SetupFrame'
 import { api, errorMessage } from '@renderer/lib/api'
 import { DAY, fmtRange, fromInputValue, startOfDay, toInputValue } from '@renderer/lib/dates'
 import { confirmPii } from '@renderer/lib/pii'
+import type { PiiAck } from '@shared/pii'
 import { useDisplayName, useMe } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
 import { cn } from '@renderer/lib/utils'
@@ -92,8 +93,8 @@ function DutyDialog({ board, meId, state, onClose }: { board: DutyBoardDto; meId
     setEnd(v ? Math.max(startOfDay(end - 1), s) + DAY : s + 18 * 3600000)
   }
   const save = useMutation({
-    mutationFn: () => {
-      const body = { type, startAt: start, endAt: end, allDay, place, note }
+    mutationFn: (pii: PiiAck) => {
+      const body = { type, startAt: start, endAt: end, allDay, place, note, ...pii }
       return edit ? api.patch(`/api/duty/${edit.id}`, body) : sendOrQueue({ kind: 'duty', label: `근무현황: ${type}`, path: '/api/duty', body: { ...body, memberId } })
     },
     onSuccess: () => {
@@ -105,7 +106,8 @@ function DutyDialog({ board, meId, state, onClose }: { board: DutyBoardDto; meId
   })
   const submit = (): void => {
     if (end <= start) return setErr(allDay ? '마지막 날이 시작일보다 빠릅니다.' : '끝나는 시각이 시작보다 늦어야 합니다.')
-    if (confirmPii([place, note], '팀 전체가 보게 되며,')) save.mutate()
+    const pii = confirmPii([place, note], '팀 전체가 보게 되며,')
+    if (pii) save.mutate(pii)
   }
   const who = board.members.find((m) => m.id === memberId)
 

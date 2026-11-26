@@ -10,6 +10,7 @@ import { logActivity } from '../activity'
 import { getSection } from '../settings'
 import { isGroupMember } from '../repos/groups'
 import { linkAttachments, registerAttachmentOwner, deleteAttachmentsOf } from './attachments'
+import { requirePiiAck } from '../pii'
 
 interface ConvRow {
   id: string
@@ -361,6 +362,7 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
   app.post('/api/conversations/:id/messages', auth, async (req) => {
     const c = load(req, (req.params as { id: string }).id)
     const input = parse(messageCreateSchema, req.body)
+    requirePiiAck(ctx, req, 'chat.message', [input.body])
     const t = Date.now()
     const out: { id: string; seq: number; kind: MessageDto['kind']; body: string }[] = []
     db.tx(() => {
@@ -424,6 +426,7 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
     if (m.kind !== 'text') throw badRequest('글 메시지만 고칠 수 있습니다.')
     if (Date.now() - m.created_at > MESSAGE_EDIT_WINDOW_MS) throw badRequest('보낸 지 24시간이 지난 메시지는 고칠 수 없습니다.')
     if (body === m.body) return ok({ id })
+    requirePiiAck(ctx, req, 'chat.edit', [body])
     const t = Date.now()
     db.run('UPDATE messages SET body = ?, edited_at = ? WHERE id = ?', [body, t, id])
     const payload: MessageChangedPayload = { conversationId: c.id, id, seq: m.seq, deleted: false }
@@ -492,6 +495,7 @@ export function registerChatRoutes(app: FastifyInstance, ctx: ServerContext, gua
 
   app.post('/api/notes', auth, async (req) => {
     const input = parse(noteCreateSchema, req.body)
+    requirePiiAck(ctx, req, 'note', [input.body])
     const batch = newId()
     const t = Date.now()
     const to = [...new Set(input.toIds)].filter((id) => !!db.get(`SELECT 1 FROM members WHERE id = ? AND status = 'active'`, [id]))

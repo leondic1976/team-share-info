@@ -12,6 +12,7 @@ import { api, errorMessage } from '@renderer/lib/api'
 import { fromInputValue, toInputValue } from '@renderer/lib/dates'
 import { useConn } from '@renderer/app/conn-store'
 import { confirmPii } from '@renderer/lib/pii'
+import type { PiiAck } from '@shared/pii'
 import { DateTimeInput } from '@renderer/components/DateTimeInput'
 import { RoleMark } from '@renderer/components/RoleMark'
 
@@ -29,8 +30,8 @@ export function TeamAlarmsView(): React.JSX.Element {
   const received = useQuery({ queryKey: ['team-alarms', 'received'], queryFn: () => api.get<SentAlarmDto[]>('/api/alarms/received'), enabled: online })
   const send = useMutation({
     // 즉시: the time is taken when 보내기 is pressed (by the server), not when 즉시 was chosen
-    mutationFn: (now: boolean) => api.post<{ ids: string[] }>('/api/alarms', { toIds, fireAt: now ? Date.now() : fireAt, immediate: now, title, body }),
-    onSuccess: (r, now) => {
+    mutationFn: ({ now, pii }: { now: boolean; pii: PiiAck }) => api.post<{ ids: string[] }>('/api/alarms', { toIds, fireAt: now ? Date.now() : fireAt, immediate: now, title, body, ...pii }),
+    onSuccess: (r, { now }) => {
       setMsg(now ? `${r.ids.length}명에게 알람을 즉시 보냈습니다.` : `${r.ids.length}명에게 ${format(fireAt, 'M/d HH:mm')} 알람을 보냈습니다.`)
       setTitle('')
       setBody('')
@@ -65,7 +66,11 @@ export function TeamAlarmsView(): React.JSX.Element {
             </Button>
           </div>
           {immediate && <p className="text-xs text-muted-foreground">보내기를 누르는 바로 그때 울립니다. 시각을 정하려면 즉시를 다시 누르세요.</p>}
-          <Button disabled={!toIds.length || !title.trim() || send.isPending} onClick={() => confirmPii([title, body]) && send.mutate(immediate)}>
+          <Button disabled={!toIds.length || !title.trim() || send.isPending} onClick={() => {
+              const pii = confirmPii([title, body])
+              if (pii) send.mutate({ now: immediate, pii })
+            }}
+          >
             <Send /> {immediate ? '즉시 보내기' : '보내기'}
           </Button>
           {msg && (

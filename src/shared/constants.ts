@@ -7,9 +7,15 @@ export const DISCOVERY_PORT = 47801
 export const DISCOVERY_MAGIC = 'TEAMHUB_DISCOVER_V1'
 
 /** Bump when the client/server wire contract changes incompatibly. */
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
 /** Oldest client protocol the server still accepts. */
 export const MIN_CLIENT_PROTOCOL = 1
+/**
+ * From this client protocol on, the server checks what is sent for personal information
+ * (src/server/pii.ts) and refuses it unless the writer confirmed (`piiAck`). Older clients never
+ * send the acknowledgement; they keep working and only get the check on their own PC.
+ */
+export const PII_CHECK_PROTOCOL = 2
 
 /** The unique value of an installed PC, e.g. A1B2-C3D4-E5F6 (made in the main process, src/main/pcid.ts). */
 export const PC_UID_RE = /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/
@@ -85,6 +91,8 @@ export const ERROR_CODES = {
   LOCKED: 'LOCKED',
   /** a messenger file deleted from the server PC after its retention period (410) */
   FILE_EXPIRED: 'FILE_EXPIRED',
+  /** what is sent looks like personal information and the writer has not confirmed it (422) */
+  PII_UNCONFIRMED: 'PII_UNCONFIRMED',
   INTERNAL: 'INTERNAL'
 } as const
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]
