@@ -5,6 +5,7 @@ import { StatusBar } from './StatusBar'
 import { Button } from '@renderer/components/ui/button'
 import { invoke, onMain } from '@renderer/lib/bridge'
 import type { UpdateState } from '@shared/ipc'
+import { heldBackText } from '@shared/update-policy'
 
 /** Full-screen states where the app cannot be used: device revoked or update required. */
 export function BlockingScreen({ onReset }: { onReset: () => void }): React.JSX.Element {
@@ -46,7 +47,7 @@ export function BlockingScreen({ onReset }: { onReset: () => void }): React.JSX.
               </p>
             ) : (
               <p className="text-sm text-muted-foreground">
-                {upd?.message ?? '자동 업데이트를 사용할 수 없으면 관리자에게 받은 설치 파일로 다시 설치하세요.'}
+                {upd?.heldBack ? heldBackText(upd.heldBack) : (upd?.message ?? '자동 업데이트를 사용할 수 없으면 관리자에게 받은 설치 파일로 다시 설치하세요.')}
                 {serverUrl && (
                   <>
                     <br />

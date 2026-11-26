@@ -5,16 +5,22 @@ import { existsSync, writeFileSync } from 'node:fs'
 import type { UpdateSettings, UpdateState } from '../shared/ipc'
 import { WEB_UPDATE_FEED } from '../shared/constants'
 import { compareVersions, SEMVER_RE } from '../shared/semver'
+import { pickUpdate, SERVER_PC_UPDATE_NOTE, type FeedProbe, type UpdatePick } from '../shared/update-policy'
 import { setQuitting } from './windows/main-window'
 import { stopServer } from './server-host'
 import { localDb } from './localdb'
 import { userDataPath } from './paths'
+import { getMode } from './connection'
+import { lockedRole } from './pcid'
+import { showToast } from './notifications'
 
 /**
  * Auto-update (8, M1-6). Two feeds, same format (electron-updater "generic"):
  *  - web: the public download site (GitHub Pages) — PCs with internet
  *  - lan: the TeamHub server PC (/updates/) — closed networks
  * "auto" asks both and takes the newer version (the site wins a tie).
+ * A member PC never takes a version newer than its server runs (지시 125-①, update-policy.ts):
+ * the server DB and API belong to the server's version, so the server PC updates first.
  *
  * This module decides which feed to use and whether there is anything newer;
  * electron-updater only downloads (hash-checked) and runs the installer.
@@ -63,8 +69,17 @@ export function setUpdateSettings(s: UpdateSettings): void {
   localDb().kv.set('update', s)
 }
 
+/** The server PC (or a PC set up as one) is never limited by a server version. */
+function isServerPc(): boolean {
+  try {
+    return lockedRole() === 'server' || getMode() === 'server'
+  } catch {
+    return false
+  }
+}
+
 function setState(s: UpdateState): void {
-  state = { ...s, source: s.source ?? state.source, checkedAt: s.checkedAt ?? state.checkedAt }
+  state = { ...s, source: s.source ?? state.source, checkedAt: s.checkedAt ?? state.checkedAt, heldBack: s.heldBack ?? state.heldBack, serverPc: isServerPc() }
   for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send('update:state', state)
 }
 
@@ -112,13 +127,31 @@ function init(): void {
         log.info(`update ${i.version} found at start: installing by itself`)
         void installUpdate()
       }, AUTO_INSTALL_NOTICE_MS)
-    } else setState({ status: 'downloaded', version: i.version })
+    } else {
+      setState({ status: 'downloaded', version: i.version })
+      tellServerPcOwner(i.version)
+    }
   })
   autoUpdater.on('error', (e) => setState({ status: 'error', message: friendlyUpdateError(e), version: state.version }))
 }
 
 export function getUpdateState(): UpdateState {
-  return state
+  return { ...state, serverPc: isServerPc() }
+}
+
+/**
+ * On the server PC a newer version waiting there also holds back every member PC: say so once
+ * per version to the person at the server PC (the 최종관리자), with the way to the update card.
+ */
+function tellServerPcOwner(version: string): void {
+  if (!isServerPc()) return
+  try {
+    if (localDb().kv.get<string>('update:serverPcNotice') === version) return
+    localDb().kv.set('update:serverPcNotice', version)
+  } catch {
+    return
+  }
+  showToast({ title: `TeamHub 새 버전 ${version}`, body: `${SERVER_PC_UPDATE_NOTE} 일이 적을 때 설치하고 다시 시작하세요.`, route: '/settings', key: 'update-server-pc' })
 }
 
 type Probe = { reachable: false } | { reachable: true; version: string | null }
@@ -137,26 +170,50 @@ async function probe(feed: string): Promise<Probe> {
   }
 }
 
-type Pick = { kind: 'offer'; feed: string; source: 'web' | 'lan'; version: string } | { kind: 'none'; source?: 'web' | 'lan' } | { kind: 'unreachable' }
+/**
+ * Version the connected server runs, from its /api/hello (no sign-in needed). While the server
+ * does not answer, the version seen at the last connection (the hello the app keeps for showing
+ * the team offline) stands in, so a member PC that is cut off from its server does not move
+ * past it either. null: never seen.
+ */
+async function serverVersionOf(serverUrl: string): Promise<string | null> {
+  const key = `hello:${serverUrl}`
+  try {
+    const r = await net.fetch(`${serverUrl.replace(/\/+$/, '')}/api/hello`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS), cache: 'no-store' })
+    if (r.ok) {
+      const hello = ((await r.json()) as { data?: { version?: unknown } }).data
+      if (hello && typeof hello.version === 'string' && SEMVER_RE.test(hello.version)) {
+        localDb().kv.set(key, { ...(localDb().kv.get<object>(key) ?? {}), ...hello })
+        return hello.version
+      }
+    }
+  } catch {
+    // offline: fall back to what was seen last
+  }
+  try {
+    const v = localDb().kv.get<{ version?: unknown }>(key)?.version
+    return typeof v === 'string' && SEMVER_RE.test(v) ? v : null
+  } catch {
+    return null
+  }
+}
 
-/** Choose the feed for this check: the newest version among the feeds the settings allow. */
-async function chooseFeed(serverUrl: string | null, allFeeds: boolean): Promise<Pick> {
+/** Choose the feed for this check: the newest version among the feeds the settings allow, limited for a member PC. */
+async function chooseFeed(serverUrl: string | null, allFeeds: boolean): Promise<UpdatePick> {
   const s = updateSettings()
   const lan = serverUrl ? `${serverUrl.replace(/\/+$/, '')}/updates/` : null
   const feeds: { feed: string; source: 'web' | 'lan' }[] = []
   if (allFeeds || s.source !== 'lan') feeds.push({ feed: webFeed(), source: 'web' })
   if (lan && (allFeeds || s.source !== 'web')) feeds.push({ feed: lan, source: 'lan' })
-  const probes = await Promise.all(feeds.map((f) => probe(f.feed)))
-  let best: Extract<Pick, { kind: 'offer' }> | null = null
-  let answered: 'web' | 'lan' | undefined
-  for (let i = 0; i < feeds.length; i++) {
+  const memberPc = !!serverUrl && !isServerPc()
+  const [probes, serverVersion] = await Promise.all([Promise.all(feeds.map((f) => probe(f.feed))), memberPc && serverUrl ? serverVersionOf(serverUrl) : Promise.resolve(null)])
+  const answers: FeedProbe[] = feeds.map((f, i) => {
     const p = probes[i]!
-    if (!p.reachable) continue
-    answered ??= feeds[i]!.source
-    if (p.version && (!best || compareVersions(p.version, best.version) > 0)) best = { kind: 'offer', ...feeds[i]!, version: p.version }
-  }
-  if (best) return best
-  return answered ? { kind: 'none', source: answered } : { kind: 'unreachable' }
+    return { ...f, reachable: p.reachable, version: p.reachable ? p.version : null }
+  })
+  const pick = pickUpdate({ current: app.getVersion(), probes: answers, memberPc, serverVersion })
+  if (pick.kind !== 'unreachable' && pick.heldBack) log.info(`update ${pick.heldBack.version} held back: server is at ${pick.heldBack.limit} (${pick.heldBack.basis})`)
+  return pick
 }
 
 function startDownload(): void {
@@ -183,13 +240,14 @@ function startDownload(): void {
 async function runCheck(serverUrl: string | null, download: boolean, allFeeds: boolean): Promise<UpdateState> {
   init()
   // the source shown next to the result belongs to this check, not to an earlier one
-  state = { ...state, source: undefined }
+  state = { ...state, source: undefined, heldBack: undefined }
   setState({ status: 'checking', version: state.version })
   const pick = await chooseFeed(serverUrl, allFeeds)
   if (pick.kind === 'unreachable') {
     setState({ status: 'error', message: '업데이트 받을 곳에 연결하지 못했습니다(인터넷·서버 연결 확인).' })
     return state
   }
+  state = { ...state, heldBack: pick.heldBack }
   if (pick.kind === 'none' || compareVersions(pick.version, app.getVersion()) <= 0) {
     state = { ...state, source: pick.source }
     setState({ status: 'none', checkedAt: Date.now() })
@@ -203,6 +261,7 @@ async function runCheck(serverUrl: string | null, download: boolean, allFeeds: b
   try {
     const r = await autoUpdater.checkForUpdates()
     if (r?.isUpdateAvailable && download) startDownload()
+    else if (r?.isUpdateAvailable) tellServerPcOwner(r.updateInfo.version)
   } catch (e) {
     if (state.status !== 'error') setState({ status: 'error', message: friendlyUpdateError(e) })
   }
