@@ -24,6 +24,7 @@ import type { DocSummaryDto } from '@shared/schemas/docs'
 import { BookOpen } from 'lucide-react'
 import { FavoritesWidget, TodayWorkWidget } from '@renderer/features/memos/widgets'
 import { LiveMeetingsWidget } from '@renderer/features/meetings/MeetingsPage'
+import { AbsentWidget } from '@renderer/features/duty/AbsentWidget'
 import { affiliationText } from '@shared/org'
 import { RoleMark } from '@renderer/components/RoleMark'
 import { byPresence } from '@shared/presence'
@@ -165,6 +166,7 @@ export const WIDGETS: { key: string; label: string; render: () => React.JSX.Elem
   { key: 'meetings', label: '진행 중인 회의', render: () => <LiveMeetingsWidget /> },
   { key: 'mustread', label: '필독 문서', render: () => <MustReadWidget /> },
   { key: 'todaywork', label: '오늘의 업무', render: () => <TodayWorkWidget /> },
+  { key: 'absent', label: '오늘 부재자', render: () => <AbsentWidget /> },
   { key: 'notices', label: '공지', render: () => <NoticesWidget /> },
   { key: 'invites', label: '그룹 초대', render: () => <InvitesWidget /> },
   { key: 'presence', label: '팀원 현황', render: () => <PresenceWidget /> },

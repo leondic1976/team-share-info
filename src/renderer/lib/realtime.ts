@@ -10,7 +10,8 @@ type Listener = (payload: unknown, name: EventName) => void
 /** Query keys refreshed for each event ("events say what changed", 13.7). */
 const INVALIDATE: Partial<Record<EventName, string[][]>> = {
   'presence.changed': [['members']],
-  'member.changed': [['members'], ['me'], ['admin']],
+  // 근무현황 carries the member list too (the home widget 오늘 부재자 keeps it loaded)
+  'member.changed': [['members'], ['me'], ['admin'], ['events', 'duty']],
   'device.changed': [['admin', 'devices']],
   'join.requested': [['admin', 'join-requests'], ['admin', 'status'], ['me']],
   'settings.changed': [['me'], ['hello'], ['admin', 'settings']],
