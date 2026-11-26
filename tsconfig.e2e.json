@@ -15,6 +15,7 @@
     "e2e/**/*",
     "src/shared/**/*",
     "src/node/ledger-files.ts",
+    "src/node/zip.ts",
     "src/preload/*.d.ts"
   ]
 }

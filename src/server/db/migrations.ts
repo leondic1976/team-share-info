@@ -959,5 +959,65 @@ CREATE INDEX idx_attach_owner ON attachments(owner_type, owner_id);
 -- the retention job looks for live message files by age
 CREATE INDEX idx_attach_message_live ON attachments(created_at) WHERE owner_type = 'message' AND expired_at IS NULL;
 `
+  },
+  // 26-31 are reserved for work done in parallel; the runner applies missing ids in any order.
+  {
+    id: 32,
+    name: 'collect',
+    sql: `
+-- 자료 취합 (지시 127): a request to the people of a scope (team / groups / members) to hand in
+-- a file and/or a text by a deadline. The people asked are the audience of the scope minus the
+-- requester (scope.ts), so who joins or leaves a group is asked or not at once.
+-- 양식 files are attachments (owner_type 'collect', owner_id = request); handed-in files are
+-- attachments of the submission (owner_type 'collect_sub'). Both are ordinary server files: in
+-- the backups, and never touched by the messenger file retention (owner_type 'message' only).
+-- deadline_set_at: when the deadline was last set; automatic reminders whose time had already
+-- passed then are not sent. closed_at: 일찍 마감 (no more submissions).
+CREATE TABLE collect_requests (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  deadline_at INTEGER NOT NULL,
+  deadline_set_at INTEGER NOT NULL,
+  allow_late INTEGER NOT NULL DEFAULT 1,
+  submit_mode TEXT NOT NULL DEFAULT 'file' CHECK (submit_mode IN ('file','text','both')),
+  scope_type TEXT NOT NULL CHECK (scope_type IN ('team','group','members')),
+  closed_at INTEGER,
+  created_by TEXT NOT NULL REFERENCES members(id),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE INDEX idx_collect_requests_open ON collect_requests(deadline_at) WHERE deleted_at IS NULL AND closed_at IS NULL;
+CREATE INDEX idx_collect_requests_author ON collect_requests(created_by, created_at);
+-- one per person and request; kind 'na' = 해당 없음 (body = the reason), else body = the text
+CREATE TABLE collect_submissions (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES collect_requests(id) ON DELETE CASCADE,
+  member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('submitted','na')),
+  body TEXT NOT NULL DEFAULT '',
+  submitted_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE (request_id, member_id)
+);
+-- the alert card of a new request reached this person (a PC that was off gets it on connecting)
+CREATE TABLE collect_notified (
+  request_id TEXT NOT NULL REFERENCES collect_requests(id) ON DELETE CASCADE,
+  member_id TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (request_id, member_id)
+);
+-- automatic reminders sent (kind 'day' | 'hour' for that deadline): once each, also across restarts
+CREATE TABLE collect_reminders (
+  request_id TEXT NOT NULL REFERENCES collect_requests(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  deadline_at INTEGER NOT NULL,
+  sent_at INTEGER NOT NULL,
+  sent_count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (request_id, kind, deadline_at)
+);
+`
   }
 ]

@@ -51,6 +51,7 @@ export type EventName =
   | 'ledger.changed'
   | 'command.changed'
   | 'command.drill'
+  | 'collect.changed'
   | 'plugin.invite'
   | 'meeting.invite'
   | 'meeting.changed'

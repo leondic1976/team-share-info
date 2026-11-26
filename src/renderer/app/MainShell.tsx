@@ -40,6 +40,7 @@ import { usePluginInvites } from '@renderer/features/plugins/usePluginInvites'
 import { MeetingsPage, useLiveMeetings, useMeetingAlerts } from '@renderer/features/meetings/MeetingsPage'
 import { useEventAlerts } from '@renderer/features/calendar/useEventAlerts'
 import { usePluginInventory } from './usePluginInventory'
+import { useCollectAlerts, useCollectSummary } from '@renderer/features/collect/useCollect'
 
 // Pages load when first opened: a smaller start-up bundle and less idle memory (11장).
 const SettingsPage = lazy(() => import('@renderer/features/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })))
@@ -52,6 +53,7 @@ const FilesPage = lazy(() => import('@renderer/features/files/FilesPage').then((
 const ChatPage = lazy(() => import('@renderer/features/chat/ChatPage').then((m) => ({ default: m.ChatPage })))
 const BoardsPage = lazy(() => import('@renderer/features/boards/BoardsPage').then((m) => ({ default: m.BoardsPage })))
 const DutyPage = lazy(() => import('@renderer/features/duty/DutyPage').then((m) => ({ default: m.DutyPage })))
+const CollectPage = lazy(() => import('@renderer/features/collect/CollectPage').then((m) => ({ default: m.CollectPage })))
 const OrgChartPage = lazy(() => import('@renderer/features/org/OrgChartPage').then((m) => ({ default: m.OrgChartPage })))
 const DirectoryPage = lazy(() => import('@renderer/features/directory/DirectoryPage').then((m) => ({ default: m.DirectoryPage })))
 const DocsPage = lazy(() => import('@renderer/features/docs/DocsPage').then((m) => ({ default: m.DocsPage })))
@@ -90,6 +92,9 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
   const liveMeetings = useLiveMeetings()
   const commandOn = !!me && !(me.disabledFeatures ?? []).includes('command')
   const commandBadge = useCommandBadge(commandOn)
+  const collectOn = !!me && !(me.disabledFeatures ?? []).includes('collect')
+  useCollectAlerts(collectOn)
+  const collectSummary = useCollectSummary(collectOn)
   const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => {
@@ -169,7 +174,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
       />
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
       <div className="flex min-h-0 flex-1">
-        <Sidebar isAdmin={isAdmin} disabledFeatures={disabled} badges={{ notices: unread, chat: chatUnread.messages + chatUnread.notes, meetings: liveMeetings.data?.length ?? 0, admin: me?.pendingJoins ?? 0, ledger: me?.ledgerUnseen ?? 0, command: commandBadge }} />
+        <Sidebar isAdmin={isAdmin} disabledFeatures={disabled} badges={{ notices: unread, chat: chatUnread.messages + chatUnread.notes, meetings: liveMeetings.data?.length ?? 0, admin: me?.pendingJoins ?? 0, ledger: me?.ledgerUnseen ?? 0, command: commandBadge, collect: collectSummary.data?.todo ?? 0 }} />
         <CommandAlerts meId={me?.id ?? null} enabled={commandOn && state === 'online'} />
         <main className="min-w-0 flex-1 overflow-hidden">
           <PageErrorBoundary>
@@ -192,6 +197,8 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/boards/:boardId" element={<BoardsPage />} />
             <Route path="/boards/:boardId/:postId" element={<BoardsPage />} />
             <Route path="/duty" element={<DutyPage />} />
+            <Route path="/collect" element={<CollectPage />} />
+            <Route path="/collect/:id" element={<CollectPage />} />
             <Route path="/org" element={<OrgChartPage />} />
             <Route path="/meal" element={<MenuPlugin id="meal" />} />
             <Route path="/directory" element={<DirectoryPage />} />
@@ -211,7 +218,7 @@ export function MainShell({ onReset }: { onReset: () => void }): React.JSX.Eleme
             <Route path="/plugins" element={<PluginsPage />} />
             <Route path="/plugins/:id" element={<PluginHost />} />
             <Route path="/notes/:id" element={<NotesPage />} />
-            {MENU.filter((m) => !['home', 'notices', 'calendar', 'diary', 'files', 'chat', 'boards', 'duty', 'org', 'meal', 'directory', 'docs', 'command', 'memos', 'alarms', 'utilities', 'launcher', 'myfiles', 'notes', 'meetings', 'plugins'].includes(m.key)).map((m) => (
+            {MENU.filter((m) => !['home', 'notices', 'calendar', 'diary', 'files', 'chat', 'boards', 'duty', 'collect', 'org', 'meal', 'directory', 'docs', 'command', 'memos', 'alarms', 'utilities', 'launcher', 'myfiles', 'notes', 'meetings', 'plugins'].includes(m.key)).map((m) => (
               <Route key={m.key} path={`${m.path}/*`} element={<ComingSoon title={m.label} />} />
             ))}
             <Route path="/settings" element={<SettingsPage extra={<ConnectionCard onReset={onReset} />} />} />

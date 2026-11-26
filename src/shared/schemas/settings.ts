@@ -62,6 +62,8 @@ export const opsSettingsSchema = z.object({
   preventSleep: z.boolean().default(true),
   urgentSenders: z.enum(['admins', 'everyone']).default('admins'),
   groupCreators: z.enum(['admins', 'everyone']).default('everyone'),
+  /** who may ask for 자료 취합 (지시 127) */
+  collectCreators: z.enum(['admins', 'everyone']).default('everyone'),
   messageRetentionDays: z.number().int().min(30).max(3650).default(365)
 })
 export type OpsSettings = z.infer<typeof opsSettingsSchema>

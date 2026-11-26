@@ -31,6 +31,7 @@ export function initializeServer(
       preventSleep: input.ops.preventSleep,
       urgentSenders: 'admins',
       groupCreators: 'everyone',
+      collectCreators: 'everyone',
       messageRetentionDays: 365
     })
     writeSetting(db, 'dataDir', input.dataDir)

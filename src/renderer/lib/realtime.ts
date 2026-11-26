@@ -13,7 +13,7 @@ const INVALIDATE: Partial<Record<EventName, string[][]>> = {
   'member.changed': [['members'], ['me'], ['admin']],
   'device.changed': [['admin', 'devices']],
   'join.requested': [['admin', 'join-requests'], ['admin', 'status'], ['me']],
-  'settings.changed': [['me'], ['hello'], ['admin', 'settings']],
+  'settings.changed': [['me'], ['hello'], ['admin', 'settings'], ['collect', 'summary']],
   'group.changed': [['groups'], ['me']],
   'group.membership': [['groups'], ['me']],
   'notice.changed': [['notices']],
@@ -35,6 +35,7 @@ const INVALIDATE: Partial<Record<EventName, string[][]>> = {
   'memo.changed': [['shared-memos'], ['team-alarms']],
   'launcher.changed': [['launcher']],
   'meeting.changed': [['meetings']],
+  'collect.changed': [['collect']],
   'update.available': [['updates']]
 }
 
