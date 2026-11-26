@@ -130,11 +130,11 @@ export function registerAttachIpc(): void {
     } else {
       const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
       const filters = kind === 'zip' ? [{ name: 'ZIP 압축 파일', extensions: ['zip'] }] : [{ name: 'CSV (엑셀)', extensions: ['csv'] }]
-      const opts = { title: '저장할 위치', defaultPath: join(lastDir(), file), filters }
+      const opts = { title: '저장할 위치', defaultPath: savePath(file), filters }
       const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
       if (r.canceled || !r.filePath) return { ok: false, canceled: true }
       dest = r.filePath
-      localDb().kv.set(KV_DIR, dirname(dest))
+      rememberSaveDir(dest)
     }
     try {
       await fetchPathTo(`/api/collects/${encodeURIComponent(id)}/${kind}`, dest)
