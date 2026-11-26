@@ -5,6 +5,7 @@ import { parse, ok } from '../validate'
 import { visibleWhere } from '../scope'
 import { deptPathOf } from '../repos/members'
 import { deptPathText } from '../../shared/org'
+import { choseongOr } from '../choseong'
 
 export interface SearchResultDto {
   type: 'notice' | 'event' | 'doc' | 'post' | 'file' | 'message' | 'contact' | 'member' | 'worklog'
@@ -48,47 +49,53 @@ export function registerSearchRoutes(app: FastifyInstance, ctx: ServerContext, g
     const E = `ESCAPE '\\'`
     const out: SearchResultDto[] = []
     const add = (rows: SearchResultDto[]): void => void out.push(...rows)
+    // 초성 검색 ("ㄱㅈㅎㅎ", "홍ㄱㄷ"): titles and names only, never bodies or messages
+    const cho = (...cols: string[]): { sql: string; params: string[] } => choseongOr(q, cols)
 
     {
       const w = visibleWhere('n', 'notice', me)
+      const c = cho('n.title')
       add(
         db
           .all<{ id: string; title: string; body_html: string; t: number }>(
-            `SELECT n.id, n.title, n.body_html, COALESCE(n.published_at, n.created_at) AS t FROM notices n WHERE n.deleted_at IS NULL AND (n.published_at IS NOT NULL OR n.created_by = ?) AND ${w.sql} AND (n.title LIKE ? ${E} OR n.body_html LIKE ? ${E}) ORDER BY t DESC LIMIT ?`,
-            [me, ...w.params, like, like, limit]
+            `SELECT n.id, n.title, n.body_html, COALESCE(n.published_at, n.created_at) AS t FROM notices n WHERE n.deleted_at IS NULL AND (n.published_at IS NOT NULL OR n.created_by = ?) AND ${w.sql} AND (n.title LIKE ? ${E} OR n.body_html LIKE ? ${E}${c.sql}) ORDER BY t DESC LIMIT ?`,
+            [me, ...w.params, like, like, ...c.params, limit]
           )
           .map((r) => ({ type: 'notice', id: r.id, title: r.title, snippet: snippetOf(r.body_html, q), route: `/notices/${r.id}`, at: r.t }))
       )
     }
     {
       const w = visibleWhere('e', 'event', me)
+      const c = cho('e.title')
       add(
         db
           .all<{ id: string; title: string; body_html: string; start_at: number }>(
-            `SELECT e.id, e.title, e.body_html, e.start_at FROM events e WHERE e.deleted_at IS NULL AND e.kind != 'busy' AND ${w.sql} AND (e.title LIKE ? ${E} OR e.body_html LIKE ? ${E} OR e.location LIKE ? ${E}) ORDER BY e.start_at DESC LIMIT ?`,
-            [...w.params, like, like, like, limit]
+            `SELECT e.id, e.title, e.body_html, e.start_at FROM events e WHERE e.deleted_at IS NULL AND e.kind != 'busy' AND ${w.sql} AND (e.title LIKE ? ${E} OR e.body_html LIKE ? ${E} OR e.location LIKE ? ${E}${c.sql}) ORDER BY e.start_at DESC LIMIT ?`,
+            [...w.params, like, like, like, ...c.params, limit]
           )
           .map((r) => ({ type: 'event', id: r.id, title: r.title, snippet: snippetOf(r.body_html, q), route: '/calendar', at: r.start_at }))
       )
     }
     {
       const w = visibleWhere('d', 'doc', me)
+      const c = cho('d.title')
       add(
         db
           .all<{ id: string; kind: string; title: string; body_html: string; updated_at: number }>(
-            `SELECT d.id, d.kind, d.title, d.body_html, d.updated_at FROM docs d WHERE d.deleted_at IS NULL AND ${w.sql} AND (d.title LIKE ? ${E} OR d.body_html LIKE ? ${E}) ORDER BY d.updated_at DESC LIMIT ?`,
-            [...w.params, like, like, limit]
+            `SELECT d.id, d.kind, d.title, d.body_html, d.updated_at FROM docs d WHERE d.deleted_at IS NULL AND ${w.sql} AND (d.title LIKE ? ${E} OR d.body_html LIKE ? ${E}${c.sql}) ORDER BY d.updated_at DESC LIMIT ?`,
+            [...w.params, like, like, ...c.params, limit]
           )
           .map((r) => ({ type: 'doc', id: r.id, title: r.title, snippet: snippetOf(r.body_html, q), route: `/docs/${r.kind}/${r.id}`, at: r.updated_at }))
       )
     }
     {
       const w = visibleWhere('b', 'board', me)
+      const c = cho('p.title')
       add(
         db
           .all<{ id: string; board_id: string; title: string; body_html: string; created_at: number }>(
-            `SELECT p.id, p.board_id, p.title, p.body_html, p.created_at FROM posts p JOIN boards b ON b.id = p.board_id WHERE p.deleted_at IS NULL AND b.deleted_at IS NULL AND ${w.sql} AND (p.title LIKE ? ${E} OR p.body_html LIKE ? ${E}) ORDER BY p.created_at DESC LIMIT ?`,
-            [...w.params, like, like, limit]
+            `SELECT p.id, p.board_id, p.title, p.body_html, p.created_at FROM posts p JOIN boards b ON b.id = p.board_id WHERE p.deleted_at IS NULL AND b.deleted_at IS NULL AND ${w.sql} AND (p.title LIKE ? ${E} OR p.body_html LIKE ? ${E}${c.sql}) ORDER BY p.created_at DESC LIMIT ?`,
+            [...w.params, like, like, ...c.params, limit]
           )
           .map((r) => ({ type: 'post', id: r.id, title: r.title, snippet: snippetOf(r.body_html, q), route: `/boards/${r.board_id}/${r.id}`, at: r.created_at }))
       )
@@ -97,11 +104,12 @@ export function registerSearchRoutes(app: FastifyInstance, ctx: ServerContext, g
     {
       // file visibility follows the top-level folder (6.6)
       const w = visibleWhere('r', 'folder', me)
+      const c = cho('f.name')
       add(
         db
           .all<{ id: string; name: string; folder_id: string; updated_at: number }>(
-            `SELECT f.id, f.name, f.folder_id, f.updated_at FROM files f JOIN folders r ON r.id = f.root_id JOIN folders pf ON pf.id = f.folder_id WHERE f.deleted_at IS NULL AND pf.deleted_at IS NULL AND r.deleted_at IS NULL AND ${w.sql} AND f.name LIKE ? ${E} ORDER BY f.updated_at DESC LIMIT ?`,
-            [...w.params, like, limit]
+            `SELECT f.id, f.name, f.folder_id, f.updated_at FROM files f JOIN folders r ON r.id = f.root_id JOIN folders pf ON pf.id = f.folder_id WHERE f.deleted_at IS NULL AND pf.deleted_at IS NULL AND r.deleted_at IS NULL AND ${w.sql} AND (f.name LIKE ? ${E}${c.sql}) ORDER BY f.updated_at DESC LIMIT ?`,
+            [...w.params, like, ...c.params, limit]
           )
           .map((r) => ({ type: 'file', id: r.id, title: r.name, snippet: '', route: `/files/${r.folder_id}`, at: r.updated_at }))
       )
@@ -119,25 +127,28 @@ export function registerSearchRoutes(app: FastifyInstance, ctx: ServerContext, g
     )
     {
       const w = visibleWhere('c', 'contact', me)
+      const c = cho('c.name', 'c.org')
       add(
         db
           .all<{ id: string; name: string; org: string | null; updated_at: number }>(
-            `SELECT c.id, c.name, c.org, c.updated_at FROM contacts c WHERE c.deleted_at IS NULL AND ${w.sql} AND (c.name LIKE ? ${E} OR c.org LIKE ? ${E} OR c.phone LIKE ? ${E} OR c.memo LIKE ? ${E}) ORDER BY c.name LIMIT ?`,
-            [...w.params, like, like, like, like, limit]
+            `SELECT c.id, c.name, c.org, c.updated_at FROM contacts c WHERE c.deleted_at IS NULL AND ${w.sql} AND (c.name LIKE ? ${E} OR c.org LIKE ? ${E} OR c.phone LIKE ? ${E} OR c.memo LIKE ? ${E}${c.sql}) ORDER BY c.name LIMIT ?`,
+            [...w.params, like, like, like, like, ...c.params, limit]
           )
           .map((r) => ({ type: 'contact', id: r.id, title: r.name, snippet: r.org ?? '', route: '/directory', at: r.updated_at }))
       )
     }
+    const cm = cho('m.name', 'm.nickname', 'm.title')
+    const cd = cho('name')
     add(
       db
         .all<{ id: string; name: string; dept_id: string | null; title: string | null; updated_at: number }>(
           // a department name finds the people of that department and of everything below it
-          `SELECT m.id, m.name, m.dept_id, m.title, m.updated_at FROM members m WHERE m.status = 'active' AND (m.name LIKE ? ${E} OR m.title LIKE ? ${E} OR m.dept_id IN (
+          `SELECT m.id, m.name, m.dept_id, m.title, m.updated_at FROM members m WHERE m.status = 'active' AND (m.name LIKE ? ${E} OR m.title LIKE ? ${E}${cm.sql} OR m.dept_id IN (
              WITH RECURSIVE sub(id, lvl) AS (
-               SELECT id, 0 FROM departments WHERE name LIKE ? ${E}
+               SELECT id, 0 FROM departments WHERE name LIKE ? ${E}${cd.sql}
                UNION SELECT c.id, sub.lvl + 1 FROM departments c JOIN sub ON c.parent_id = sub.id WHERE sub.lvl < 20
              ) SELECT id FROM sub)) ORDER BY m.name LIMIT ?`,
-          [like, like, like, limit]
+          [like, like, ...cm.params, like, ...cd.params, limit]
         )
         .map((r) => ({ type: 'member', id: r.id, title: r.name, snippet: [r.dept_id ? deptPathText(deptPathOf(db, r.dept_id)) : '', r.title].filter(Boolean).join(' · '), route: '/directory', at: r.updated_at }))
     )

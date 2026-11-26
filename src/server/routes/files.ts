@@ -24,6 +24,7 @@ import { parse, ok } from '../validate'
 import { logActivity } from '../activity'
 import { audienceOf, canSee, inGroupWhere, scopeDto, setScope, visibleWhere } from '../scope'
 import { addRef, adoptFile, assertName, blobAbsPath, checkUploadAllowed, contentDisposition, filesRoot, sweepUnreferenced, type BlobRow } from '../storage/blobs'
+import { choseongOr } from '../choseong'
 
 interface FolderRow {
   id: string
@@ -184,8 +185,9 @@ export function registerFileRoutes(app: FastifyInstance, ctx: ServerContext, gua
     const where = ['x.deleted_at IS NULL', 'r.deleted_at IS NULL', w.sql]
     const params: (string | number)[] = [...w.params]
     if (q.q.trim()) {
-      where.push('x.name LIKE ?')
-      params.push(`%${q.q.trim()}%`)
+      const c = choseongOr(q.q, ['x.name'])
+      where.push(`(x.name LIKE ?${c.sql})`)
+      params.push(`%${q.q.trim()}%`, ...c.params)
     }
     if (q.groupId) {
       where.push(inGroupWhere('r', 'folder'))

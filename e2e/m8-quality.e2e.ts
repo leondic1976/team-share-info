@@ -3,6 +3,18 @@ import type { Page } from 'playwright-core'
 import { go, joinAndApprove, launch, runWizard, type Launched } from './helpers'
 
 const PORT = '47908'
+const SHOTS = process.env.TEAMHUB_SHOT_DIR
+
+/** With TEAMHUB_SHOT_DIR set: a screenshot in the light and in the dark theme. */
+async function shot(p: Page, name: string): Promise<void> {
+  if (!SHOTS) return
+  await p.waitForTimeout(400)
+  await p.screenshot({ path: `${SHOTS}/${name}-light.png` })
+  await p.evaluate(() => document.documentElement.classList.add('dark'))
+  await p.waitForTimeout(300)
+  await p.screenshot({ path: `${SHOTS}/${name}-dark.png` })
+  await p.evaluate(() => document.documentElement.classList.remove('dark'))
+}
 
 async function apiPost(p: Page, path: string, body: unknown): Promise<number> {
   return p.evaluate(
@@ -44,6 +56,22 @@ describe('M8 quality: start time, idle cost, search, offline cache, menus, priva
     await expect.poll(() => b.page.getByTestId('search-results').textContent()).toContain('회의실 열쇠 위치 메모E2E')
     await b.page.getByTestId('search-result').filter({ hasText: '캐시 확인 공지E2E' }).click()
     await expect.poll(() => b.page.url()).toContain('/notices/')
+  })
+
+  it('초성 search: ㅋㅅ ㅎㅇ finds the notice, ㄱㅁㅎㅎ the 근무현황 menu, 팀ㅇB the member', async () => {
+    await go(b.page, '/home')
+    await b.page.keyboard.press('Control+k')
+    const results = b.page.getByTestId('search-results')
+    await b.page.getByLabel('검색어').fill('ㅋㅅ ㅎㅇ')
+    await expect.poll(() => results.textContent(), { timeout: 15000 }).toContain('캐시 확인 공지E2E')
+    await shot(b.page, 'search-choseong-notice')
+    await b.page.getByLabel('검색어').fill('팀ㅇB')
+    await expect.poll(() => results.textContent(), { timeout: 15000 }).toContain('팀원B')
+    await b.page.getByLabel('검색어').fill('ㄱㅁㅎㅎ')
+    await expect.poll(() => results.textContent(), { timeout: 15000 }).toContain('근무현황')
+    await shot(b.page, 'search-choseong')
+    await b.page.getByTestId('search-result').filter({ hasText: '근무현황' }).first().click()
+    await expect.poll(() => b.page.url()).toContain('/duty')
   })
 
   it('personal data never travels to the server (network level)', async () => {

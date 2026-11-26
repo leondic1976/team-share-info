@@ -11,6 +11,7 @@ import { api, authHeaders, buildUrl, errorMessage } from '@renderer/lib/api'
 import { invoke } from '@renderer/lib/bridge'
 import { useMe } from '@renderer/lib/queries'
 import type { FileDto, FileVersionDto } from '@shared/schemas/files'
+import { decodeText } from '@shared/text-decode'
 import { FavoriteStar } from '@renderer/features/memos/widgets'
 import { RoleMark } from '@renderer/components/RoleMark'
 
@@ -37,7 +38,7 @@ function Preview({ file }: { file: FileDto }): React.JSX.Element | null {
     void fetch(buildUrl(`/api/files/${file.id}/download`, { inline: '1' }), { headers: authHeaders() })
       .then(async (r) => {
         if (!r.ok) throw new Error('미리보기를 불러오지 못했습니다.')
-        if (TXT.test(file.name)) setText((await r.text()).slice(0, 200_000))
+        if (TXT.test(file.name)) setText(decodeText(new Uint8Array(await r.arrayBuffer())).slice(0, 200_000))
         else {
           const type = PDF.test(file.name) ? 'application/pdf' : file.name.toLowerCase().endsWith('.svg') ? 'image/svg+xml' : 'image/*'
           revoke = URL.createObjectURL(new Blob([await r.arrayBuffer()], { type }))

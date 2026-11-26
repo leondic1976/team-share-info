@@ -8,6 +8,7 @@ import { api } from '@renderer/lib/api'
 import { useConn } from '@renderer/app/conn-store'
 import { cn } from '@renderer/lib/utils'
 import { AppIcon } from './LauncherPage'
+import { matchesHangul } from '@shared/hangul'
 
 interface Entry {
   key: string
@@ -45,7 +46,7 @@ export function LauncherBar(): React.JSX.Element {
     [personal.data, team.data, sites.data, recent.data]
   )
   const t = q.trim().toLowerCase()
-  const list = (t ? entries.filter((e) => e.name.toLowerCase().includes(t) || e.sub.toLowerCase().includes(t)) : entries).slice(0, 30)
+  const list = (t ? entries.filter((e) => matchesHangul(e.name, t) || matchesHangul(e.sub, t)) : entries).slice(0, 30)
 
   const go = async (e: Entry | undefined): Promise<void> => {
     if (!e) return

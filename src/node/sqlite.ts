@@ -1,6 +1,7 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { hangulMatcher } from '../shared/hangul'
 
 /**
  * Thin wrapper over Node's built-in `node:sqlite` shared by the local DB (main
@@ -36,6 +37,19 @@ export class Db {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
     this.raw = new DatabaseSync(path)
     this.raw.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL;')
+    // 초성 검색: hangul_match(text, query) = 1 when text contains query with ㄱ..ㅎ standing for whole
+    // syllables. Only used on short title/name columns, and only when the query has a 초성.
+    let lastQ = ''
+    let match = hangulMatcher('')
+    this.raw.function('hangul_match', { deterministic: true }, (text, q) => {
+      if (typeof text !== 'string' || typeof q !== 'string') return 0
+      // the query is the same for every row of a statement: build its matcher once
+      if (q !== lastQ) {
+        lastQ = q
+        match = hangulMatcher(q)
+      }
+      return match(text) ? 1 : 0
+    })
   }
 
   run(sql: string, params?: Params): { changes: number; lastId: number } {

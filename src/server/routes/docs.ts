@@ -22,6 +22,7 @@ import { logActivity } from '../activity'
 import { audienceOf, canSee, inGroupWhere, scopeDto, setScope, visibleWhere } from '../scope'
 import { cleanHtml } from '../html'
 import { deleteAttachmentsOf, linkAttachments, listAttachments, registerAttachmentOwner } from './attachments'
+import { choseongOr } from '../choseong'
 
 interface DocRow {
   id: string
@@ -106,9 +107,10 @@ export function registerDocRoutes(app: FastifyInstance, ctx: ServerContext, guar
       params.push(q.kind)
     }
     if (q.q.trim()) {
-      where.push('(d.title LIKE ? OR d.body_html LIKE ? OR d.tags LIKE ?)')
+      const c = choseongOr(q.q, ['d.title'])
+      where.push(`(d.title LIKE ? OR d.body_html LIKE ? OR d.tags LIKE ?${c.sql})`)
       const like = `%${q.q.trim()}%`
-      params.push(like, like, like)
+      params.push(like, like, like, ...c.params)
     }
     if (q.groupId) {
       where.push(inGroupWhere('d', 'doc'))

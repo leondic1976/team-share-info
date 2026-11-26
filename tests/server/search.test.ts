@@ -29,6 +29,28 @@ describe('unified search (M8-2)', () => {
     expect((await find(c, '%')).length).toBe(0) // wildcards are literal
   })
 
+  it('finds titles and names by 초성, but not message or body text', async () => {
+    s = await createTestServer()
+    const b = await s.join('홍길동')
+    await s.req(s.admin, { method: 'POST', url: '/api/notices', payload: { level: 'normal', title: '근무현황 점검 안내', bodyHtml: '<p>다음 주 월요일</p>', scope: team } })
+    await s.req(s.admin, { method: 'POST', url: '/api/notices', payload: { level: 'normal', title: '다른 공지', bodyHtml: '<p>근무현황 이야기</p>', scope: team } })
+    await s.req(s.admin, { method: 'POST', url: '/api/docs', payload: { kind: 'manual', title: '홍보 계획서', bodyHtml: '<p>절차</p>', scope: team } })
+    const find = async (q: string) => (await s!.req(b, { method: 'GET', url: `/api/search?q=${encodeURIComponent(q)}`, ip: IP })).json().data as { type: string; title: string }[]
+    const titles = (rows: { type: string; title: string }[]): string[] => rows.map((r) => `${r.type}:${r.title}`).sort()
+    // ㄱㅁㅎㅎ is 근무현황: only the title that has it, not the body that mentions it
+    expect(titles(await find('ㄱㅁㅎㅎ'))).toEqual(['notice:근무현황 점검 안내'])
+    expect(titles(await find('ㅎㄱㄷ'))).toEqual(['member:홍길동'])
+    expect(titles(await find('홍ㄱㄷ'))).toEqual(['member:홍길동'])
+    expect(titles(await find('ㅎㅂ ㄱㅎ'))).toEqual(['doc:홍보 계획서'])
+    // a plain word works as before (title and body)
+    expect(titles(await find('근무현황'))).toEqual(['notice:근무현황 점검 안내', 'notice:다른 공지'])
+    expect(await find('ㅋㅋㅋ')).toEqual([])
+    // 주소록 연락처 and 자료실 lists use the same rule
+    await s.req(s.admin, { method: 'POST', url: '/api/contacts', payload: { org: '소방서', name: '김철수', scope: team } })
+    const contacts = (await s.req(b, { method: 'GET', url: `/api/contacts?q=${encodeURIComponent('ㄱㅊㅅ')}`, ip: IP })).json().data as { name: string }[]
+    expect(contacts.map((c) => c.name)).toEqual(['김철수'])
+  })
+
   it('stays fast with many items', async () => {
     s = await createTestServer()
     const t = Date.now()
@@ -50,5 +72,11 @@ describe('unified search (M8-2)', () => {
     const ms = performance.now() - t0
     expect(r.json().data.length).toBeGreaterThan(0)
     expect(ms).toBeLessThan(process.env.CI ? 3000 : 500)
+    // a 초성 query runs hangul_match over the titles only
+    const t1 = performance.now()
+    const r2 = await s.req(s.admin, { method: 'GET', url: `/api/search?q=${encodeURIComponent('ㄱㅈ 1999')}` })
+    const ms2 = performance.now() - t1
+    expect(r2.json().data.some((x: { title: string }) => x.title === '공지 1999')).toBe(true)
+    expect(ms2).toBeLessThan(process.env.CI ? 3000 : 500)
   }, 60000)
 })

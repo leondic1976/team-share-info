@@ -22,6 +22,7 @@ import { affiliationText, buildOrgTree, findOrgNode, flattenOrg, pruneOrg, type 
 import { ORG_FIT_FLOOR, ORG_MAX_ZOOM, ORG_MIN_ZOOM, ORG_ROOT_MIN, fitScale, overflowsAtFloor, planOrgChart, stepZoom, type OrgBranchPlan, type OrgChartPlan, type OrgKidsPlan, type OrgLayoutItem } from '@shared/orgLayout'
 import { useDepartments, useTodayAbsences } from './useOrgData'
 import './orgchart.css'
+import { matchesHangul } from '@shared/hangul'
 
 type Node = OrgNode<MemberDto>
 type View = 'chart' | 'list'
@@ -530,8 +531,8 @@ export function OrgChartPage(): React.JSX.Element {
     if (!needle) return [] as string[]
     const out: string[] = []
     for (const n of shown.flat) {
-      if (n.dept.id !== NONE_ID && deptText(n.dept).includes(needle)) out.push(`d:${n.dept.id}`)
-      for (const m of n.members) if (personText(m).includes(needle)) out.push(`m:${m.id}`)
+      if (n.dept.id !== NONE_ID && matchesHangul(deptText(n.dept), needle)) out.push(`d:${n.dept.id}`)
+      for (const m of n.members) if (matchesHangul(personText(m), needle)) out.push(`m:${m.id}`)
     }
     return out
   }, [needle, shown])

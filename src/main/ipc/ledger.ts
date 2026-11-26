@@ -9,6 +9,7 @@ import { localLedgerDocSchema } from '../localdb/ledgers'
 import { readDb, readXlsx, writeCsv, writeDb, writeXls, writeXlsx, type SheetData } from '../../node/ledger-files'
 import { LEDGER_CHUNK, LEDGER_EXPORT_FORMATS, LEDGER_MAX_COLS, LEDGER_MAX_ROWS, ledgerChangeSchema, type LedgerExportFormat } from '../../shared/schemas/ledger'
 import type { IpcRes } from '../../shared/ipc'
+import { decodeText } from '../../shared/text-decode'
 
 const id = z.string().min(1).max(60)
 const FILTERS: Record<LedgerExportFormat, { name: string; extensions: string[] }> = {
@@ -29,15 +30,6 @@ const saveAsSchema = z.object({
   rows: z.array(z.array(cell).max(LEDGER_MAX_COLS)).max(LEDGER_MAX_ROWS),
   book: z.unknown()
 })
-
-/** UTF-8 (with or without BOM); Excel's Korean CSV (CP949/EUC-KR) when UTF-8 does not fit. */
-function decodeText(buf: Buffer): string {
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^\uFEFF/, '')
-  } catch {
-    return new TextDecoder('euc-kr').decode(buf)
-  }
-}
 
 function writeLedgerFile(path: string, format: LedgerExportFormat, sheet: SheetData, book: unknown): void {
   if (format === 'db') return writeDb(path, sheet, book)

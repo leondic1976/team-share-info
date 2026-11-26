@@ -24,6 +24,7 @@ import { TeamAlarmsView } from './TeamAlarms'
 import { cn } from '@renderer/lib/utils'
 import { confirmPii } from '@renderer/lib/pii'
 import { RoleMark } from '@renderer/components/RoleMark'
+import { matchesHangul } from '@shared/hangul'
 
 const when = (t: number | null): string => (!t ? '' : isToday(t) ? format(t, 'HH:mm') : format(t, 'M/d'))
 
@@ -250,7 +251,7 @@ export function ChatPage(): React.JSX.Element {
   const { data: team } = useMembers()
   const titleOf = (c: ConversationDto): string => convTitle(c, team, me?.id)
   // matches the title as shown (a 1:1 shows "본명(필명)") and the plain one
-  const filtered = q.trim() ? convs.filter((c) => c.title.includes(q.trim()) || titleOf(c).includes(q.trim())) : convs
+  const filtered = q.trim() ? convs.filter((c) => matchesHangul(c.title, q) || matchesHangul(titleOf(c), q)) : convs
   return (
     <div className="flex h-full flex-col">
       <PageHeader
