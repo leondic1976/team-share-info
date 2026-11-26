@@ -69,7 +69,7 @@ export async function startMenuPrograms(): Promise<{ name: string; target: strin
 }
 
 export async function detectPrograms(): Promise<DetectedApp[]> {
-  const raw = await runPsJson<{ appPaths: { name: string; path: string }[] | { name: string; path: string }; assoc: Record<string, string> }>(DETECT_PS, 30000)
+  const raw = await runPsJson<{ appPaths: { name: string; path: string }[] | { name: string; path: string }; assoc: Record<string, string> }>('detect programs', DETECT_PS, 30000)
   const found = matchKnownApps(arr(raw?.appPaths), await startMenuPrograms(), raw?.assoc ?? {}, existsSync)
   const win = process.env.SystemRoot ?? 'C:\\Windows'
   for (const s of SYSTEM_APPS) {
@@ -138,6 +138,8 @@ export async function runPersonal(id: string): Promise<string | null> {
   if (!existsSync(it.target)) return '파일이나 폴더가 없습니다. 위치가 바뀌었으면 항목을 고치세요.'
   if (it.kind === 'app' && it.args.trim() && !e2eOpened(it.target)) {
     try {
+      // the program and arguments the person registered, as an argument list (no shell)
+      log.info(`[launcher] run ${it.target}`)
       spawn(it.target, splitArgs(it.args), { detached: true, stdio: 'ignore', windowsHide: false }).unref()
       return null
     } catch (e) {
@@ -147,8 +149,13 @@ export async function runPersonal(id: string): Promise<string | null> {
   return openPath(it.target)
 }
 
-// E2E keeps template copies inside its isolated userData.
-const DOCS_DIR = (): string => join(process.env.TEAMHUB_E2E ? app.getPath('userData') : app.getPath('documents'), 'TeamHub 양식')
+/**
+ * Template copies live in TeamHub's own folder, never in Documents: a program writing into
+ * Documents on its own is what Windows ransomware protection reports (CLAUDE.md rules). The
+ * person keeps a copy elsewhere with "다른 이름으로 저장" in Hangul/Office. Copies made by earlier
+ * versions stay in Documents\TeamHub 양식 untouched.
+ */
+export const TEMPLATE_DIR = (): string => join(app.getPath('userData'), 'TeamHub 양식')
 
 /** Team items from the server: web addresses, shared folders/documents, templates (copy then open). */
 export async function runTeam(item: TeamLauncherDto): Promise<string | null> {
@@ -156,7 +163,7 @@ export async function runTeam(item: TeamLauncherDto): Promise<string | null> {
     if (!item.attachmentId || !item.fileName) return '양식 파일이 없습니다.'
     const res = await fetch(new URL(`/api/attachments/${item.attachmentId}`, baseUrl()), { headers: headers() })
     if (!res.ok) return `양식을 받지 못했습니다 (${res.status}).`
-    const dir = DOCS_DIR()
+    const dir = TEMPLATE_DIR()
     mkdirSync(dir, { recursive: true })
     const ext = extname(item.fileName)
     const stem = basename(item.fileName, ext)

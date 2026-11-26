@@ -5,6 +5,7 @@ import { z } from 'zod'
 import log from 'electron-log/main'
 import { handle } from './registry'
 import { localDb } from '../localdb'
+import { rememberSaveDir, savePath } from '../save-dir'
 import { localLedgerDocSchema } from '../localdb/ledgers'
 import { readDb, readXlsx, writeCsv, writeDb, writeXls, writeXlsx, type SheetData } from '../../node/ledger-files'
 import { LEDGER_CHUNK, LEDGER_EXPORT_FORMATS, LEDGER_MAX_COLS, LEDGER_MAX_ROWS, ledgerChangeSchema, type LedgerExportFormat } from '../../shared/schemas/ledger'
@@ -89,9 +90,10 @@ export function registerLedgerIpc(): void {
       path = join(dir, `${safe}.${r.format}`)
     } else {
       const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
-      const opts = { title: '다른 이름으로 저장', defaultPath: join(app.getPath('documents'), `${safe}.${r.format}`), filters: [FILTERS[r.format]] }
+      const opts = { title: '다른 이름으로 저장', defaultPath: savePath(`${safe}.${r.format}`), filters: [FILTERS[r.format]] }
       const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
       if (res.canceled || !res.filePath) return { ok: false }
+      rememberSaveDir(res.filePath)
       path = extname(res.filePath).slice(1).toLowerCase() === r.format ? res.filePath : `${res.filePath}.${r.format}`
     }
     try {

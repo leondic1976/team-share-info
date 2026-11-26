@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, nativeImage, screen, shell, type Rectangle } from 'electron'
+import { BrowserWindow, clipboard, ClipboardItem, dialog, globalShortcut, nativeImage, screen, shell, type Rectangle } from 'electron'
 import { createHash } from 'node:crypto'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -8,6 +8,7 @@ import type { MainEvent, MainEventMap } from '../shared/ipc'
 import type { AlarmFirePayload, AlarmPopupPayload, ClipboardSettings, FocusState, MemoDto } from '../shared/schemas/tools'
 import { MEMO_COLORS } from '../shared/schemas/tools'
 import { localDb } from './localdb'
+import { rememberSaveDir, savePath } from './save-dir'
 import { isQuitting, loadRenderer, secureWebContents, showMainWindow, getMainWindow } from './windows/main-window'
 import { resourcePath } from './paths'
 import { onReminderPrefix, tick } from './scheduler'
@@ -401,10 +402,11 @@ export async function saveCaptureFile(dataUrl: string): Promise<{ ok: boolean; p
   const pad = (n: number): string => String(n).padStart(2, '0')
   const r = await dialog.showSaveDialog({
     title: '캡처 저장',
-    defaultPath: join(app.getPath('pictures'), `캡처_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.png`),
+    defaultPath: savePath(`캡처_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.png`),
     filters: [{ name: 'PNG 이미지', extensions: ['png'] }]
   })
   if (r.canceled || !r.filePath) return { ok: false }
+  rememberSaveDir(r.filePath)
   try {
     writeFileSync(r.filePath, nativeImage.createFromDataURL(dataUrl).toPNG())
     return { ok: true, path: r.filePath }

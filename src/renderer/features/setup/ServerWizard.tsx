@@ -377,7 +377,7 @@ export function ServerWizard({ onBack, onDone }: { onBack: () => void; onDone: (
                 [
                   ['autostart', 'Windows 시작 시 자동 실행', '서버는 켜져 있어야 팀원이 사용할 수 있습니다.'],
                   ['preventSleep', '절전 방지', '서버 실행 중 PC가 절전 모드로 들어가지 않게 합니다.'],
-                  ['firewall', '방화벽 규칙 자동 등록', `TCP ${f.port}, UDP 47801과 프로그램 자체를 허용합니다. 관리자 권한 확인 창이 한 번 뜹니다.`]
+                  ['firewall', '방화벽 규칙 등록', `설정 완료를 누르면 TCP ${f.port}(서버), UDP 47801(서버 찾기), TeamHub 프로그램(화상회의)을 개인·도메인 네트워크에서 허용합니다. 관리자 권한 확인 창이 한 번 뜨고, 설정 → 서버 연결에서 지울 수 있습니다.`]
                 ] as const
               ).map(([k, label, hint]) => (
                 <div key={k} className="flex items-center gap-4 py-3">

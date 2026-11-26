@@ -1,5 +1,5 @@
 import { app, shell } from 'electron'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { lookup } from 'node:dns/promises'
 import { connect } from 'node:net'
 import { readdirSync, rmSync, statSync } from 'node:fs'
@@ -9,7 +9,7 @@ import { Worker } from 'node:worker_threads'
 import log from 'electron-log/main'
 import { SETTINGS_SHORTCUTS, evaluateSecurity, type NetCheckStep, type SecurityProgramDto, type SecurityRaw, type SecurityRunDto, type SysInfo, type SysResources, type TempEntry } from '../../shared/schemas/sysutil'
 import { localDb } from '../localdb'
-import { arr, runPs, runPsJson } from './ps'
+import { arr, runPs, runPsJson, system32 } from './ps'
 import { readCredential } from '../connection'
 import { addReminderSource } from '../scheduler'
 import { showToast } from '../notifications'
@@ -82,7 +82,7 @@ $r.services=@(Get-Service | ForEach-Object { @{name=[string]$_.Name; running=([s
 $r | ConvertTo-Json -Depth 4 -Compress`
 
 export async function runSecurityCheck(programs: SecurityProgramDto[]): Promise<SecurityRunDto> {
-  const raw = await runPsJson<SecurityRaw>(SECURITY_PS, 90000)
+  const raw = await runPsJson<SecurityRaw>('security check', SECURITY_PS, 90000)
   const norm: SecurityRaw = {
     av: raw ? arr(raw.av) : null,
     defender: raw?.defender ?? null,
@@ -125,17 +125,22 @@ function tcpCheck(host: string, port: number, timeout = 3000): Promise<number | 
   })
 }
 
-async function ping(host: string): Promise<boolean> {
-  if (!/^[\w.-]+$/.test(host)) return false
-  const out = await runPs(`if(Test-Connection -ComputerName '${host}' -Count 2 -Quiet){'1'}else{'0'}`, 15000)
-  return out.trim().endsWith('1')
+/** ping.exe with fixed switches; the host is checked and passed as its own argument. "TTL=" is in every language's reply line. */
+function ping(host: string): Promise<boolean> {
+  if (!/^[\w.-]+$/.test(host) || host.startsWith('-')) return Promise.resolve(false)
+  log.info(`[sys] ping ${host}`)
+  return new Promise((resolve) => {
+    execFile(system32('PING.EXE'), ['-n', '2', '-w', '1500', host], { windowsHide: true, timeout: 15000 }, (_err, stdout) =>
+      resolve(/TTL=/i.test(String(stdout ?? '')))
+    )
+  })
 }
 
 export async function networkCheck(target?: string): Promise<NetCheckStep[]> {
   const steps: NetCheckStep[] = []
   const ifs = Object.entries(os.networkInterfaces()).flatMap(([name, a]) => (a ?? []).filter((x) => x.family === 'IPv4' && !x.internal).map((x) => `${name} ${x.address}`))
   steps.push({ key: 'adapter', label: '네트워크 연결', status: ifs.length ? 'good' : 'bad', detail: ifs.length ? ifs.join(', ') : '연결된 네트워크가 없습니다. 랜선·와이파이를 확인하세요.' })
-  const gw = (await runPs(`(Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 1).NextHop`, 15000)).trim()
+  const gw = (await runPs('default gateway', `(Get-NetRoute -DestinationPrefix '0.0.0.0/0' | Sort-Object RouteMetric | Select-Object -First 1).NextHop`, 15000)).trim()
   if (gw && /^[\d.]+$/.test(gw)) {
     const ok = await ping(gw)
     steps.push({ key: 'gateway', label: '게이트웨이(공유기)', status: ok ? 'good' : 'warn', detail: ok ? `${gw} 응답` : `${gw} 응답 없음 (핑을 막아 둔 경우도 있습니다)` })
@@ -238,7 +243,8 @@ export async function openSetting(key: string): Promise<boolean> {
   }
   const cmd = TOOL_COMMANDS[key]
   if (!cmd) return false
-  spawn(cmd[0], cmd[1], { detached: true, stdio: 'ignore' }).unref()
+  log.info(`[sys] open ${cmd[0]} ${cmd[1].join(' ')}`)
+  spawn(system32(cmd[0]), cmd[1], { detached: true, stdio: 'ignore' }).unref()
   return true
 }
 

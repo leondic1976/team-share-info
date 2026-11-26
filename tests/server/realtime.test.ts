@@ -103,12 +103,14 @@ describe('discovery (M1-5)', () => {
     s = await createTestServer()
     let sock
     try {
-      sock = startDiscoveryResponder(s.ctx, () => undefined)
+      sock = startDiscoveryResponder(s.ctx, () => undefined, '127.0.0.1')
     } catch {
       return // port in use on this machine (e.g. a running TeamHub server)
     }
     await new Promise((r) => sock!.once('listening', r))
+    // both sockets on 127.0.0.1: a test never opens a port on the office network (firewall prompt)
     const client = createSocket('udp4')
+    await new Promise<void>((r) => client.bind(0, '127.0.0.1', r))
     // Other TeamHub instances on this PC may answer too: collect replies and pick ours.
     const replies: string[] = []
     client.on('message', (msg) => replies.push(msg.toString()))

@@ -4,6 +4,7 @@ import { basename, join } from 'node:path'
 import { z } from 'zod'
 import { handle } from './registry'
 import { localDb } from '../localdb'
+import { rememberSaveDir, savePath } from '../save-dir'
 import { isProtected, listDir, mkdir, openItem, places, properties, recentFolders, rename, revealItem, setPin, transfer, trash } from '../files/fm'
 import { addIndexRoot, indexRoots, removeIndexRoot, rescan, searchFiles, watchNow } from '../files'
 import { bookmarkInputSchema, parseBookmarkHtml, parseChromeBookmarks, resolveSmart, toBookmarkHtml, type TaggedItem } from '../../shared/organize'
@@ -116,8 +117,9 @@ export function registerFilesIpc(): void {
     return { ok: true, count: org().importBookmarks(parseBookmarkHtml(readFileSync(r.filePaths[0], 'utf8'))) }
   })
   handle('bm:exportHtml', null, async () => {
-    const r = await dialog.showSaveDialog({ title: '사이트 모음 내보내기', defaultPath: join(app.getPath('documents'), 'TeamHub 사이트 모음.html'), filters: [{ name: '즐겨찾기 HTML', extensions: ['html'] }] })
+    const r = await dialog.showSaveDialog({ title: '사이트 모음 내보내기', defaultPath: savePath('TeamHub 사이트 모음.html'), filters: [{ name: '즐겨찾기 HTML', extensions: ['html'] }] })
     if (r.canceled || !r.filePath) return { ok: false }
+    rememberSaveDir(r.filePath)
     writeFileSync(r.filePath, toBookmarkHtml(org().bookmarks()), 'utf8')
     return { ok: true, path: r.filePath }
   })
@@ -162,8 +164,9 @@ export function registerFilesIpc(): void {
     const n = notes().get(nid)
     if (!n) return { ok: false, error: '페이지가 없습니다.' }
     const safe = (n.title || '제목 없음').replace(/[\\/:*?"<>|]/g, '_')
-    const r = await dialog.showSaveDialog({ title: '페이지 내보내기', defaultPath: join(app.getPath('documents'), `${safe}.${format}`), filters: [{ name: format === 'md' ? 'Markdown' : 'HTML', extensions: [format] }] })
+    const r = await dialog.showSaveDialog({ title: '페이지 내보내기', defaultPath: savePath(`${safe}.${format}`), filters: [{ name: format === 'md' ? 'Markdown' : 'HTML', extensions: [format] }] })
     if (r.canceled || !r.filePath) return { ok: false }
+    rememberSaveDir(r.filePath)
     const body =
       format === 'md'
         ? `# ${n.title}\n\n${htmlToMarkdown(n.bodyHtml)}\n`

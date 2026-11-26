@@ -1,6 +1,7 @@
 import { createSocket } from 'node:dgram'
 import { DISCOVERY_MAGIC, DISCOVERY_PORT } from '../shared/constants'
 import { listIpv4 } from './netinfo'
+import { lanAllowed } from './netpolicy'
 
 export interface DiscoveredServer {
   address: string
@@ -14,8 +15,9 @@ export interface DiscoveredServer {
 /**
  * Probe the LAN for TeamHub servers (M1-5): send the magic string to every
  * IPv4 broadcast address (plus 255.255.255.255 and loopback) and collect replies.
+ * Outside the installed app only this PC is asked, from a socket on 127.0.0.1 (netpolicy.ts).
  */
-export function discoverServers(timeoutMs = 1500): Promise<DiscoveredServer[]> {
+export function discoverServers(timeoutMs = 1500, lan = lanAllowed()): Promise<DiscoveredServer[]> {
   return new Promise((resolve) => {
     const found = new Map<string, DiscoveredServer>()
     const sock = createSocket({ type: 'udp4', reuseAddr: true })
@@ -45,10 +47,13 @@ export function discoverServers(timeoutMs = 1500): Promise<DiscoveredServer[]> {
       }
     })
     sock.on('error', () => finish())
-    sock.bind(0, () => {
-      sock.setBroadcast(true)
-      const targets = new Set<string>(['255.255.255.255', '127.0.0.1'])
-      for (const i of listIpv4()) if (i.broadcast) targets.add(i.broadcast)
+    sock.bind(0, lan ? undefined : '127.0.0.1', () => {
+      const targets = new Set<string>(['127.0.0.1'])
+      if (lan) {
+        sock.setBroadcast(true)
+        targets.add('255.255.255.255')
+        for (const i of listIpv4()) if (i.broadcast) targets.add(i.broadcast)
+      }
       const payload = Buffer.from(DISCOVERY_MAGIC)
       for (const t of targets) {
         sock.send(payload, DISCOVERY_PORT, t, () => undefined)

@@ -5,11 +5,14 @@ import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import log from 'electron-log/main'
 import { assembleOcr, type OcrRaw, type OcrResult } from '../shared/ocr'
+import { POWERSHELL } from './sysutil/ps'
 
 /**
  * Text recognition with the recognizer built into Windows (Windows.Media.Ocr): it works
  * without internet, needs nothing installed, and the picture never leaves this PC.
  * The script is fixed; the picture's path and the language reach it through the environment.
+ * It stays a -Command string rather than a .ps1 file: running a file needs
+ * "-ExecutionPolicy Bypass", which security programs count as a sign of malware (M9-1).
  */
 const SCRIPT = `
 $ErrorActionPreference = 'Stop'
@@ -50,8 +53,9 @@ const NO_ENGINE = '이 PC의 Windows에 글자 인식(OCR) 언어가 설치되�
 
 function run(env: Record<string, string>): Promise<OcrRaw | null> {
   return new Promise((resolve) => {
+    log.info('[ocr] run')
     execFile(
-      'powershell.exe',
+      POWERSHELL,
       ['-NoProfile', '-NonInteractive', '-Command', SCRIPT],
       { windowsHide: true, timeout: 60000, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, env: { ...process.env, ...env } },
       (_err, stdout) => {

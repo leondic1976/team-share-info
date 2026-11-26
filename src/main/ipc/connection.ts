@@ -4,6 +4,7 @@ import log from 'electron-log/main'
 import { handle } from './registry'
 import { localDb } from '../localdb'
 import { serverSetupSchema } from '../../shared/schemas/settings'
+import { DEFAULT_PORT } from '../../shared/constants'
 import {
   archiveCurrent,
   forgetSaved,
@@ -21,6 +22,7 @@ import {
   writeCredential
 } from '../connection'
 import { listIpv4, pcName, suggestedDataDir } from '../netinfo'
+import { serverAddresses } from '../netpolicy'
 import { installBackup } from '../../server/backup'
 import { createDevice } from '../../server/repos/devices'
 import { getSection, writeSetting } from '../../server/settings'
@@ -32,7 +34,7 @@ import { winUser } from './app'
 import { restartServer, serverStatus, startServer, stopServer } from '../server-host'
 import { openServerDb } from '../../server/db'
 import { initializeServer } from '../../server/setup'
-import { registerFirewallRules } from '../firewall'
+import { firewallState, registerFirewallRules, removeFirewallRules } from '../firewall'
 import { setAutostart } from '../autostart'
 import { ensurePcUid, lockedRole, lockRole, pcUid, roleRefusal } from '../pcid'
 import { discoverServers } from '../discovery'
@@ -182,7 +184,7 @@ export function registerConnectionIpc(): void {
     writeCredential({ serverUrl: `http://127.0.0.1:${port}`, deviceId: cred.deviceId, deviceKey: cred.deviceKey, memberId: adminId })
     setMode('server')
     const st = await startServer(dataDir, { preventSleep: true, failFast: true })
-    return { ok: st.state === 'running', error: st.state === 'running' ? undefined : st.message, addresses: listIpv4().filter((i) => !i.virtual).map((i) => `http://${i.address}:${port}`) }
+    return { ok: st.state === 'running', error: st.state === 'running' ? undefined : st.message, addresses: serverAddresses(port) }
   })
 
   handle('server:setup', serverSetupSchema.extend({ replaceExisting: z.boolean().optional() }), async (input) => {
@@ -225,10 +227,8 @@ export function registerConnectionIpc(): void {
     if (input.ops.autostart) setAutostart(true)
     const st = await startServer(input.dataDir, { preventSleep: input.ops.preventSleep, failFast: true })
     let firewall = { ok: false, message: '방화벽 등록을 선택하지 않았습니다.' }
-    if (input.ops.registerFirewall) firewall = await registerFirewallRules(port)
-    const addresses = listIpv4()
-      .filter((i) => !i.virtual)
-      .map((i) => `http://${i.address}:${port}`)
+    if (input.ops.registerFirewall) firewall = await registerFirewallRules(true, port)
+    const addresses = serverAddresses(port)
     return {
       ok: st.state === 'running',
       error: st.state === 'running' ? undefined : st.message,
@@ -244,7 +244,11 @@ export function registerConnectionIpc(): void {
     if (serverStatus().state === 'stopped') return startServer(cfg.dataDir, { preventSleep: cfg.preventSleep })
     return restartServer()
   })
-  handle('server:registerFirewall', null, async () => registerFirewallRules(getServerConfig()?.port ?? 47800))
+  // Firewall rules: only when the person presses the button; the server PC opens its port, a member PC the program (meetings).
+  const fwTarget = (): [boolean, number] => [getMode() === 'server', getServerConfig()?.port ?? DEFAULT_PORT]
+  handle('firewall:state', null, () => firewallState(...fwTarget()))
+  handle('firewall:register', null, () => registerFirewallRules(...fwTarget()))
+  handle('firewall:remove', null, () => removeFirewallRules())
 
   handle('discovery:scan', null, () => discoverServers())
 
