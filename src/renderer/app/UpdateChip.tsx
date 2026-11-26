@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Download, RotateCcw } from 'lucide-react'
 import type { UpdateState } from '@shared/ipc'
 import { invoke, onMain } from '@renderer/lib/bridge'
+import { SERVER_PC_UPDATE_NOTE } from '@shared/update-policy'
 
 /**
  * Small blue box right of the search box, shown only while there is something to say about a
@@ -25,6 +26,9 @@ export function UpdateChip(): React.JSX.Element | null {
 
   const v = upd.version ? `v${upd.version}` : '새 버전'
   const left = auto ? Math.max(0, Math.ceil((auto - Date.now()) / 1000)) : 0
+  // on the server PC: member PCs wait for this one
+  const note = upd.serverPc ? `
+${SERVER_PC_UPDATE_NOTE}` : ''
   const box = 'th-update-chip no-drag flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-semibold whitespace-nowrap text-primary-foreground'
 
   if (upd.status === 'downloaded' && auto)
@@ -45,7 +49,7 @@ export function UpdateChip(): React.JSX.Element | null {
     )
   if (upd.status === 'downloaded')
     return (
-      <button className={`${box} cursor-pointer hover:brightness-110`} onClick={() => void invoke('update:install')} title="누르면 설치하고 다시 시작합니다" data-testid="update-chip">
+      <button className={`${box} cursor-pointer hover:brightness-110`} onClick={() => void invoke('update:install')} title={`누르면 설치하고 다시 시작합니다${note}`} data-testid="update-chip">
         <span key="ready" className="flex items-center gap-1.5">
           <Download className="size-3.5 animate-bounce" aria-hidden />새 버전 {v} 준비됨 · 눌러서 업데이트
         </span>
@@ -60,7 +64,7 @@ export function UpdateChip(): React.JSX.Element | null {
       </div>
     )
   return (
-    <button className={`${box} cursor-pointer hover:brightness-110`} onClick={() => void invoke('update:download').then(setUpd)} title="누르면 내려받습니다" data-testid="update-chip">
+    <button className={`${box} cursor-pointer hover:brightness-110`} onClick={() => void invoke('update:download').then(setUpd)} title={`누르면 내려받습니다${note}`} data-testid="update-chip">
       <span key="avail" className="flex items-center gap-1.5">
         <Download className="size-3.5 animate-bounce" aria-hidden />새 버전 {v} 나왔어요 · 눌러서 받기
       </span>

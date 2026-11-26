@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
-import { Download, ExternalLink, Loader2, RefreshCw, RotateCcw } from 'lucide-react'
+import { Clock, Download, ExternalLink, Info, Loader2, RefreshCw, RotateCcw } from 'lucide-react'
 import type { UpdateSettings, UpdateState } from '@shared/ipc'
 import { DOWNLOAD_SITE } from '@shared/constants'
+import { heldBackText, SERVER_PC_UPDATE_NOTE } from '@shared/update-policy'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Select } from '@renderer/components/ui/input'
@@ -39,6 +40,9 @@ export function UpdateCard(): React.JSX.Element {
   }
   const check = (): void => void invoke('update:check', { serverUrl: serverUrl ?? null, manual: true }).then(setSt)
   const busy = st?.status === 'checking' || st?.status === 'downloading'
+  // a member PC waiting for the server PC is not "up to date"
+  const statusText = st ? (st.status === 'none' && st.heldBack ? '서버 PC의 업데이트를 기다리는 중입니다.' : STATUS[st.status]) : ''
+  const waitingHere = !!st?.serverPc && (st.status === 'available' || st.status === 'downloading' || st.status === 'downloaded')
   return (
     <Card data-testid="update-card">
       <CardHeader>
@@ -50,7 +54,7 @@ export function UpdateCard(): React.JSX.Element {
             현재 버전 <b>{app?.version}</b>
           </span>
           <span className="text-muted-foreground">
-            · {st ? STATUS[st.status] : ''}
+            · {statusText}
             {st?.version && st.status !== 'none' ? ` (v${st.version})` : ''}
             {st?.status === 'downloading' && st.percent !== undefined ? ` ${st.percent}%` : ''}
             {st?.source ? ` · ${st.source === 'web' ? '다운로드 사이트' : '서버 PC'}에서` : ''}
@@ -58,6 +62,18 @@ export function UpdateCard(): React.JSX.Element {
           </span>
           {st?.status === 'error' && st.message && <span className="text-xs text-urgent">{st.message}</span>}
         </div>
+        {st?.heldBack && st.status === 'none' && (
+          <p className="flex items-start gap-1.5 text-xs text-muted-foreground" data-testid="update-held-back">
+            <Clock className="mt-px size-3.5 shrink-0" aria-hidden />
+            {heldBackText(st.heldBack)}
+          </p>
+        )}
+        {waitingHere && (
+          <p className="flex items-start gap-1.5 text-xs text-muted-foreground" data-testid="update-server-pc-note">
+            <Info className="mt-px size-3.5 shrink-0" aria-hidden />
+            {SERVER_PC_UPDATE_NOTE}
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" disabled={busy} onClick={check}>
             {st?.status === 'checking' ? <Loader2 className="animate-spin" /> : <RefreshCw />} 지금 확인

@@ -7,6 +7,7 @@ import type { LedgerChange, LedgerChanges, LedgerDoc, LedgerExportCell, LedgerEx
 
 import type { ServerSetupInput } from './schemas/settings'
 import type { ServerStatus } from './server-host'
+import type { HeldBack } from './update-policy'
 import type { UrgentPayload } from './schemas/notices'
 import type { DiaryEntryDto, DiarySummaryDto, PersonalEventDto, PersonalEventInput, PersonalOccurrenceDto, ReminderItem } from './schemas/personal'
 import type { DetectedApp, LauncherInput, LauncherItemDto, RecentDocDto, TeamLauncherDto } from './schemas/launcher'
@@ -601,6 +602,10 @@ export interface UpdateState {
   /** where the update comes from: the public download site or the TeamHub server PC */
   source?: 'web' | 'lan'
   checkedAt?: number
+  /** a newer version exists but this member PC waits until the server PC has it (지시 125-①) */
+  heldBack?: HeldBack
+  /** this PC is the server PC: member PCs wait for it to update first */
+  serverPc?: boolean
 }
 
 /** auto: web site first, then the server PC (closed networks). */
