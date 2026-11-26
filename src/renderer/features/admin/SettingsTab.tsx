@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save } from 'lucide-react'
+import { FolderOpen, Save } from 'lucide-react'
 import type { AllSettings } from '@shared/schemas/settings'
 import { MESSAGE_FILE_RETENTION, type FeatureKey } from '@shared/constants'
 import { api, errorMessage, setAdminPin } from '@renderer/lib/api'
+import { invoke } from '@renderer/lib/bridge'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Textarea } from '@renderer/components/ui/input'
 import { Switch } from '@renderer/components/ui/switch'
@@ -235,8 +236,25 @@ export function SettingsTab(): React.JSX.Element {
         <CardContent className="grid grid-cols-3 gap-3">
           <div className="col-span-3">
             <Field label="백업 위치">
-              <Input aria-label="백업 위치" value={s.backup.dir} onChange={(e) => upd('backup', { dir: e.target.value })} />
+              <div className="flex gap-2">
+                <Input aria-label="백업 위치" value={s.backup.dir} placeholder="비우면 서버 자료 폴더의 backups\auto" onChange={(e) => upd('backup', { dir: e.target.value })} />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() =>
+                    void invoke('server:pickFolder', { title: '백업 폴더 고르기' })
+                      .then((p) => p && upd('backup', { dir: p }))
+                      .catch(() => undefined)
+                  }
+                >
+                  <FolderOpen /> 폴더 고르기…
+                </Button>
+              </div>
             </Field>
+            <p className="mt-1.5 text-xs text-muted-foreground" data-testid="backup-dir-hint">
+              저장할 때 그 폴더에 쓸 수 있는지 먼저 확인합니다. 위치를 바꿔도 이전 백업은 이전 폴더에 그대로 남고, 백업·복구 목록에는 새 위치의 백업만 보입니다(이전 백업으로 복구하려면 위치를 잠시 이전 폴더로 되돌리세요).
+            </p>
           </div>
           <Field label="매일 백업 시각">
             <Input aria-label="백업 시각" value={s.backup.time} onChange={(e) => upd('backup', { time: e.target.value })} />

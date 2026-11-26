@@ -77,7 +77,8 @@ describe('M8 storage folders: personal data and server data can be moved (6.20)'
     await b.page.getByTestId('storage-card-local').getByTestId('storage-change').click()
     await expect.poll(() => b.page.getByTestId('storage-dialog').textContent()).toContain('같습니다')
     expect(await b.page.getByTestId('storage-confirm').count()).toBe(0)
-    await b.page.getByRole('button', { name: '취소' }).click()
+    // (a folder that cannot be chosen only offers 닫기)
+    await b.page.getByTestId('dialog-backdrop').getByText('닫기', { exact: true }).click()
     expect(existsSync(target)).toBe(true)
   }, 30000)
 

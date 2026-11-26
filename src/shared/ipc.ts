@@ -38,6 +38,10 @@ export interface StorageInfo {
   server: { dir: string; bytes: number; running: boolean } | null
   /** result of the last change (shown once after the restart) */
   last: { ok: boolean; message: string; at: number } | null
+  /** a move under way (one at a time), with its last progress */
+  busy: { kind: 'local' | 'server'; progress: StorageProgress | null } | null
+  /** result of the last server-folder move */
+  lastServer: { ok: boolean; message: string; at: number } | null
 }
 export interface StorageCheck {
   ok: boolean
@@ -539,6 +543,7 @@ export interface IpcMap {
   'plugins:openCopilot': { req: { id: string }; res: { ok: boolean; where?: 'app' | 'web'; error?: string } }
   'storage:info': { req: void; res: StorageInfo }
   'storage:clearLast': { req: void; res: void }
+  'storage:clearLastServer': { req: void; res: void }
   'storage:pick': { req: { kind: 'local' | 'server' }; res: string | null }
   'storage:checkLocal': { req: { to: string }; res: StorageCheck }
   'storage:changeLocal': { req: { to: string; mode: 'move' | 'use' }; res: { ok: boolean; error?: string } }
@@ -862,6 +867,7 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'plugins:downloadCounts',
   'storage:info',
   'storage:clearLast',
+  'storage:clearLastServer',
   'storage:pick',
   'storage:checkLocal',
   'storage:changeLocal',

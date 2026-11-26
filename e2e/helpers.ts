@@ -14,7 +14,7 @@ export interface Launched {
 }
 
 /** Launch the built app (pnpm build first) with an isolated userData folder. */
-export async function launch(opts: { userData?: string; profile?: string; env?: Record<string, string> } = {}): Promise<Launched> {
+export async function launch(opts: { userData?: string; profile?: string; env?: Record<string, string>; onFirstWindow?: (p: Page) => Promise<void> } = {}): Promise<Launched> {
   const userData = opts.userData ?? mkdtempSync(join(tmpdir(), 'teamhub-e2e-'))
   const app = await electron.launch({
     executablePath: ELECTRON,
@@ -28,10 +28,13 @@ export async function launch(opts: { userData?: string; profile?: string; env?: 
       ...opts.env
     } as Record<string, string>
   })
-  // The main window, not a pop-up (urgent notice, sticky memo...) that may open first.
+  // The main window, not a pop-up (urgent notice, sticky memo...) or the "moving your data"
+  // window of a staged data-folder move (a data: page) that may open first.
+  const notMain = (u: string): boolean => u.includes('/popup/') || u.startsWith('data:') || u === 'about:blank'
   let page = await app.firstWindow()
-  for (let i = 0; i < 50 && page.url().includes('/popup/'); i++) {
-    const main = app.windows().find((w) => !w.url().includes('/popup/'))
+  await opts.onFirstWindow?.(page)
+  for (let i = 0; i < 300 && (notMain(page.url()) || page.isClosed()); i++) {
+    const main = app.windows().find((w) => !w.isClosed() && !notMain(w.url()))
     if (main) page = main
     else await new Promise((r) => setTimeout(r, 200))
   }
