@@ -17,6 +17,19 @@ let stopping = false
 let blockerId: number | null = null
 const listeners = new Set<(s: ServerStatus) => void>()
 let readyWaiters: { failFast: boolean; resolve: (s: ServerStatus) => void }[] = []
+/** set while the data folder is moved (ipc/storage.ts): nobody else may start the server meanwhile */
+let held: string | null = null
+
+/**
+ * Keep the server stopped for the data-folder move: while held, starts and restarts from
+ * anywhere else (the 서버 다시 시작 button, an update that resumes the server, a restart the
+ * server asked for) are refused, so the server never runs on the old folder while it is copied.
+ * The holder starts it itself with `{ holder: true }`.
+ */
+export function holdServer(reason: string | null): void {
+  held = reason
+}
+export const serverHeld = (): boolean => held !== null
 
 function setStatus(s: Partial<ServerStatus>): void {
   status = { ...status, ...s }
@@ -43,7 +56,8 @@ export function serverStatus(): ServerStatus {
 }
 
 function spawn(): void {
-  if (!config) return
+  // (a restart scheduled after a crash must not start a second process, nor one after a stop)
+  if (!config || child || stopping) return
   const entry = join(import.meta.dirname, 'server.js')
   setStatus({ state: 'starting', message: undefined })
   const proc = utilityProcess.fork(entry, [], { serviceName: 'TeamHub Server', stdio: 'pipe' })
@@ -91,7 +105,11 @@ function spawn(): void {
   proc.postMessage(start)
 }
 
-export function startServer(dataDir: string, opts: { preventSleep: boolean; failFast?: boolean }): Promise<ServerStatus> {
+export function startServer(dataDir: string, opts: { preventSleep: boolean; failFast?: boolean; holder?: boolean }): Promise<ServerStatus> {
+  if (held && !opts.holder) {
+    log.warn(`[server] start refused: ${held}`)
+    return Promise.resolve({ ...status, message: '서버 자료를 옮기는 중입니다. 끝나면 서버가 다시 켜집니다.' })
+  }
   config = { dataDir }
   stopping = false
   if (opts.preventSleep && blockerId === null) blockerId = powerSaveBlocker.start('prevent-app-suspension')
@@ -134,6 +152,10 @@ export async function stopServer(): Promise<void> {
 }
 
 export async function restartServer(): Promise<ServerStatus> {
+  if (held) {
+    log.warn(`[server] restart refused: ${held}`)
+    return status
+  }
   const dataDir = config?.dataDir
   await stopServer()
   if (!dataDir) return status

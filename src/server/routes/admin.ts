@@ -18,6 +18,7 @@ import { usedBytes } from '../storage/blobs'
 import { messageFileCleanupState, messageFileUsage } from '../message-files'
 import { backupHealth } from '../backup'
 import type { FastifyRequest } from 'fastify'
+import { checkBackupDir } from '../backupDir'
 
 interface JoinRow {
   id: string
@@ -343,6 +344,11 @@ export function registerAdminRoutes(
       ) {
         throw ownerOnly('조직 정보·네트워크·저장 공간·백업·사용할 기능·관리 PIN 등 중요 설정은 최종관리자(서버 PC)만 바꿀 수 있습니다.')
       }
+    }
+    // a new backup folder is tried before it is kept (every later backup would fail in a bad one)
+    if (patch.backup?.dir !== undefined && patch.backup.dir.trim() !== getAllSettings(ctx.db).backup.dir) {
+      const bad = await checkBackupDir(patch.backup.dir, ctx.dataDir)
+      if (bad) throw badRequest(`백업 위치: ${bad}`)
     }
     try {
       if (patch.org) patchSection(ctx.db, 'org', patch.org)

@@ -6,7 +6,7 @@ import type { Socket } from 'node:dgram'
 import type { FeedbackRelayConfig, HostToServer, ServerToHost } from '../shared/server-host'
 import type { Db } from '../node/sqlite'
 import { openServerDb } from './db'
-import { applyPendingRestore } from './backup'
+import { applyPendingRestore, noteRestoreFailure } from './backup'
 import { buildApp, type BuiltApp } from './app'
 import { getSection } from './settings'
 import { startDiscoveryResponder } from './discovery'
@@ -36,9 +36,17 @@ function listenHost(lan: boolean, bindIp: string): string {
 }
 
 async function start(dataDir: string, version: string, feedback?: FeedbackRelayConfig, formsDir?: string, lan = false): Promise<void> {
-  const restored = applyPendingRestore(dataDir)
-  if (restored) post({ type: 'log', level: 'info', message: `restored backup ${restored}` })
+  // a restore that fails leaves the data as it was and the server starts on it (said in 관리 → 백업·복구)
+  let restoreError: string | null = null
+  try {
+    const restored = applyPendingRestore(dataDir)
+    if (restored) post({ type: 'log', level: 'info', message: `restored backup ${restored}` })
+  } catch (e) {
+    restoreError = e instanceof Error ? e.message : String(e)
+    post({ type: 'log', level: 'error', message: `restore failed, data kept as it was: ${restoreError}` })
+  }
   db = openServerDb(dataDir, version)
+  if (restoreError) noteRestoreFailure(db, `복구하지 못했습니다(자료는 복구 전 그대로입니다): ${restoreError}`)
   built = await buildApp({ db, dataDir, version, feedback, log: (level, message) => post({ type: 'log', level, message }) })
   try {
     const forms = seedForms(built.ctx, formsDir)

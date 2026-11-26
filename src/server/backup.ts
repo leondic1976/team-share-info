@@ -220,33 +220,88 @@ function isBackupFolder(p: string): boolean {
   return existsSync(join(p, MANIFEST)) && existsSync(join(p, 'teamhub.db'))
 }
 
+/** Fold the WAL of a DB file into it (the file is about to be moved aside on its own). */
+function checkpoint(file: string): void {
+  if (!existsSync(file)) return
+  try {
+    const db = new DatabaseSync(file)
+    try {
+      db.exec('PRAGMA busy_timeout = 5000')
+      db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+    } finally {
+      db.close()
+    }
+  } catch {
+    // a DB that cannot be opened is kept aside as it is
+  }
+}
+
+function quickCheck(file: string): string | null {
+  try {
+    const db = new DatabaseSync(file, { readOnly: true })
+    try {
+      const r = db.prepare('PRAGMA quick_check').get() as Record<string, string> | undefined
+      const v = r ? Object.values(r)[0] : 'no result'
+      return v === 'ok' ? null : v
+    } finally {
+      db.close()
+    }
+  } catch (e) {
+    return (e as Error).message
+  }
+}
+
 /**
  * Put a backup in place of the server data in `dataDir` (restore, or moving the server
  * to another PC). The current DB is kept as backups/before-restore-<time>.db.
+ * Order matters: the backup's DB is copied next to the data and checked, and its files are
+ * brought in (only added, never removed), before anything of the current data is touched, so
+ * a backup that cannot be read (a removed USB drive, a damaged copy) leaves the data as it was.
  */
 export function installBackup(backupPath: string, dataDir: string): void {
-  if (!isBackupFolder(backupPath)) throw new Error('TeamHub 백업 폴더가 아닙니다(manifest.json, teamhub.db 없음).')
+  if (!isBackupFolder(backupPath)) throw new Error('TeamHub 백업 폴더가 아닙니다(manifest.json, teamhub.db 없음). 백업 위치의 드라이브가 연결되어 있는지 확인하세요.')
   mkdirSync(dataDir, { recursive: true })
   const dbPath = join(dataDir, 'teamhub.db')
+  const cmdPath = join(dataDir, 'command.db')
+  const incoming = `${dbPath}.restoring`
+  const cmdIncoming = `${cmdPath}.restoring`
+  const hasCmd = existsSync(join(backupPath, 'command.db'))
+  try {
+    copyFileSync(join(backupPath, 'teamhub.db'), incoming)
+    const bad = quickCheck(incoming)
+    if (bad) throw new Error(`백업의 자료를 읽을 수 없습니다(${bad}).`)
+    // 긴급구조지휘대 (command.db): the backup's copy, the current one kept aside like teamhub.db
+    if (hasCmd) copyFileSync(join(backupPath, 'command.db'), cmdIncoming)
+    // files: from the shared store next to the backup folder
+    copyBlobs(incoming, join(dirname(backupPath), 'blobs'), join(dataDir, 'files'))
+  } catch (e) {
+    rmSync(incoming, { force: true })
+    rmSync(cmdIncoming, { force: true })
+    throw e
+  }
+  const keep = join(dataDir, 'backups')
+  const at = stamp()
   if (existsSync(dbPath)) {
-    const keep = join(dataDir, 'backups')
+    checkpoint(dbPath)
     mkdirSync(keep, { recursive: true })
-    renameSync(dbPath, join(keep, `before-restore-${stamp()}.db`))
+    renameSync(dbPath, join(keep, `before-restore-${at}.db`))
   }
   for (const ext of ['-wal', '-shm']) rmSync(dbPath + ext, { force: true })
-  copyFileSync(join(backupPath, 'teamhub.db'), dbPath)
-  // 긴급구조지휘대 (command.db): the backup's copy, the current one kept aside like teamhub.db
-  const cmdPath = join(dataDir, 'command.db')
-  if (existsSync(join(backupPath, 'command.db'))) {
+  renameSync(incoming, dbPath)
+  if (hasCmd) {
     if (existsSync(cmdPath)) {
-      mkdirSync(join(dataDir, 'backups'), { recursive: true })
-      renameSync(cmdPath, join(dataDir, 'backups', `before-restore-${stamp()}-command.db`))
+      checkpoint(cmdPath)
+      mkdirSync(keep, { recursive: true })
+      renameSync(cmdPath, join(keep, `before-restore-${at}-command.db`))
     }
     for (const ext of ['-wal', '-shm']) rmSync(cmdPath + ext, { force: true })
-    copyFileSync(join(backupPath, 'command.db'), cmdPath)
+    renameSync(cmdIncoming, cmdPath)
   }
-  // files: from the shared store next to the backup folder
-  copyBlobs(dbPath, join(dirname(backupPath), 'blobs'), join(dataDir, 'files'))
+}
+
+/** A restore that could not be done is shown with the backups (관리 → 백업·복구). */
+export function noteRestoreFailure(db: Db, message: string): void {
+  writeState(db, { ...readState(db), lastError: message })
 }
 
 const PENDING = 'restore-pending.json'

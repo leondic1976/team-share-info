@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Save } from 'lucide-react'
+import { FolderOpen, Save } from 'lucide-react'
 import type { AllSettings } from '@shared/schemas/settings'
 import { MESSAGE_FILE_RETENTION, type FeatureKey } from '@shared/constants'
 import { api, errorMessage, setAdminPin } from '@renderer/lib/api'
+import { invoke } from '@renderer/lib/bridge'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Textarea } from '@renderer/components/ui/input'
 import { Switch } from '@renderer/components/ui/switch'
@@ -246,10 +247,24 @@ export function SettingsTab(): React.JSX.Element {
         <CardContent className="grid grid-cols-3 gap-3">
           <div className="col-span-3">
             <Field label="백업 위치">
-              <Input id="backup-dir" aria-label="백업 위치" value={s.backup.dir} placeholder="예: E:\TeamHub 백업, \\NAS\공유\TeamHub 백업" onChange={(e) => upd('backup', { dir: e.target.value })} />
+              <div className="flex gap-2">
+                <Input id="backup-dir" aria-label="백업 위치" value={s.backup.dir} placeholder="예: E:\TeamHub 백업, \NAS\공유\TeamHub 백업" onChange={(e) => upd('backup', { dir: e.target.value })} />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() =>
+                    void invoke('server:pickFolder', { title: '백업 폴더 고르기' })
+                      .then((p) => p && upd('backup', { dir: p }))
+                      .catch(() => undefined)
+                  }
+                >
+                  <FolderOpen /> 폴더 고르기…
+                </Button>
+              </div>
             </Field>
-            <p className="mt-1 text-xs text-muted-foreground">
-              비워 두면 서버 자료 폴더 안(같은 드라이브)에 백업하므로 디스크가 고장 나면 서버 자료와 백업을 함께 잃습니다. 서버 자료와 다른 드라이브, NAS(공유 폴더) 또는 USB 드라이브의 폴더를 적으세요.
+            <p className="mt-1.5 text-xs text-muted-foreground" data-testid="backup-dir-hint">
+              비워 두면 서버 자료 폴더 안(같은 드라이브)에 백업하므로 디스크가 고장 나면 서버 자료와 백업을 함께 잃습니다. 서버 자료와 다른 드라이브, NAS(공유 폴더) 또는 USB 드라이브의 폴더를 적으세요. 저장할 때 그 폴더에 쓸 수 있는지 먼저 확인합니다. 위치를 바꿔도 이전 백업은 이전 폴더에 그대로 남고, 백업·복구 목록에는 새 위치의 백업만 보입니다(이전 백업으로 복구하려면 위치를 잠시 이전 폴더로 되돌리세요).
             </p>
           </div>
           <Field label="매일 백업 시각">
