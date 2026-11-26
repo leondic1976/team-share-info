@@ -904,7 +904,7 @@ function UnregisteredCard({ m }: { m: Model }): React.JSX.Element {
                     구성원과 합치기
                   </Button>
                 )}
-                <Button size="sm" variant="ghost" className="text-urgent" onClick={() => window.confirm(`${p.name}을(를) 조·배치·공통업무·예외에서 모두 뺄까요?`) && void act.run(() => host.api.del(`/api/command/people/${encodeURIComponent(p.id)}`))}>
+                <Button size="sm" variant="ghost" className="text-urgent" onClick={() => window.confirm(`${p.name}을(를) 조·배치·공통업무·예외·대리 기록에서 모두 뺄까요?`) && void act.run(() => host.api.del(`/api/command/people/${encodeURIComponent(p.id)}`))}>
                   <Trash2 /> 편성에서 빼기
                 </Button>
               </div>
