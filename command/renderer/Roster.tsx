@@ -1,11 +1,12 @@
 import { Download, Printer } from 'lucide-react'
 import type { CmdTeam } from '../shared/types'
-import { rolePath } from '../shared/logic'
+import { periodText, rolePath, substitutionPhase, ymd } from '../shared/logic'
 import type { Model } from './model'
 import { useHost } from './host'
 import { Badge, Button, Card, CardHeader, CardTitle, EmptyNote, EmptyState, cn, titled } from './ui'
+import { PlacedName, SubstitutionsToday, coverNote, placedText } from './Substitutions'
 
-/** The role tree of a mode, a column per 조, the people in each cell. */
+/** The role tree of a mode, a column per 조, the people in each cell as it is today (substitutes marked). */
 export function RoleTable({ m, modeId, teams }: { m: Model; modeId: string; teams: CmdTeam[] }): React.JSX.Element {
   const tree = m.tree(modeId)
   if (!tree.length) return <EmptyNote>이 근무 유형에는 분류가 아직 없습니다. 설정 → 분류와 임무에서 만드세요.</EmptyNote>
@@ -31,16 +32,13 @@ export function RoleTable({ m, modeId, teams }: { m: Model; modeId: string; team
                 {role.name}
               </td>
               {teams.map((t) => {
-                const ps = m.placed(role.id, t.id)
+                const ps = m.placedNow(role.id, t.id)
                 return (
                   <td key={t.id} className="border-l border-border px-2 py-1.5 align-top">
                     {ps.length ? (
                       <span className="flex flex-wrap gap-x-2 gap-y-0.5">
-                        {ps.map((p) => (
-                          <span key={p.id} className="whitespace-nowrap">
-                            {titled(p)}
-                            {p.temp && <Badge className="ml-1">임시</Badge>}
-                          </span>
+                        {ps.map((x) => (
+                          <PlacedName key={x.p.id} m={m} x={x} />
                         ))}
                       </span>
                     ) : (
@@ -57,26 +55,32 @@ export function RoleTable({ m, modeId, teams }: { m: Model; modeId: string; team
   )
 }
 
-/** 편성: every 조 side by side, the common duties and the exceptions; print and CSV. */
-export function Roster({ m, modeId }: { m: Model; modeId: string }): React.JSX.Element {
+/** 편성: every 조 side by side (as today: substitutes marked), the common duties, exceptions and substitutions; print and CSV. */
+export function Roster({ m, modeId, now }: { m: Model; modeId: string; now: number }): React.JSX.Element {
   const host = useHost()
   const mode = m.s.modes.find((x) => x.id === modeId)
+  const today = ymd(now)
   if (!m.s.teams.length) return <EmptyState title="조가 없습니다" description="설정 → 조에서 A조·B조처럼 조를 만들고 조원을 넣으세요." />
   const csv = (): void => {
     const rows: string[][] = [['분류', ...m.s.teams.map((t) => t.name)]]
-    for (const { role } of m.tree(modeId)) rows.push([rolePath(m.s.roles, role.id), ...m.s.teams.map((t) => m.placed(role.id, t.id).map((p) => titled(p)).join(', '))])
+    for (const { role } of m.tree(modeId)) rows.push([rolePath(m.s.roles, role.id), ...m.s.teams.map((t) => m.placedNow(role.id, t.id).map((x) => placedText(m, x)).join(', '))])
     rows.push([])
     rows.push(['공통업무', '방식', '담당'])
-    for (const c of m.s.common) rows.push([c.name, c.perTeam ? '조별' : '고정', c.assign.map((a) => `${c.perTeam ? `${m.team(a.teamId)?.name ?? ''}: ` : ''}${titled(m.person(a.personId))}`).join(', ')])
+    for (const c of m.commonNow) rows.push([c.name, c.perTeam ? '조별' : '고정', c.assign.map((a) => `${c.perTeam ? `${m.team(a.teamId)?.name ?? ''}: ` : ''}${a.cover ? `대리 ${titled(m.person(a.personId))} (${coverNote(m, a.cover)})` : titled(m.person(a.personId))}`).join(', ')])
     rows.push([])
     rows.push(['예외자', '사유', '기간'])
     for (const e of m.s.exceptions) rows.push([titled(m.person(e.personId)), e.reason, `${e.fromDate} ~ ${e.toDate ?? '계속'}`])
+    rows.push([])
+    rows.push(['부재자', '사유', '대리자', '기간', '상태'])
+    for (const x of m.s.substitutions.filter((y) => substitutionPhase(y, today) !== 'past')) rows.push([titled(m.person(x.personId)), x.reason, titled(m.person(x.substituteId)), periodText(x.fromDate, x.toDate), substitutionPhase(x, today) === 'now' ? '진행 중' : '예정'])
     host.saveCsv(`편성표_${mode?.name ?? ''}.csv`, rows)
   }
   return (
     <div className="space-y-4 print:space-y-2" data-testid="cmd-roster-tab">
       <div className="flex items-center gap-2 print:hidden">
-        <span className="text-sm text-muted-foreground">{mode?.name} 편성표</span>
+        <span className="text-sm text-muted-foreground">
+          {mode?.name} 편성표 · {today} 기준{m.absent.size ? ` (대리 ${m.absent.size}명 반영)` : ''}
+        </span>
         <Button size="sm" variant="outline" className="ml-auto" onClick={() => window.print()}>
           <Printer /> 인쇄
         </Button>
@@ -84,7 +88,9 @@ export function Roster({ m, modeId }: { m: Model; modeId: string }): React.JSX.E
           <Download /> CSV로 저장
         </Button>
       </div>
-      <h2 className="hidden text-lg font-bold print:block">{mode?.name} 편성표</h2>
+      <h2 className="hidden text-lg font-bold print:block">
+        {mode?.name} 편성표 ({today} 기준)
+      </h2>
       <Card>
         <RoleTable m={m} modeId={modeId} teams={m.s.teams} />
       </Card>
@@ -103,11 +109,17 @@ export function Roster({ m, modeId }: { m: Model; modeId: string }): React.JSX.E
                 {t.members.map((pid) => {
                   const p = m.person(pid)
                   const placed = m.rolesOf(pid, modeId).length > 0
+                  const away = m.absent.get(pid)
                   return (
                     <li key={pid} className={placed ? '' : 'text-important'}>
                       {titled(p)}
                       {p?.temp && <Badge className="ml-1">임시</Badge>}
                       {!placed && <span className="ml-1 text-xs">(미배치)</span>}
+                      {away && (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          (부재{away.reason ? ` · ${away.reason}` : ''} · 대리 {m.person(away.substituteId)?.name})
+                        </span>
+                      )}
                     </li>
                   )
                 })}
@@ -123,7 +135,7 @@ export function Roster({ m, modeId }: { m: Model; modeId: string }): React.JSX.E
           </CardHeader>
           <table className="w-full text-sm">
             <tbody>
-              {m.s.common.map((c) => (
+              {m.commonNow.map((c) => (
                 <tr key={c.id} className="border-b border-border last:border-0">
                   <td className="w-44 px-3 py-1.5 font-medium">
                     {c.name} {c.perTeam ? <Badge>조별</Badge> : <Badge>고정</Badge>}
@@ -133,12 +145,25 @@ export function Roster({ m, modeId }: { m: Model; modeId: string }): React.JSX.E
                       ? m.s.teams.map((t) => {
                           const ps = c.assign.filter((a) => a.teamId === t.id)
                           return ps.length ? (
-                            <span key={t.id} className="mr-3 whitespace-nowrap">
-                              <b>{t.name}</b> {ps.map((a) => titled(m.person(a.personId))).join(', ')}
+                            <span key={t.id} className="mr-3 inline-flex flex-wrap gap-x-1.5">
+                              <b>{t.name}</b>
+                              {ps.map((a) => {
+                                const p = m.person(a.personId)
+                                return p ? <PlacedName key={a.personId} m={m} x={{ p, cover: a.cover }} /> : null
+                              })}
                             </span>
                           ) : null
                         })
-                      : c.assign.map((a) => titled(m.person(a.personId))).join(', ') || <span className="text-muted-foreground">지정 안 됨</span>}
+                      : c.assign.length ? (
+                          <span className="inline-flex flex-wrap gap-x-2">
+                            {c.assign.map((a) => {
+                              const p = m.person(a.personId)
+                              return p ? <PlacedName key={a.personId} m={m} x={{ p, cover: a.cover }} /> : null
+                            })}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">지정 안 됨</span>
+                        )}
                   </td>
                 </tr>
               ))}
@@ -178,6 +203,7 @@ export function Roster({ m, modeId }: { m: Model; modeId: string }): React.JSX.E
           </table>
         </Card>
       </div>
+      <SubstitutionsToday m={m} now={now} upcoming />
     </div>
   )
 }

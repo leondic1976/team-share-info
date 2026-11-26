@@ -4,15 +4,19 @@ import type { Model } from './model'
 import { when, ymdOf } from './model'
 import { Badge, Card, CardContent, CardHeader, CardTitle, EmptyNote, titled } from './ui'
 import { RoleTable } from './Roster'
+import { AbsenceHints, PlacedName, SubstitutionsToday } from './Substitutions'
 
-/** 현황: today's 조, its 편성 in the chosen 근무 유형, 공통업무, 인원총괄현황, drills on now. */
+/** 현황: today's 조, its 편성 in the chosen 근무 유형 (substitutes in place), 공통업무, 인원총괄현황, drills on now. */
 export function Overview({ m, modeId, now, onOpenDrill }: { m: Model; modeId: string; now: number; onOpenDrill: (id: string) => void }): React.JSX.Element {
   const today = ymdOf(now)
   const team = m.team(m.shift?.teamId)
   const next = m.team(m.next?.teamId)
-  const hc = headcount({ teams: m.s.teams, people: m.s.people, assignments: m.s.assignments, roles: m.s.roles, common: m.s.common, exceptions: m.s.exceptions, modeId, today })
+  const hc = headcount({ teams: m.s.teams, people: m.s.people, assignments: m.s.assignments, roles: m.s.roles, common: m.s.common, exceptions: m.s.exceptions, substitutions: m.s.substitutions, modeId, today })
   const live = m.s.drills.filter((d) => d.state === 'running' || d.state === 'paused')
-  const commonToday = m.s.common.map((c) => ({ c, people: c.assign.filter((a) => !c.perTeam || a.teamId === team?.id).map((a) => m.person(a.personId)) }))
+  const commonToday = m.commonNow.map((c) => ({ c, people: c.assign.filter((a) => !c.perTeam || a.teamId === team?.id).flatMap((a) => {
+    const p = m.person(a.personId)
+    return p ? [{ p, cover: a.cover }] : []
+  }) }))
   const ex = m.s.exceptions.filter((e) => m.excepted.has(e.personId))
   return (
     <div className="space-y-4" data-testid="cmd-overview">
@@ -24,6 +28,7 @@ export function Overview({ m, modeId, now, onOpenDrill }: { m: Model; modeId: st
           <span className="ml-auto text-sm text-orange-700 dark:text-orange-300">훈련 화면 열기</span>
         </button>
       ))}
+      <AbsenceHints m={m} now={now} />
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-1">
           <CardHeader>
@@ -71,6 +76,7 @@ export function Overview({ m, modeId, now, onOpenDrill }: { m: Model; modeId: st
                   <th className="px-2 py-1.5 text-right font-medium">임시</th>
                   <th className="px-2 py-1.5 text-right font-medium">배치</th>
                   <th className="px-2 py-1.5 text-right font-medium">미배치</th>
+                  <th className="px-2 py-1.5 text-right font-medium" title="부재 중이고 대리자가 임무를 맡은 조원">대리</th>
                 </tr>
               </thead>
               <tbody>
@@ -87,14 +93,15 @@ export function Overview({ m, modeId, now, onOpenDrill }: { m: Model; modeId: st
                       <td className="px-2 py-1.5 text-right tabular-nums">{t.temps || ''}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{t.placed}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{t.unplaced ? <span className="text-important">{t.unplaced}</span> : 0}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{t.absent || ''}</td>
                     </tr>
                   )
                 })}
               </tbody>
               <tfoot className="border-t border-border text-sm">
                 <tr>
-                  <td className="px-3 py-1.5" colSpan={5}>
-                    공통업무 <b>{hc.common}</b>명 · 예외자 <b>{hc.exceptions}</b>명 · 편성 밖 구성원 <b>{hc.outside}</b>명 · 총원 <b>{hc.total}</b>명
+                  <td className="px-3 py-1.5" colSpan={6}>
+                    공통업무 <b>{hc.common}</b>명 · 예외자 <b>{hc.exceptions}</b>명 · 대리 <b>{hc.substitutions}</b>명 · 편성 밖 구성원 <b>{hc.outside}</b>명 · 총원 <b>{hc.total}</b>명
                   </td>
                 </tr>
               </tfoot>
@@ -108,7 +115,7 @@ export function Overview({ m, modeId, now, onOpenDrill }: { m: Model; modeId: st
         </CardHeader>
         {team ? <RoleTable m={m} modeId={modeId} teams={[team]} /> : <EmptyNote>오늘의 조가 없습니다.</EmptyNote>}
       </Card>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>공통업무 (조와 관계없이)</CardTitle>
@@ -118,7 +125,9 @@ export function Overview({ m, modeId, now, onOpenDrill }: { m: Model; modeId: st
               commonToday.map(({ c, people }) => (
                 <div key={c.id} className="flex flex-wrap gap-x-2">
                   <b className="w-40 shrink-0">{c.name}</b>
-                  <span>{people.length ? people.map((p) => titled(p)).join(', ') : <span className="text-muted-foreground">지정 안 됨</span>}</span>
+                  <span className="flex flex-wrap gap-x-2">
+                    {people.length ? people.map((x) => <PlacedName key={x.p.id} m={m} x={x} />) : <span className="text-muted-foreground">지정 안 됨</span>}
+                  </span>
                   {c.perTeam && <Badge>조별</Badge>}
                 </div>
               ))
@@ -148,6 +157,7 @@ export function Overview({ m, modeId, now, onOpenDrill }: { m: Model; modeId: st
             )}
           </CardContent>
         </Card>
+        <SubstitutionsToday m={m} now={now} />
       </div>
       {!live.length && m.s.me.isManager && (
         <p className="text-xs text-muted-foreground">

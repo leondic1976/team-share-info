@@ -1,7 +1,7 @@
 /** 훈련 탭: 진행 중·예정·끝난 훈련, 훈련 시작(지휘대담당), 시나리오 목록·편집. */
 import { useEffect, useState } from 'react'
 import { Copy, FilePlus, Flag, Pencil, Play, Siren, Trash2 } from 'lucide-react'
-import { atTime, ymd } from '../shared/logic'
+import { activeExceptions, activeSubstitutions, atTime, ymd } from '../shared/logic'
 import type { Model } from './model'
 import { when } from './model'
 import { useAct, useScenarios } from './data'
@@ -9,7 +9,7 @@ import { useHost } from './host'
 import { ScenarioEditor } from './ScenarioEditor'
 import { STATE_LABEL, stateTone } from './DrillView'
 import { TimePick } from './Settings'
-import { Badge, Button, Card, CardHeader, CardTitle, Dialog, EmptyNote, Field, Input, Select, Tabs } from './ui'
+import { Badge, Button, Card, CardHeader, CardTitle, Dialog, EmptyNote, Field, Input, Select, Tabs, titled } from './ui'
 
 export function Drills({ m, now, onOpen }: { m: Model; now: number; onOpen: (id: string) => void }): React.JSX.Element {
   const host = useHost()
@@ -141,6 +141,15 @@ function StartDialog({ m, now, value, onClose, onStarted }: { m: Model; now: num
     setF({ scenarioId: value.scenarioId ?? '', modeId: sc?.modeId ?? m.modes[0]?.id ?? '', title: sc ? `${sc.title}` : '', teamIds: m.shift ? [m.shift.teamId] : [], withCommon: false, later: false, date: ymd(Date.now()), time: '14:00' })
   }, [value, scen.data, m])
   const sc = scen.data?.find((x) => x.id === f.scenarioId)
+  // the substitutions in force on the day it starts, for the people it would take part
+  const day = f.later ? f.date : ymd(now)
+  const excepted = new Set(activeExceptions(m.s.exceptions, day).map((e) => e.personId))
+  const covers = activeSubstitutions(m.s.substitutions, day).filter((x) => {
+    if (excepted.has(x.personId) || !m.person(x.substituteId)) return false
+    const t = m.teamOf(x.personId)
+    if (t && f.teamIds.includes(t)) return true
+    return f.withCommon && m.s.common.some((c) => c.assign.some((a) => a.personId === x.personId && (!c.perTeam || f.teamIds.includes(a.teamId))))
+  })
   return (
     <Dialog
       open={!!value}
@@ -205,7 +214,26 @@ function StartDialog({ m, now, value, onClose, onStarted }: { m: Model; now: num
           <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
             <input type="checkbox" checked={f.withCommon} onChange={(e) => setF({ ...f, withCommon: e.target.checked })} /> 공통업무 담당자도 참가
           </label>
-          <p className="mt-1 text-xs text-muted-foreground">참가자는 시작하는 순간의 편성으로 정해집니다(예외자·임시 인원 제외).</p>
+          <p className="mt-1 text-xs text-muted-foreground">참가자는 시작하는 순간의 편성으로 정해집니다(예외자·임시 인원 제외). 대리 기간인 부재자 대신 대리자가 그 분류로 참가합니다.</p>
+          {covers.length > 0 && (
+            <ul className="mt-1.5 space-y-0.5 rounded-md border border-border bg-muted/40 px-3 py-1.5 text-xs" data-testid="cmd-drill-covers">
+              {covers.map((x) => {
+                const sub = m.person(x.substituteId)
+                const absent = titled(m.person(x.personId))
+                return sub?.temp ? (
+                  <li key={x.id} className="text-important">
+                    {absent}
+                    {x.reason ? `(${x.reason})` : ''}의 대리자 {titled(sub)}은(는) 임시 인원이라 훈련에 참가할 수 없습니다. 그 자리는 비게 됩니다.
+                  </li>
+                ) : (
+                  <li key={x.id}>
+                    {absent}
+                    {x.reason ? `(${x.reason})` : ''} 대신 대리자 <b>{titled(sub)}</b>이(가) 참가합니다.
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </div>
         <div className="space-y-1 text-sm">
           <label className="flex cursor-pointer items-center gap-2">

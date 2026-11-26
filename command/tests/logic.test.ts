@@ -74,8 +74,8 @@ describe('인원총괄현황', () => {
       today: '2026-11-25'
     })
     expect(h.teams).toEqual([
-      { teamId: 'A', members: 3, temps: 1, placed: 1, unplaced: 2 },
-      { teamId: 'B', members: 1, temps: 0, placed: 0, unplaced: 1 }
+      { teamId: 'A', members: 3, temps: 1, placed: 1, unplaced: 2, absent: 0 },
+      { teamId: 'B', members: 1, temps: 0, placed: 0, unplaced: 1, absent: 0 }
     ])
     expect([h.common, h.exceptions, h.outside, h.total]).toEqual([2, 1, 1, 6])
     expect(activeExceptions([{ id: 'e', personId: 'p', reason: '', fromDate: '2026-11-01', toDate: '2026-11-24' }], '2026-11-25')).toEqual([])

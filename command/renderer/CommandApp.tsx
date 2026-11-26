@@ -100,7 +100,7 @@ export function CommandApp(): React.JSX.Element {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           {tab === 'overview' && <Overview m={m} modeId={modeId} now={now} onOpenDrill={(id) => go(id ? `drill/${id}` : 'drills')} />}
-          {tab === 'roster' && <Roster m={m} modeId={modeId} />}
+          {tab === 'roster' && <Roster m={m} modeId={modeId} now={now} />}
           {tab === 'mine' && <MyDuty m={m} modeId={modeId} now={now} />}
           {tab === 'drills' && (controlId ? <ControlRoom m={m} id={controlId} /> : drillId ? <DrillView m={m} id={drillId} onBack={() => go('drills')} /> : <Drills m={m} now={now} onOpen={(id) => go(`drill/${id}`)} />)}
           {tab === 'notices' && <Notices manager={manager} />}

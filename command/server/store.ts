@@ -16,6 +16,7 @@ import type {
   CmdPerson,
   CmdRole,
   CmdRotation,
+  CmdSubstitution,
   CmdTeam,
   Drill,
   DrillAnswer,
@@ -30,7 +31,7 @@ import type {
   ScenarioBrief,
   ScenarioMsg
 } from '../shared/types'
-import { activeExceptions, msgDone, resolveTargets, ymd } from '../shared/logic'
+import { activeExceptions, activeSubstitutions, effectiveAssignments, effectiveCommon, msgDone, resolveTargets, ymd } from '../shared/logic'
 
 export const TEMP = 'x:'
 export const isTemp = (id: string): boolean => id.startsWith(TEMP)
@@ -74,6 +75,12 @@ export function common(db: CmdDb): CmdCommon[] {
 
 export function exceptions(db: CmdDb): CmdException[] {
   return db.all<{ id: string; person_id: string; reason: string; from_date: string; to_date: string | null }>('SELECT id, person_id, reason, from_date, to_date FROM cmd_exceptions ORDER BY from_date DESC, created_at DESC').map((e) => ({ id: e.id, personId: e.person_id, reason: e.reason, fromDate: e.from_date, toDate: e.to_date }))
+}
+
+export function substitutions(db: CmdDb): CmdSubstitution[] {
+  return db
+    .all<{ id: string; person_id: string; substitute_id: string; reason: string; from_date: string; to_date: string | null }>('SELECT id, person_id, substitute_id, reason, from_date, to_date FROM cmd_substitutions ORDER BY from_date DESC, created_at DESC')
+    .map((x) => ({ id: x.id, personId: x.person_id, substituteId: x.substitute_id, reason: x.reason, fromDate: x.from_date, toDate: x.to_date }))
 }
 
 export function overrides(db: CmdDb): CmdOverride[] {
@@ -153,7 +160,9 @@ interface DrillRow {
 export const drillRow = (db: CmdDb, id: string): DrillRow | undefined => db.get<DrillRow>('SELECT * FROM cmd_drills WHERE id = ?', [id])
 
 export function drillMembers(db: CmdDb, drillId: string): DrillMember[] {
-  return db.all<{ member_id: string; name: string; title: string; team_id: string | null; role_ids: string; common: number }>('SELECT * FROM cmd_drill_members WHERE drill_id = ? ORDER BY rowid', [drillId]).map((m) => ({ memberId: m.member_id, name: m.name, title: m.title, teamId: m.team_id, roleIds: parseJson<string[]>(m.role_ids, []), common: !!m.common }))
+  return db
+    .all<{ member_id: string; name: string; title: string; team_id: string | null; role_ids: string; common: number; cover_for: string }>('SELECT * FROM cmd_drill_members WHERE drill_id = ? ORDER BY rowid', [drillId])
+    .map((m) => ({ memberId: m.member_id, name: m.name, title: m.title, teamId: m.team_id, roleIds: parseJson<string[]>(m.role_ids, []), common: !!m.common, ...(m.cover_for ? { coverFor: m.cover_for } : {}) }))
 }
 
 interface MsgRow {
@@ -274,22 +283,49 @@ export function drillBriefs(db: CmdDb, memberId: string): CmdDrillBrief[] {
   })
 }
 
-/** The participants of a drill, fixed when it starts: the chosen 조 (and the 공통업무 people). */
+/**
+ * The participants of a drill, fixed when it starts: the chosen 조 (and the 공통업무 people), as
+ * they are that day: somebody away with a substitute stays out and the substitute joins in their
+ * place with their 분류 (a temporary person cannot join, so that place stays empty).
+ */
 export function participants(db: CmdDb, members: CommandMember[], modeId: string, teamIds: string[], withCommon: boolean, now: number): DrillMember[] {
   const byId = new Map(members.map((m) => [m.id, m]))
-  const excepted = new Set(activeExceptions(exceptions(db), ymd(now)).map((e) => e.personId))
+  const day = ymd(now)
+  const excepted = new Set(activeExceptions(exceptions(db), day).map((e) => e.personId))
+  const subs = activeSubstitutions(substitutions(db), day).filter((x) => !excepted.has(x.personId))
+  const absent = new Set(subs.map((x) => x.personId))
   const modeRoles = new Set(roles(db).filter((r) => r.modeId === modeId).map((r) => r.id))
-  const assigns = assignments(db).filter((a) => modeRoles.has(a.roleId))
+  const assigns = effectiveAssignments(assignments(db).filter((a) => modeRoles.has(a.roleId)), subs)
   const out = new Map<string, DrillMember>()
-  for (const t of teams(db).filter((x) => teamIds.includes(x.id))) {
+  const covers = new Map<string, Set<string>>()
+  const coverOf = (id: string, absentId: string): void => {
+    const set = covers.get(id) ?? new Set<string>()
+    set.add(byId.get(absentId)?.name ?? db.get<{ name: string }>('SELECT name FROM cmd_people WHERE id = ?', [absentId.slice(TEMP.length)])?.name ?? '')
+    covers.set(id, set)
+  }
+  const chosen = teams(db).filter((x) => teamIds.includes(x.id))
+  const roleIdsOf = (teamId: string, p: string): string[] => assigns.filter((a) => a.teamId === teamId && a.personId === p).map((a) => a.roleId)
+  for (const t of chosen) {
     for (const p of t.members) {
       const m = byId.get(p)
-      if (!m || excepted.has(p)) continue
-      out.set(p, { memberId: p, name: m.name, title: m.title, teamId: t.id, roleIds: assigns.filter((a) => a.teamId === t.id && a.personId === p).map((a) => a.roleId), common: false })
+      if (!m || excepted.has(p) || absent.has(p)) continue
+      out.set(p, { memberId: p, name: m.name, title: m.title, teamId: t.id, roleIds: roleIdsOf(t.id, p), common: false })
+    }
+  }
+  // the substitutes of absent members of the chosen 조 (also when the absent one has no 분류 here)
+  for (const t of chosen) {
+    for (const x of subs.filter((y) => t.members.includes(y.personId))) {
+      const m = byId.get(x.substituteId)
+      if (!m || excepted.has(x.substituteId)) continue
+      const covered = assigns.filter((a) => a.teamId === t.id && a.cover?.personId === x.personId).map((a) => a.roleId)
+      const cur = out.get(x.substituteId)
+      if (cur) cur.roleIds = [...new Set([...cur.roleIds, ...covered])]
+      else out.set(x.substituteId, { memberId: x.substituteId, name: m.name, title: m.title, teamId: t.id, roleIds: covered, common: false })
+      coverOf(x.substituteId, x.personId)
     }
   }
   if (withCommon) {
-    for (const c of common(db)) {
+    for (const c of effectiveCommon(common(db), subs)) {
       for (const a of c.assign) {
         if (c.perTeam && !teamIds.includes(a.teamId)) continue
         const m = byId.get(a.personId)
@@ -297,8 +333,13 @@ export function participants(db: CmdDb, members: CommandMember[], modeId: string
         const cur = out.get(a.personId)
         if (cur) cur.common = true
         else out.set(a.personId, { memberId: a.personId, name: m.name, title: m.title, teamId: teamOf(db, a.personId), roleIds: [], common: true })
+        if (a.cover) coverOf(a.personId, a.cover.personId)
       }
     }
+  }
+  for (const [id, names] of covers) {
+    const cur = out.get(id)
+    if (cur) cur.coverFor = [...names].filter(Boolean).join(', ')
   }
   return [...out.values()]
 }

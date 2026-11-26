@@ -69,6 +69,28 @@ export interface CmdException {
   toDate: string | null
 }
 
+/**
+ * 대리자: while `personId` is away (휴가·교육·출장 …) from `fromDate` to `toDate`, `substituteId`
+ * takes their places — their 분류 in their 조 in every 근무 유형 and their 공통업무. Unlike an
+ * exception (removed without replacement) the absent person stays in their 조.
+ */
+export interface CmdSubstitution {
+  id: string
+  /** the absent person */
+  personId: string
+  substituteId: string
+  reason: string
+  fromDate: string
+  /** null: until further notice */
+  toDate: string | null
+}
+
+/** A 근무현황 entry of the host for today (who is away and why), shown to those in charge. */
+export interface CmdHostAbsence {
+  personId: string
+  type: string
+}
+
 export interface CmdRotation {
   /** the day the first 조 of `order` starts (YYYY-MM-DD) */
   baseDate: string
@@ -114,6 +136,7 @@ export interface CommandState {
   assignments: CmdAssignment[]
   common: CmdCommon[]
   exceptions: CmdException[]
+  substitutions: CmdSubstitution[]
   overrides: CmdOverride[]
   rotation: CmdRotation | null
   /** every person who can be placed: active members of the host and temporary people */
@@ -123,6 +146,8 @@ export interface CommandState {
   unreadNotices: number
   /** drills that are scheduled, running or paused, and the last ended ones */
   drills: CmdDrillBrief[]
+  /** those in charge only, when the host keeps a 근무현황: who is away today */
+  hostAbsences?: CmdHostAbsence[]
   serverNow: number
 }
 
@@ -258,6 +283,8 @@ export interface DrillMember {
   teamId: string | null
   roleIds: string[]
   common: boolean
+  /** a substitute: the names of the absent people whose places they took (kept for the record) */
+  coverFor?: string
 }
 
 export interface DrillAnswer {

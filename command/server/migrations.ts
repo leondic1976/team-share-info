@@ -43,5 +43,18 @@ CREATE TABLE cmd_drill_marks (id TEXT PRIMARY KEY, drill_id TEXT NOT NULL REFERE
 CREATE INDEX idx_cmd_drill_marks ON cmd_drill_marks(drill_id);
 CREATE TABLE cmd_drill_notes (id TEXT PRIMARY KEY, drill_id TEXT NOT NULL REFERENCES cmd_drills(id) ON DELETE CASCADE, at INTEGER NOT NULL, body TEXT NOT NULL, created_by TEXT NOT NULL, created_by_name TEXT NOT NULL DEFAULT '');
 `
+  },
+  {
+    id: 2,
+    name: 'substitutions',
+    sql: `
+-- 대리자: while person_id is away (from_date..to_date, to_date NULL = until further notice),
+-- substitute_id takes their 분류 and 공통업무 (a person id like the other tables: member or 'x:' temp)
+CREATE TABLE cmd_substitutions (id TEXT PRIMARY KEY, person_id TEXT NOT NULL, substitute_id TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', from_date TEXT NOT NULL, to_date TEXT, created_by TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE INDEX idx_cmd_substitutions_person ON cmd_substitutions(person_id);
+CREATE INDEX idx_cmd_substitutions_substitute ON cmd_substitutions(substitute_id);
+-- a drill participant who took an absent person's place: their names, kept for the record
+ALTER TABLE cmd_drill_members ADD COLUMN cover_for TEXT NOT NULL DEFAULT '';
+`
   }
 ]

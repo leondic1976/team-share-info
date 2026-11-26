@@ -12,7 +12,7 @@ import * as S from './store'
 import { newId, parseJson } from './sqlite'
 import * as V from '../shared/schemas'
 import type { CmdMaterial, CmdNotice, CommandState, Mark, ScenarioMsg } from '../shared/types'
-import { answerRefusal, applyMarkChanges, drillElapsedMs, rolePath, roleWithChildren, ymd } from '../shared/logic'
+import { answerRefusal, applyMarkChanges, checkSubstitution, coveringIn, drillElapsedMs, periodText, rolePath, roleWithChildren, ymd } from '../shared/logic'
 import type { CommandChangedPayload, CommandDrillPayload } from '../shared/events'
 
 export const OWNER = { notice: 'cmd_notice', material: 'cmd_material', scenario: 'cmd_scenario', answer: 'cmd_answer' } as const
@@ -68,6 +68,7 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
       assignments: S.assignments(db),
       common: S.common(db),
       exceptions: S.exceptions(db),
+      substitutions: S.substitutions(db),
       overrides: S.overrides(db),
       rotation: S.rotation(db),
       people: S.people(db, members),
@@ -76,6 +77,14 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
       unreadNotices: S.unreadNotices(db, u.id),
       drills: S.drillBriefs(db, u.id),
       serverNow: Date.now()
+    }
+    // the hint "away today — name a substitute" is for those in charge
+    if (u.manager && host.absencesToday) {
+      try {
+        state.hostAbsences = host.absencesToday().map((x) => ({ personId: x.memberId, type: x.type }))
+      } catch (e) {
+        host.report?.(`absences: ${e instanceof Error ? e.message : String(e)}`)
+      }
     }
     return ok(state)
   })
@@ -385,6 +394,7 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
     const u = manage(req)
     const b = parse(V.exceptionSchema, req.body)
     if (!S.personExists(db, host.members(), b.personId)) throw notFound('사람')
+    refuseCovering(b.personId, b.fromDate, b.toDate)
     const id = newId()
     db.tx(() => {
       db.run('INSERT INTO cmd_exceptions (id, person_id, reason, from_date, to_date, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [id, b.personId, b.reason, b.fromDate, b.toDate, u.id, Date.now()])
@@ -402,6 +412,7 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
   app.patch('/api/command/exceptions/:id', auth, async (req) => {
     manage(req)
     const b = parse(V.exceptionSchema, req.body)
+    refuseCovering(b.personId, b.fromDate, b.toDate)
     const r = db.run('UPDATE cmd_exceptions SET person_id = ?, reason = ?, from_date = ?, to_date = ? WHERE id = ?', [b.personId, b.reason, b.fromDate, b.toDate, param(req, 'id')])
     if (!r.changes) throw notFound('예외')
     changed('setup')
@@ -410,6 +421,50 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
   app.delete('/api/command/exceptions/:id', auth, async (req) => {
     manage(req)
     db.run('DELETE FROM cmd_exceptions WHERE id = ?', [param(req, 'id')])
+    changed('setup')
+    return ok({ id: param(req, 'id') })
+  })
+
+  // ---------- 대리자 ----------
+  const personName = (id: string): string => S.people(db, host.members()).find((p) => p.id === id)?.name ?? '(알 수 없음)'
+  /** A substitute cannot be on exception while covering (예외자 = out without replacement). */
+  function refuseCovering(personId: string, fromDate: string, toDate: string | null): void {
+    const x = coveringIn(S.substitutions(db), personId, fromDate, toDate)
+    if (x) throw bad(`${personName(personId)}은(는) ${periodText(x.fromDate, x.toDate)}에 ${personName(x.personId)}의 대리자입니다. 대리를 먼저 고치거나 지우세요.`)
+  }
+  /** The rules (checkSubstitution); returns the warnings of an allowed one. */
+  const checkSub = (b: z.infer<typeof V.substitutionSchema>, id?: string): string[] => {
+    const members = host.members()
+    if (!S.personExists(db, members, b.personId)) throw notFound('부재자')
+    if (!S.personExists(db, members, b.substituteId)) throw notFound('대리자')
+    const r = checkSubstitution({ ...b, id }, { substitutions: S.substitutions(db), exceptions: S.exceptions(db), teams: S.teams(db), assignments: S.assignments(db), common: S.common(db), roles: S.roles(db), people: S.people(db, members) })
+    if (r.error) throw bad(r.error)
+    return r.warnings
+  }
+  app.post('/api/command/substitutions', auth, async (req) => {
+    const u = manage(req)
+    const b = parse(V.substitutionSchema, req.body)
+    const warnings = checkSub(b)
+    const id = newId()
+    const t = Date.now()
+    db.run('INSERT INTO cmd_substitutions (id, person_id, substitute_id, reason, from_date, to_date, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [id, b.personId, b.substituteId, b.reason, b.fromDate, b.toDate, u.id, t, t])
+    host.log?.(req, 'command.substitution', { id, personId: b.personId, substituteId: b.substituteId, fromDate: b.fromDate, toDate: b.toDate })
+    changed('setup')
+    return ok({ id, warnings })
+  })
+  app.patch('/api/command/substitutions/:id', auth, async (req) => {
+    manage(req)
+    const id = param(req, 'id')
+    if (!db.get('SELECT 1 FROM cmd_substitutions WHERE id = ?', [id])) throw notFound('대리')
+    const b = parse(V.substitutionSchema, req.body)
+    const warnings = checkSub(b, id)
+    db.run('UPDATE cmd_substitutions SET person_id = ?, substitute_id = ?, reason = ?, from_date = ?, to_date = ?, updated_at = ? WHERE id = ?', [b.personId, b.substituteId, b.reason, b.fromDate, b.toDate, Date.now(), id])
+    changed('setup')
+    return ok({ id, warnings })
+  })
+  app.delete('/api/command/substitutions/:id', auth, async (req) => {
+    manage(req)
+    db.run('DELETE FROM cmd_substitutions WHERE id = ?', [param(req, 'id')])
     changed('setup')
     return ok({ id: param(req, 'id') })
   })
@@ -662,7 +717,7 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
     const members = S.participants(db, host.members(), d.mode_id, parseJson<string[]>(d.team_ids, []), !!d.with_common, now)
     db.tx(() => {
       db.run('DELETE FROM cmd_drill_members WHERE drill_id = ?', [drillId])
-      for (const m of members) db.run('INSERT INTO cmd_drill_members (drill_id, member_id, name, title, team_id, role_ids, common) VALUES (?, ?, ?, ?, ?, ?, ?)', [drillId, m.memberId, m.name, m.title, m.teamId, JSON.stringify(m.roleIds), m.common ? 1 : 0])
+      for (const m of members) db.run('INSERT INTO cmd_drill_members (drill_id, member_id, name, title, team_id, role_ids, common, cover_for) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [drillId, m.memberId, m.name, m.title, m.teamId, JSON.stringify(m.roleIds), m.common ? 1 : 0, m.coverFor ?? ''])
       db.run("UPDATE cmd_drills SET state = 'running', started_at = ?, paused_at = NULL, paused_ms = 0 WHERE id = ?", [now, drillId])
     })
     drillEvent(drillId, { kind: 'state', state: 'running', popup: true })

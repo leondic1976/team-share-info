@@ -253,12 +253,18 @@ export function ControlRoom({ m, id }: { m: Model; id: string }): React.JSX.Elem
                   <div className="flex items-center gap-1.5">
                     <b className="truncate">{titled({ ...mb, mark: m.person(mb.memberId)?.mark })}</b>
                     {mb.common && <Badge>공통</Badge>}
+                    {mb.coverFor && (
+                      <Badge tone="important" title={`원 담당 ${mb.coverFor}`}>
+                        대리
+                      </Badge>
+                    )}
                     <span className="ml-auto text-xs tabular-nums text-muted-foreground">
                       {answered}/{got}
                     </span>
                   </div>
                   <p className="truncate text-[0.7rem] text-muted-foreground">
-                    {m.team(mb.teamId)?.name ?? ''} {rolesOf(mb.roleIds) || '(분류 없음)'} · 평균 {formatSeconds(avg)}
+                    {m.team(mb.teamId)?.name ?? ''} {rolesOf(mb.roleIds) || '(분류 없음)'}
+                    {mb.coverFor ? ` · 원 담당 ${mb.coverFor}` : ''} · 평균 {formatSeconds(avg)}
                   </p>
                   {open.length > 0 && d.state !== 'ended' && (
                     <Button size="sm" variant="ghost" className="h-6 px-1.5 text-urgent" onClick={() => void act.run(() => Promise.all(open.map((x) => host.api.post(`/api/command/drills/${d.id}/messages/${x.id}/remind`, { memberIds: [mb.memberId] }))))} data-testid="cmd-remind">

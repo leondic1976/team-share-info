@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { createTestServer, type TestServer, type Cred } from './helpers'
+import { ymd } from '../../command/shared/logic'
 
 let s: TestServer | null = null
 afterEach(async () => {
@@ -215,5 +216,84 @@ describe('긴급구조지휘대 (command module through TeamHub)', () => {
     expect((await call(s.admin, 'POST', `/api/command/drills/${id}/delete`)).status).toBe(400)
     await call(s.admin, 'POST', `/api/command/drills/${id}/end`)
     expect((await call(s.admin, 'POST', `/api/command/drills/${id}/delete`)).status).toBe(200)
+  })
+
+  it('대리자: those in charge register it (rules on the server), the roster and drills take the substitute', async () => {
+    s = await createTestServer()
+    const admin = s.admin
+    const kim = await s.join('김부재')
+    const lee = await s.join('이대리')
+    const park = await s.join('박조원')
+    const DAY = 86_400_000
+    const today = ymd(Date.now())
+    const tomorrow = ymd(Date.now() + DAY)
+    const st0 = (await call(admin, 'GET', '/api/command')).data
+    const mode = st0.modes[0].id
+    const tA = (await call(admin, 'POST', '/api/command/teams', { name: 'A조' })).data.id
+    const tB = (await call(admin, 'POST', '/api/command/teams', { name: 'B조' })).data.id
+    await call(admin, 'PUT', `/api/command/teams/${tA}/members`, { personIds: [kim.memberId, park.memberId] })
+    await call(admin, 'PUT', `/api/command/teams/${tB}/members`, { personIds: [lee.memberId] })
+    const r1 = (await call(admin, 'POST', '/api/command/roles', { modeId: mode, name: '조장' })).data.id
+    const r2 = (await call(admin, 'POST', '/api/command/roles', { modeId: mode, name: '상황요원' })).data.id
+    await call(admin, 'PUT', '/api/command/assignments', { modeId: mode, teamId: tA, roleId: r1, personIds: [kim.memberId] })
+    await call(admin, 'PUT', '/api/command/assignments', { modeId: mode, teamId: tA, roleId: r2, personIds: [park.memberId] })
+    const body = { personId: kim.memberId, substituteId: lee.memberId, reason: '휴가', fromDate: today, toDate: tomorrow }
+
+    // writes are for the server PC and the 지휘대담당 only
+    expect((await call(park, 'POST', '/api/command/substitutions', body)).status).toBe(403)
+    const made = await call(admin, 'POST', '/api/command/substitutions', body)
+    expect([made.status, made.data.warnings]).toEqual([200, []])
+    const id = made.data.id
+    expect((await call(park, 'PATCH', `/api/command/substitutions/${id}`, body)).status).toBe(403)
+    expect((await call(park, 'DELETE', `/api/command/substitutions/${id}`)).status).toBe(403)
+    // everybody reads them
+    expect((await call(park, 'GET', '/api/command')).data.substitutions).toEqual([{ id, ...body }])
+
+    // the rules
+    expect((await call(admin, 'POST', '/api/command/substitutions', { ...body, substituteId: park.memberId, fromDate: tomorrow, toDate: null })).error).toContain('기간이 겹치지 않게')
+    expect((await call(admin, 'POST', '/api/command/substitutions', { ...body, substituteId: kim.memberId })).error).toBe('대리자는 부재자와 다른 사람이어야 합니다.')
+    expect((await call(admin, 'POST', '/api/command/substitutions', { ...body, toDate: '2000-01-01' })).status).toBe(400)
+    expect((await call(admin, 'POST', '/api/command/substitutions', { ...body, substituteId: 'nobody' })).status).toBe(404)
+    // the one covering cannot be put on exception in the period
+    expect((await call(admin, 'POST', '/api/command/exceptions', { personId: lee.memberId, reason: '교육', fromDate: tomorrow, toDate: null })).error).toContain('김부재의 대리자입니다')
+    // a substitute on exception then is refused
+    const temp = (await call(admin, 'POST', '/api/command/people', { name: '정임시' })).data.id
+    const ex = (await call(admin, 'POST', '/api/command/exceptions', { personId: temp, reason: '파견', fromDate: '2099-01-01', toDate: null })).data.id
+    expect((await call(admin, 'POST', '/api/command/substitutions', { ...body, substituteId: temp, fromDate: '2099-02-01', toDate: '2099-02-02' })).error).toContain('예외자(파견')
+    await call(admin, 'DELETE', `/api/command/exceptions/${ex}`)
+    // own duty in the same 조: allowed with a warning (edit: 박조원 covers instead)
+    const edited = await call(admin, 'PATCH', `/api/command/substitutions/${id}`, { ...body, substituteId: park.memberId })
+    expect(edited.status).toBe(200)
+    expect(edited.data.warnings[0]).toContain('같은 조(A조)에서 "상황요원"도 맡고 있어')
+    await call(admin, 'PATCH', `/api/command/substitutions/${id}`, body)
+
+    // a drill of A조 started in the period: 이대리 takes part as 조장 in 김부재's place
+    const d1 = (await call(admin, 'POST', '/api/command/drills', { modeId: mode, title: '대리 훈련', teamIds: [tA] })).data.id
+    const members = (await call(admin, 'GET', `/api/command/drills/${d1}`)).data.members
+    expect(members.map((x: { name: string }) => x.name).sort()).toEqual(['박조원', '이대리'])
+    expect(members.find((x: { memberId: string }) => x.memberId === lee.memberId)).toMatchObject({ teamId: tA, roleIds: [r1], common: false, coverFor: '김부재' })
+    await call(admin, 'POST', `/api/command/drills/${d1}/end`)
+
+    // a temporary substitute cannot join: the place stays empty, the absent one is not in it either
+    const tmp = await call(admin, 'POST', '/api/command/substitutions', { ...body, personId: park.memberId, substituteId: temp, reason: '출장' })
+    expect(tmp.data.warnings.some((w: string) => w.includes('임시 인원이라 훈련에는 참가하지 못합니다'))).toBe(true)
+    const d2 = (await call(admin, 'POST', '/api/command/drills', { modeId: mode, title: '임시 대리 훈련', teamIds: [tA] })).data.id
+    expect((await call(admin, 'GET', `/api/command/drills/${d2}`)).data.members.map((x: { name: string }) => x.name)).toEqual(['이대리'])
+    await call(admin, 'POST', `/api/command/drills/${d2}/end`)
+
+    // deleting it gives the places back
+    expect((await call(admin, 'DELETE', `/api/command/substitutions/${id}`)).status).toBe(200)
+    expect((await call(admin, 'GET', '/api/command')).data.substitutions.map((x: { id: string }) => x.id)).toEqual([tmp.data.id])
+  })
+
+  it('대리자 hint: who is away today by 근무현황 goes to those in charge only', async () => {
+    s = await createTestServer()
+    const b = await s.join('휴가자')
+    const c = await s.join('팀원')
+    const d = new Date()
+    const from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+    expect((await s.req(b, { method: 'POST', url: '/api/duty', ip: IP, payload: { type: '연가', startAt: from, endAt: from + 86_400_000, allDay: true } })).statusCode).toBe(200)
+    expect((await call(s.admin, 'GET', '/api/command')).data.hostAbsences).toEqual([{ personId: b.memberId, type: '연가' }])
+    expect((await call(c, 'GET', '/api/command')).data.hostAbsences).toBeUndefined()
   })
 })

@@ -1,6 +1,6 @@
 /**
  * 설정 (the server PC and the 지휘대담당): 지휘대담당, 근무 유형, 조, 순환, 분류와 임무, 배치,
- * 공통업무, 예외자, 임시 인원.
+ * 공통업무, 예외자, 대리자, 임시 인원.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowDown, ArrowUp, Copy, FileText, Pencil, Plus, Search, Trash2, UserPlus, Users } from 'lucide-react'
@@ -11,6 +11,7 @@ import { when } from './model'
 import { useAct, useRoleDuty } from './data'
 import { useHost } from './host'
 import { Editor } from './rich'
+import { SubstitutionsCard } from './Substitutions'
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Dialog, EmptyNote, Field, Input, Select, Textarea, cn, titled, useAsk } from './ui'
 
 const COLORS = ['#dc2626', '#ea580c', '#ca8a04', '#16a34a', '#2563eb', '#7c3aed', '#db2777', '#475569']
@@ -155,6 +156,7 @@ export function Settings({ m, now }: { m: Model; now: number }): React.JSX.Eleme
       </Card>
       <CommonCard m={m} />
       <ExceptionsCard m={m} now={now} />
+      <SubstitutionsCard m={m} now={now} />
       <TempPeopleCard m={m} />
     </div>
   )
@@ -776,7 +778,7 @@ function ExceptionsCard({ m, now }: { m: Model; now: number }): React.JSX.Elemen
             </Button>
           </div>
         ))}
-        <p className="text-xs text-muted-foreground">기간이 오늘을 포함하면 그 사람은 조·분류·조별 공통업무에서 빠집니다. 기간이 끝나면 예외 목록에서 자동으로 내려가며, 다시 조에 넣으면 됩니다.</p>
+        <p className="text-xs text-muted-foreground">기간이 오늘을 포함하면 그 사람은 조·분류·조별 공통업무에서 빠집니다. 기간이 끝나면 예외 목록에서 자동으로 내려가며, 다시 조에 넣으면 됩니다. 예외자는 대신할 사람 없이 빠지는 것이고, 휴가·교육·출장처럼 그 기간에 누군가 임무를 대신 맡으면 아래 <b>대리자</b>로 등록하세요.</p>
         <ErrorLine err={act.err} />
       </CardContent>
       <Dialog
