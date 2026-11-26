@@ -137,8 +137,9 @@ describe('메모 and 알람: every function, one after another', () => {
     })
     await step('capture button', async () => {
       await p.getByRole('button', { name: '화면 캡처' }).click()
-      await p.waitForTimeout(1500)
-      return a.app.windows().length
+      await p.waitForTimeout(800)
+      // the Windows snipping tool is not started in E2E (it would open on the person's screen); the request is recorded
+      return a.app.evaluate(() => (globalThis as unknown as { __teamhubOpened?: string[] }).__teamhubOpened ?? [])
     })
     // ---------- alarms ----------
     await go(p, '/alarms')

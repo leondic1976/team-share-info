@@ -82,7 +82,8 @@ describe('M8-1 backup and moving the server to another PC (profile)', () => {
     // (saving an unusable folder is refused, 지시 132): after saving, the folder becomes a file
     const usb = join(a.userData, 'usb-backup')
     mkdirSync(usb, { recursive: true })
-    expect(await apiPut(a.page, '/api/admin/settings', { backup: { dir: usb } })).toBe(200)
+    // the daily slot set late, so today's automatic run is not about to start (that holds the reminder back for up to a minute)
+    expect(await apiPut(a.page, '/api/admin/settings', { backup: { dir: usb, time: '23:59' } })).toBe(200)
     rmSync(usb, { recursive: true, force: true })
     writeFileSync(usb, 'x')
     await go(a.page, '/admin/backup')

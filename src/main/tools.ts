@@ -394,6 +394,12 @@ export async function writeClipboard(o: { text?: string; dataUrl?: string }): Pr
 export async function startCapture(): Promise<void> {
   await primeClipboard()
   captureUntil = Date.now() + 120_000
+  if (process.env.TEAMHUB_E2E) {
+    // E2E: never start the real Windows snipping tool on the person's screen; record the request
+    const g = globalThis as unknown as { __teamhubOpened?: string[] }
+    ;(g.__teamhubOpened ??= []).push('ms-screenclip:')
+    return
+  }
   void shell.openExternal('ms-screenclip:').catch((e: unknown) => log.warn('[tools] screenclip failed', e))
 }
 
