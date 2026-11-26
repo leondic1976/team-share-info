@@ -14,9 +14,12 @@ export function useChatUnread(): { messages: number; notes: number } {
   return q.data ?? { messages: 0, notes: 0 }
 }
 
-/** A new message or note: the card near the tray and the "팀뿌요~" sound (main process, 지시 83·85). */
+/**
+ * A new message or note: the card near the tray and the alert sound, which says
+ * "새로운 메시지 도착입니다." (main process, 지시 83·85·131).
+ */
 async function alert(o: { key: string; title: string; body: string; route: string }): Promise<void> {
-  await invoke('notify:toast', o)
+  await invoke('notify:toast', { ...o, kind: 'message' })
 }
 
 /** Alerts for new messages and notes (M5-2). Muted chats and the open chat stay silent. */

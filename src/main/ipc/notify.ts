@@ -29,7 +29,7 @@ export function registerNotifyIpc(): void {
     if (closed.length) getMainWindow()?.webContents.send('popup:closed', { id: closed[0]! })
     return closed
   })
-  handle('notify:toast', z.object({ title: z.string().max(200), body: z.string().max(500), route: z.string().max(200).optional(), key: z.string().max(64).optional() }), (o) => showToast(o))
+  handle('notify:toast', z.object({ title: z.string().max(200), body: z.string().max(500), route: z.string().max(200).optional(), key: z.string().max(64).optional(), kind: z.enum(['message', 'alert']).optional() }), (o) => showToast(o))
   handle('popup:get', z.object({ id: z.string() }), ({ id }) => getPopupPayload(id))
   handle('preview:list', null, () => previewItems())
   handle('preview:open', z.object({ key: z.string().max(64) }), ({ key }) => openPreview(key))

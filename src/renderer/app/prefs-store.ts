@@ -20,7 +20,7 @@ export interface Prefs {
   wallpaperStrength: number
   /** blur of the user's own picture, px */
   wallpaperBlur: number
-  /** new message: the "팀뿌요~" sound (지시 83) */
+  /** every alert: the chime and "새로운 메시지/알림 도착입니다." (지시 83·131) */
   msgSound: boolean
   /** new message: a card near the tray instead of a Windows notification (지시 83) */
   msgPreview: boolean

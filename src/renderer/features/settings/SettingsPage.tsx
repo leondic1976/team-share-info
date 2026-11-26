@@ -135,9 +135,9 @@ export function SettingsPage({ extra }: { extra?: ReactNode }): React.JSX.Elemen
                 </label>
               </div>
             </Row>
-            <Row label="알림 소리" hint="메시지·쪽지·공지·새 일정·일정 알림·알람 등 알림이 오면 &quot;팀뿌요~&quot; 하고 알려 줍니다(Windows의 한국어 음성). 긴급공지는 따로 경보음이 납니다.">
+            <Row label="알림 소리" hint="알림이 오면 알림음과 함께 &quot;새로운 메시지 도착입니다&quot;(메시지·쪽지) 또는 &quot;새로운 알림 도착입니다&quot;(공지·새 일정·일정 알림·알람 등 그 밖의 알림)라고 알려 줍니다(Windows의 한국어 음성, 없으면 알림음만). 들어 보기는 메시지 알림을 들려 줍니다. 긴급공지는 따로 경보음이 납니다.">
               <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => playMessageSound()}>
+                <Button size="sm" variant="outline" onClick={() => playMessageSound('message')}>
                   <Volume2 /> 들어 보기
                 </Button>
                 <label className="flex cursor-pointer items-center gap-2 text-sm">

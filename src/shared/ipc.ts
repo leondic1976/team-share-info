@@ -9,6 +9,7 @@ import type { ServerSetupInput } from './schemas/settings'
 import type { ServerStatus } from './server-host'
 import type { HeldBack } from './update-policy'
 import type { UrgentPayload } from './schemas/notices'
+import type { AlertSoundKind } from './alert-sound'
 import type { DiaryEntryDto, DiarySummaryDto, PersonalEventDto, PersonalEventInput, PersonalOccurrenceDto, ReminderItem } from './schemas/personal'
 import type { DetectedApp, LauncherInput, LauncherItemDto, RecentDocDto, TeamLauncherDto } from './schemas/launcher'
 import type { NetCheckStep, SecurityProgramDto, SecurityRunDto, SysInfo, SysResources, TempEntry } from './schemas/sysutil'
@@ -363,7 +364,7 @@ export interface IpcMap {
   'notify:openUrgent': { req: void; res: string[] }
   /** close the urgent windows whose notice is not in `ids`; returns the ids closed */
   'notify:syncUrgent': { req: { ids: string[] }; res: string[] }
-  'notify:toast': { req: { title: string; body: string; route?: string; key?: string }; res: void }
+  'notify:toast': { req: { title: string; body: string; route?: string; key?: string; kind?: AlertSoundKind }; res: void }
   'preview:list': { req: void; res: PreviewItem[] }
   'preview:open': { req: { key: string }; res: void }
   'preview:dismiss': { req: { key: string | null }; res: void }
@@ -912,8 +913,8 @@ export interface MainEventMap {
   'popup:closeRequest': { id: string }
   /** the cards of the message preview changed; sound: a new message came */
   'preview:changed': { sound: boolean }
-  /** play the alert sound ("팀뿌요~") in the TeamHub window */
-  'app:sound': { kind: 'alert' }
+  /** play the alert sound in the TeamHub window: a chime and the sentence of the kind (지시 131) */
+  'app:sound': { kind: AlertSoundKind }
   /** 긴급구조지휘대: the 훈련 창 was asked for again (a new message or 다시 알림) */
   'command:poke': { drillId: string; msgId: string | null }
   'transfer:update': TransferItem[]

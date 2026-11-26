@@ -1,6 +1,7 @@
 import { BrowserWindow, Notification, screen } from 'electron'
 import { join } from 'node:path'
 import type { UrgentPayload } from '../shared/schemas/notices'
+import type { AlertSoundKind } from '../shared/alert-sound'
 import { getMainWindow, isQuitting, loadRenderer, secureWebContents, showMainWindow } from './windows/main-window'
 import { resourcePath } from './paths'
 import { localDb } from './localdb'
@@ -117,6 +118,8 @@ export interface ToastOptions {
   silent?: boolean
   /** cards with the same key are merged (a conversation); default: the route, else the title */
   key?: string
+  /** what the voice says: 'message' for messages and notes, else an alert (지시 131) */
+  kind?: AlertSoundKind
 }
 
 /** Focus mode (6.12 ③) holds back normal toasts; the gate returns false to hold. */
@@ -125,7 +128,7 @@ export function setToastGate(fn: (o: ToastOptions) => boolean): void {
   toastGate = fn
 }
 
-/** 설정 → 알림: the card near the tray and the "팀뿌요~" sound (both on unless turned off). */
+/** 설정 → 알림: the card near the tray and the alert sound (both on unless turned off). */
 function alertPrefs(): { preview: boolean; sound: boolean } {
   try {
     const p = localDb().kv.get<{ msgPreview?: boolean; msgSound?: boolean }>('prefs') ?? {}
@@ -135,14 +138,17 @@ function alertPrefs(): { preview: boolean; sound: boolean } {
   }
 }
 
-/** The "팀뿌요~" sound, played by the TeamHub window (it keeps running while hidden to the tray). */
-function playAlertSound(): void {
-  getMainWindow()?.webContents.send('app:sound', { kind: 'alert' })
+/**
+ * The alert sound (a chime and "새로운 메시지 도착입니다." or "새로운 알림 도착입니다.", 지시 131),
+ * played by the TeamHub window (it keeps running while hidden to the tray).
+ */
+function playAlertSound(kind: AlertSoundKind): void {
+  getMainWindow()?.webContents.send('app:sound', { kind })
 }
 
 /**
  * Every alert of the program (공지, 일정 알림, 알람, 메시지, 기록, 사용 신청 …, 지시 83·85): a card
- * at the top right of the screen (지시 114) and the "팀뿌요~" sound. With the card turned off in 설정, a
+ * at the top right of the screen (지시 114) and the alert sound. With the card turned off in 설정, a
  * Windows notification instead (it stays until clicked, 지시 63).
  */
 export function showToast(opts: ToastOptions, force = false): void {
@@ -155,7 +161,7 @@ export function showToast(opts: ToastOptions, force = false): void {
     const g = globalThis as unknown as { __teamhubToasts?: (ToastOptions & { timeoutType?: string })[] }
     ;(g.__teamhubToasts ??= []).push({ ...opts, timeoutType: options.timeoutType })
   }
-  if (prefs.sound && !opts.silent) playAlertSound()
+  if (prefs.sound && !opts.silent) playAlertSound(opts.kind === 'message' ? 'message' : 'alert')
   if (prefs.preview) {
     showPreview({ key: (opts.key ?? opts.route ?? opts.title).slice(0, 64), title: opts.title, body: opts.body, route: opts.route, sound: prefs.sound && !opts.silent })
     return

@@ -58,10 +58,11 @@ export function App(): React.JSX.Element {
     if (!window.location.hash.startsWith('#/popup/')) void refresh()
   }, [loadPrefs, setApp, refresh])
 
-  // the alert sound ("팀뿌요~") of every alert is played by the TeamHub window (also hidden or locked)
+  // the alert sound (a chime and "새로운 메시지/알림 도착입니다.") of every alert is played by the
+  // TeamHub window (also hidden or locked)
   useEffect(() => {
     if (window.location.hash.startsWith('#/popup/')) return
-    return onMain('app:sound', () => playMessageSound())
+    return onMain('app:sound', ({ kind }) => playMessageSound(kind))
   }, [])
 
   // Popup windows reuse this bundle with their own hash route.
