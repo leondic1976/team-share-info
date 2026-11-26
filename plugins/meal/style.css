@@ -132,6 +132,24 @@
 .cancel {
   color: var(--urgent);
 }
+/* the question asked before 확실히 신청안함 is set */
+.firm-points {
+  margin: 0.25rem 0 0.75rem;
+  padding-left: 1.125rem;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+/* the 확실히 신청안함 button: a light red fill so it reads as a choice of its own, not plain text (1.6.1) */
+.tile .act .firm-btn {
+  border-color: color-mix(in srgb, var(--urgent) 35%, var(--input));
+  background: color-mix(in srgb, var(--urgent) 10%, var(--card));
+  color: var(--urgent);
+}
+.tile .act .firm-btn:hover {
+  background: color-mix(in srgb, var(--urgent) 18%, var(--card));
+}
 @media (max-width: 720px) {
   .tile {
     grid-template-columns: 4.5rem minmax(0, 1fr) auto;

@@ -339,7 +339,18 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     // 팀원B's dinner today was requested for them by the admin; they mark it 확실히 신청안함
     const dinner = fb.locator('.day.today [data-tile$=":dinner"]')
     await expect.poll(() => dinner.textContent(), wait).toContain('신청함')
+    await shot(b.page, 'meal-firm-button')
+    // it asks once more first (지시 120): 닫기 leaves the meal as it was
     await dinner.getByRole('button', { name: '확실히 신청안함' }).click()
+    const ask = fb.locator('#firmDlg')
+    await expect.poll(() => ask.isVisible(), wait).toBe(true)
+    expect(await ask.textContent()).toContain('바로 취소됩니다')
+    await shot(b.page, 'meal-firm-ask')
+    await ask.getByRole('button', { name: '닫기' }).click()
+    await expect.poll(() => ask.isVisible(), wait).toBe(false)
+    expect(await dinner.textContent()).toContain('신청함')
+    await dinner.getByRole('button', { name: '확실히 신청안함' }).click()
+    await ask.getByRole('button', { name: '확실히 신청안함' }).click()
     await expect.poll(() => dinner.textContent(), wait).toContain('대신 신청 불가')
     expect(await dinner.locator('.state').textContent()).toContain('확실히 신청안함')
     expect(await dinner.getByRole('button', { name: '표시 풀기' }).isVisible()).toBe(true)

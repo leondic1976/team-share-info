@@ -132,7 +132,7 @@
       ? badge('muted', '마감')
       : firm
         ? `${btn('unfirm', '표시 풀기', 'th-btn-outline', '확실히 신청안함을 풉니다. 그 뒤에는 신청할 수 있고, 다른 사람도 대신 신청할 수 있습니다.')}${btn('apply', '신청', '')}`
-        : `${btn('firm', '확실히 신청안함', 'th-btn-ghost', '이 식사는 먹지 않습니다. 표시해 두면 다른 사람이 대신 신청하거나 취소할 수 없고, 본인만 풀 수 있습니다.')}${btn(on ? 'cancel' : 'apply', on ? '취소' : at ? '다시 신청' : '신청', on ? 'th-btn-outline cancel' : '')}`
+        : `${btn('firm', '확실히 신청안함', 'th-btn-outline firm-btn', '이 식사는 먹지 않습니다. 표시해 두면 다른 사람이 대신 신청하거나 취소할 수 없고, 본인만 풀 수 있습니다.')}${btn(on ? 'cancel' : 'apply', on ? '취소' : at ? '다시 신청' : '신청', on ? 'th-btn-outline cancel' : '')}`
     return `<div class="tile ${on ? 'on' : ''} ${firm ? 'firm' : ''} ${open ? '' : 'locked'}" data-tile="${date}:${meal}">
       <div class="meal"><b>${M.MEALS[meal]}</b><span class="count th-xs th-muted th-nums">${count}명 신청</span></div>
       <div class="menu">${text ? esc(text.split('\n').join(', ')) : noMenu()}</div>
@@ -207,6 +207,23 @@
       </div>
     </div>`
   }
+  /**
+   * 확실히 신청안함 asks once more before it is set (지시 120): it takes away a request already made,
+   * also one somebody made for me, and from then on nobody else can request or cancel this meal.
+   */
+  let firmAsk = null
+  function askFirm(date, meal, on) {
+    firmAsk = { date, meal }
+    $('firmTitle').textContent = `${M.dateLabel(date, M.ymd(now()))} ${M.MEALS[meal]}을 확실히 신청안함으로 정할까요?`
+    const points = [
+      ...(on ? ['지금 신청되어 있는 이 식사는 바로 취소됩니다(다른 사람이 대신 신청해 둔 것도).'] : []),
+      '다른 사람은(관리자·식수서무 포함) 이 식사를 대신 신청하거나 취소할 수 없습니다.',
+      '본인만 [표시 풀기]로 풀 수 있습니다. 마감 뒤에는 바꿀 수 없습니다.'
+    ]
+    $('firmBody').innerHTML = points.map((p) => `<li>${esc(p)}</li>`).join('')
+    $('firmDlg').showModal()
+  }
+
   /**
    * target = { id, name }: request or cancel for that member (anybody may, except for a meal they
    * marked 확실히 신청안함). firm (my own, with on = false): mark the meal 확실히 신청안함.
@@ -908,7 +925,7 @@
   }
   render.bars = renderBars
   /** Something is being typed that a redraw would throw away. */
-  const typing = () => tab === 'settings' || menuEdit || $('dayDlg').open || $('bulkDlg').open || $('personDlg').open
+  const typing = () => tab === 'settings' || menuEdit || $('dayDlg').open || $('bulkDlg').open || $('personDlg').open || $('firmDlg').open
 
   document.querySelector('nav').addEventListener('click', (e) => {
     const b = e.target.closest('[role=tab]')
@@ -919,7 +936,8 @@
   document.addEventListener('click', (e) => {
     const t = e.target.closest('button')
     if (!t || t.closest('nav')) return
-    if (t.dataset.act) return void change(t.dataset.date, t.dataset.meal, t.dataset.act === 'apply', null, t.dataset.act === 'firm')
+    if (t.dataset.act === 'firm') return askFirm(t.dataset.date, t.dataset.meal, !!t.closest('.tile.on'))
+    if (t.dataset.act) return void change(t.dataset.date, t.dataset.meal, t.dataset.act === 'apply', null, false)
     if (t.dataset.proxy || t.dataset.unproxy) {
       const meal = t.dataset.proxy || t.dataset.meal
       const id = t.dataset.unproxy || proxySel[meal]
@@ -1008,6 +1026,9 @@
       case 'dayClose':
         $('dayDlg').close()
         return render()
+      case 'firmClose':
+        firmAsk = null
+        return $('firmDlg').close()
       case 'printWeek':
         return window.print()
       case 'copyWeek':
@@ -1074,6 +1095,12 @@
     if (e.target.id === 'dayForm') void saveDay()
     if (e.target.id === 'bulkForm') void applyBulk()
     if (e.target.id === 'personForm') void savePerson()
+    if (e.target.id === 'firmForm' && firmAsk) {
+      const { date, meal } = firmAsk
+      firmAsk = null
+      $('firmDlg').close()
+      void change(date, meal, false, null, true)
+    }
   })
   document.addEventListener('input', (e) => {
     if (e.target.id === 'bulkFilter') {

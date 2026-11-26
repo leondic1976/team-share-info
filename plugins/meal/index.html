@@ -84,6 +84,18 @@
       </form>
     </dialog>
 
+    <dialog id="firmDlg" class="th-dialog firm-dlg" aria-labelledby="firmTitle">
+      <form id="firmForm">
+        <h2 class="th-dialog-title" id="firmTitle"></h2>
+        <ul id="firmBody" class="firm-points"></ul>
+        <div class="dlg-btns">
+          <span class="th-grow"></span>
+          <button type="button" class="th-btn th-btn-outline" id="firmClose">닫기</button>
+          <button type="submit" class="th-btn th-btn-destructive" id="firmOk">확실히 신청안함</button>
+        </div>
+      </form>
+    </dialog>
+
     <div id="toast" class="th-toast" role="status"></div>
     <script src="meal.js"></script>
     <script src="app.js"></script>
