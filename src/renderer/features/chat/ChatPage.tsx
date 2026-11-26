@@ -7,6 +7,7 @@ import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Input, Textarea } from '@renderer/components/ui/input'
 import { Dialog } from '@renderer/components/Dialog'
+import { LinkedText } from '@renderer/components/LinkedText'
 import { MemberPicker } from '@renderer/components/ScopePicker'
 import { EmptyState, Loading, OfflineState } from '@renderer/components/EmptyState'
 import { Field } from '@renderer/features/setup/SetupFrame'
@@ -178,7 +179,9 @@ function NotesView({ composeKey, to }: { composeKey: number; to: string | null }
             {format(open.createdAt, 'yyyy-MM-dd HH:mm')}
             {box === 'sent' && ` · ${open.toName} ${open.readAt ? `${format(open.readAt, 'M/d HH:mm')} 읽음` : '안 읽음'}`}
           </p>
-          <p className="selectable mt-3 text-sm whitespace-pre-wrap">{open.body}</p>
+          <p className="selectable mt-3 text-sm whitespace-pre-wrap break-words">
+            <LinkedText text={open.body} className="text-primary" />
+          </p>
         </Dialog>
       )}
       {composing && (

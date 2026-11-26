@@ -1,4 +1,5 @@
 import { BrowserWindow, screen } from 'electron'
+import log from 'electron-log/main'
 import { join } from 'node:path'
 import type { PreviewItem } from '../shared/ipc'
 import { getMainWindow, loadRenderer, secureWebContents, showMainWindow } from './windows/main-window'
@@ -46,6 +47,7 @@ function startGuard(): void {
     const b = win.getBounds()
     const now = p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height
     const periodic = ++tick % 10 === 0
+    if (now && !inside) log.info(`[preview] pointer on the cards at ${p.x},${p.y}`)
     if ((now && !inside) || periodic) raise()
     inside = now
   }, 300)
@@ -98,6 +100,10 @@ function ensureWindow(): BrowserWindow {
     stopGuard()
     win = null
   })
+  // what the cards receive, in main.log: when X "does nothing" this tells whether the click arrived (지시 122)
+  win.webContents.on('console-message', (e) => {
+    if (e.message.startsWith('[preview]')) log.info(e.message)
+  })
   return win
 }
 
@@ -113,6 +119,7 @@ function changed(sound: boolean): void {
   if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send)
   else send()
   if (!w.isVisible()) w.showInactive()
+  log.info(`[preview] shown: ${items.length} card(s) at ${JSON.stringify(w.getBounds())}`)
   raise()
   startGuard()
 }
@@ -136,6 +143,7 @@ export function previewItems(): PreviewItem[] {
 
 /** Close one card (or all, key null). */
 export function dismissPreview(key: string | null): void {
+  log.info(`[preview] closed ${key === null ? 'all' : key}`)
   items = key === null ? [] : items.filter((x) => x.key !== key)
   changed(false)
 }

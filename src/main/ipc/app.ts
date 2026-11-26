@@ -35,6 +35,12 @@ export function registerAppIpc(): void {
   handle('app:getAutostart', null, () => getAutostart())
   handle('app:setAutostart', z.object({ enabled: z.boolean() }), ({ enabled }) => setAutostart(enabled))
   handle('app:openExternal', z.object({ url: z.string().regex(/^https?:\/\//i) }), async ({ url }) => {
+    if (process.env.TEAMHUB_E2E) {
+      // E2E: record it instead of starting the PC's web browser
+      const g = globalThis as unknown as { __teamhubOpened?: string[] }
+      ;(g.__teamhubOpened ??= []).push(url)
+      return
+    }
     await shell.openExternal(url)
   })
   handle('app:setBadge', z.object({ count: z.number().int().min(0) }), ({ count }) => {

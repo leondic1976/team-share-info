@@ -7,6 +7,7 @@ import type { ScopeInput } from '@shared/schemas/scope'
 import { Button } from '@renderer/components/ui/button'
 import { Label, Textarea } from '@renderer/components/ui/input'
 import { Dialog, confirmDialog } from '@renderer/components/Dialog'
+import { LinkedText } from '@renderer/components/LinkedText'
 import { EmptyState, OfflineState } from '@renderer/components/EmptyState'
 import { ScopePicker, ScopeTags, defaultScope, scopeIsValid } from '@renderer/components/ScopePicker'
 import { sendOrQueue } from '@renderer/lib/outbox'
@@ -56,7 +57,9 @@ export function SharedMemosView(): React.JSX.Element {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="shared-memos">
           {q.data.map((m) => (
             <div key={m.id} className={cn('flex flex-col rounded-md p-3 text-sm text-slate-900 shadow-sm', m.checkedAt && 'opacity-60')} style={{ background: MEMO_COLORS[m.color] }} data-testid="shared-memo">
-              <p className="selectable flex-1 whitespace-pre-wrap break-words">{m.body}</p>
+              <p className="selectable flex-1 whitespace-pre-wrap break-words">
+                <LinkedText text={m.body} className="text-primary" />
+              </p>
               <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-600">
                 <span>
                   <span className="font-semibold">{m.authorName}</span>

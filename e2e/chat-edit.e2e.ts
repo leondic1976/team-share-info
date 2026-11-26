@@ -136,6 +136,31 @@ describe('메신저: edit and delete (shown to everybody), pasted images wait fo
     await a.page.getByRole('button', { name: '이모티콘' }).click()
   }, 60000)
 
+  it('web addresses in a message can be clicked and open in the web browser (지시 123)', async () => {
+    await sendText(a.page, '자료는 https://example.com/doc?id=7 에서 받고, 공지는 www.naver.com에 있습니다.')
+    const msg = b.page.getByTestId('message-body').filter({ hasText: '자료는' })
+    await expect.poll(() => msg.getByTestId('message-link').count(), { timeout: 15000 }).toBe(2)
+    expect(await msg.getByTestId('message-link').allTextContents()).toEqual(['https://example.com/doc?id=7', 'www.naver.com'])
+    expect(await msg.textContent()).toBe('자료는 https://example.com/doc?id=7 에서 받고, 공지는 www.naver.com에 있습니다.')
+    if (process.env.TEAMHUB_SHOT_DIR) {
+      for (const theme of ['light', 'dark']) {
+        await b.page.evaluate((t) => document.documentElement.classList.toggle('dark', t === 'dark'), theme)
+        await b.page.waitForTimeout(300)
+        await b.page.getByTestId('message-list').screenshot({ path: `${process.env.TEAMHUB_SHOT_DIR}/chat-links-${theme}.png` })
+      }
+      await b.page.evaluate(() => document.documentElement.classList.remove('dark'))
+    }
+    await msg.getByTestId('message-link').first().click()
+    await msg.getByTestId('message-link').nth(1).click()
+    await expect
+      .poll(() => b.app.evaluate(() => (globalThis as unknown as { __teamhubOpened?: string[] }).__teamhubOpened ?? []), { timeout: 5000 })
+      .toEqual(['https://example.com/doc?id=7', 'http://www.naver.com'])
+    // the program itself stays where it was
+    expect(b.page.url()).toContain('/chat')
+    // the sender's own bubble has the links as well
+    await expect.poll(() => a.page.getByTestId('message-body').filter({ hasText: '자료는' }).getByTestId('message-link').count(), { timeout: 10000 }).toBe(2)
+  }, 60000)
+
   it('a new message while the window is hidden: a card at the top right, the 팀뿌요 sound, a click opens it', async () => {
     const mainOf = (l: Launched) => l.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => !w.webContents.getURL().includes('/popup/'))!.id)
     const bMain = await mainOf(b)

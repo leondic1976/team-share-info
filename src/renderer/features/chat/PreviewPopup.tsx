@@ -15,7 +15,17 @@ export function PreviewPopup(): React.JSX.Element {
     document.documentElement.style.background = 'transparent'
     document.body.style.background = 'transparent'
     load()
-    return onMain('preview:changed', load)
+    // for main.log (지시 122): did a press reach the cards, and on what
+    const down = (e: PointerEvent): void => {
+      const el = e.target as Element
+      console.info(`[preview] press ${el.closest('button[aria-label="닫기"]') ? 'X' : el.closest('[data-testid="preview-card"]') ? 'card' : 'outside'} at ${Math.round(e.clientX)},${Math.round(e.clientY)}`)
+    }
+    document.addEventListener('pointerdown', down, true)
+    const off = onMain('preview:changed', load)
+    return () => {
+      document.removeEventListener('pointerdown', down, true)
+      off()
+    }
   }, [load])
 
   return (
@@ -43,7 +53,7 @@ export function PreviewPopup(): React.JSX.Element {
             })()}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 pr-5">
+            <div className="flex items-center gap-1.5 pr-7">
               <b className="truncate text-sm">{it.title}</b>
               {it.count > 1 && <span className="shrink-0 rounded-full bg-urgent px-1.5 text-[0.65rem] font-bold leading-4 text-white">{it.count}</span>}
               <span className="ml-auto shrink-0 text-[0.65rem] text-muted-foreground">{format(it.at, 'HH:mm')}</span>
@@ -52,7 +62,7 @@ export function PreviewPopup(): React.JSX.Element {
           </div>
           <button
             type="button"
-            className="absolute right-1.5 top-1.5 cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="absolute right-1 top-1 flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label="닫기"
             title="닫기"
             onClick={(e) => {
@@ -60,7 +70,7 @@ export function PreviewPopup(): React.JSX.Element {
               void invoke('preview:dismiss', { key: it.key })
             }}
           >
-            <X className="size-3.5" />
+            <X className="size-4" />
           </button>
         </div>
       ))}

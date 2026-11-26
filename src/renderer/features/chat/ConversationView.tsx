@@ -9,6 +9,7 @@ import { Textarea } from '@renderer/components/ui/input'
 import { Dialog } from '@renderer/components/Dialog'
 import { PresenceDot } from '@renderer/components/PresenceDot'
 import { AuthImage } from '@renderer/components/AuthImage'
+import { LinkedText } from '@renderer/components/LinkedText'
 import { ExpiredFileChip, FileChip, uploadAttachment } from '@renderer/components/Attachments'
 import { api, ApiError, errorMessage } from '@renderer/lib/api'
 import { realtime } from '@renderer/lib/realtime'
@@ -609,7 +610,7 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
                       <FileChip id={m.attachments[0].id} name={m.attachments[0].name} size={m.attachments[0].size} className={compact ? 'w-60' : 'w-80'} />
                     ) : (
                       <div className={cn('rounded-2xl px-3 py-1.5 whitespace-pre-wrap break-words', mine ? 'rounded-br-sm bg-primary text-primary-foreground' : 'rounded-bl-sm bg-muted')} data-testid="message-body">
-                        {m.body}
+                        <LinkedText text={m.body} className={mine ? 'text-primary-foreground' : 'text-primary'} />
                       </div>
                     )}
                   </div>
