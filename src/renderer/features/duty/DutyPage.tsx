@@ -3,10 +3,12 @@ import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { addMonths, format, startOfMonth, startOfWeek } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { Building2, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Download, List, MessageSquare, Pencil, Plus, Repeat, Trash2, UserCheck, UserCog, UserPlus } from 'lucide-react'
+import { Building2, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Download, List, MessageSquare, Pencil, Plus, Printer, Repeat, Trash2, UserCheck, UserCog, UserPlus } from 'lucide-react'
 import { MemberLink } from '@renderer/components/MemberLink'
 import { useNavigate } from 'react-router-dom'
 import { DUTY_COLORS, DUTY_TYPE_NAMES, dayPart, dutyGroupOf, onDay, type DutyBoardDto, type DutyEntryDto, type DutyMemberDto } from '@shared/schemas/duty'
+import { dutyDayStat, entriesByMember, peopleIn, type DutyDayStat } from '@shared/dutyDay'
+import { holidayMap } from '@shared/holidays'
 import { toCsv } from '@shared/csv'
 import { DEPT_SEP, deptOptions, deptPathText } from '@shared/org'
 import { DUTY_ALL_DEPTS, DUTY_NO_DEPT, dutySections, type DutySection } from '@shared/dutySections'
@@ -18,9 +20,12 @@ import { EmptyState, ErrorState, Loading, OfflineState, EmptyNote } from '@rende
 import { MemberPicker } from '@renderer/components/ScopePicker'
 import { Field } from '@renderer/features/setup/SetupFrame'
 import { api, errorMessage } from '@renderer/lib/api'
-import { DAY, fmtRange, fromInputValue, startOfDay, toInputValue } from '@renderer/lib/dates'
+import { DAY, fmtRange, fromInputValue, startOfDay, toInputValue, ymd } from '@renderer/lib/dates'
 import { confirmPii } from '@renderer/lib/pii'
-import { useDisplayName, useMe } from '@renderer/lib/queries'
+import { useDisplayName, useMe, useOrgDisplay } from '@renderer/lib/queries'
+import { useHolidays } from '@renderer/features/calendar/calendar-api'
+import { TypeBadge } from './TypeBadge'
+import { DutyReportDialog } from './DutyReport'
 import { useConn } from '@renderer/app/conn-store'
 import { cn } from '@renderer/lib/utils'
 import { DateTimeInput } from '@renderer/components/DateTimeInput'
@@ -29,16 +34,6 @@ import { RoleMark } from '@renderer/components/RoleMark'
 type Tab = 'day' | 'week' | 'list'
 type Section = DutySection<DutyMemberDto>
 type DialogState = { edit: DutyEntryDto } | { memberId: string; day: number }
-
-function TypeBadge({ type, part, className }: { type: string; part?: string; className?: string }): React.JSX.Element {
-  const color = DUTY_COLORS[dutyGroupOf(type)]
-  return (
-    <span className={cn('inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs font-semibold leading-none', className)} style={{ color, backgroundColor: `${color}22` }}>
-      {type}
-      {part && <span className="ml-1 font-normal">{part}</span>}
-    </span>
-  )
-}
 
 const sectionName = (s: Section): string => s.dept?.name ?? '부서 미지정'
 const sectionPath = (s: Section): string => deptPathText(s.path) || '부서 미지정'
@@ -275,6 +270,8 @@ export function DutyPage(): React.JSX.Element {
   const [q, setQ] = useState('')
   const [dialog, setDialog] = useState<DialogState | null>(null)
   const [clerks, setClerks] = useState(false)
+  const [report, setReport] = useState(false)
+  const org = useOrgDisplay()
 
   const weekStart = startOfWeek(day, { weekStartsOn: 1 }).getTime()
   const monthStart = startOfMonth(day).getTime()
@@ -294,11 +291,11 @@ export function DutyPage(): React.JSX.Element {
   // every tab shows the people by 소속: the department tree from the top down, as in the org chart
   const sections = useMemo(() => (board ? dutySections(board.departments, board.members, dept) : []), [board, dept])
   const unassigned = useMemo(() => !!board?.members.some((m) => !m.deptId || !board.departments.some((d) => d.id === m.deptId)), [board])
-  const byMember = useMemo(() => {
-    const m = new Map<string, DutyEntryDto[]>()
-    for (const e of board?.entries ?? []) m.set(e.memberId, [...(m.get(e.memberId) ?? []), e])
-    return m
-  }, [board])
+  const byMember = useMemo(() => entriesByMember(board?.entries ?? []), [board])
+  // public holidays of the shown range (관리 → 공휴일: the built-in Korean ones and the organisation's)
+  const holidaysQ = useHolidays(useMemo(() => ({ from, to: to - DAY }), [from, to]))
+  const holidays = useMemo(() => holidayMap(holidaysQ.data ?? []), [holidaysQ.data])
+  const holidayOf = (ms: number): string | undefined => holidays.get(ymd(ms))
   const today = startOfDay(Date.now())
   const meId = me?.id ?? ''
   const canEdit = (e: DutyEntryDto): boolean => !e.recurring && (e.memberId === meId || !!board?.canManage)
@@ -334,15 +331,11 @@ export function DutyPage(): React.JSX.Element {
     const shown = sections.flatMap((s) => s.members)
     const awayOf = (m: DutyMemberDto): DutyEntryDto[] => (byMember.get(m.id) ?? []).filter((e) => onDay(e, day, d1))
     /** People away per reason; someone with two reasons that day is listed under each, but counted once in 사고. */
-    const stat = (members: DutyMemberDto[]): { total: number; away: DutyMemberDto[]; byType: Map<string, { m: DutyMemberDto; e: DutyEntryDto }[]> } => {
-      const byType = new Map<string, { m: DutyMemberDto; e: DutyEntryDto }[]>()
-      const away = members.filter((m) => awayOf(m).length)
-      for (const m of away) for (const e of awayOf(m)) byType.set(e.type, [...(byType.get(e.type) ?? []), { m, e }])
-      return { total: members.length, away, byType }
-    }
+    const stat = (members: DutyMemberDto[]): DutyDayStat => dutyDayStat(members, byMember, day, d1)
     const all = stat(shown)
     const types = [...all.byType.keys()]
-    const people = (list: { m: DutyMemberDto }[]): number => new Set(list.map((x) => x.m.id)).size
+    const people = peopleIn
+    const holiday = holidayOf(day)
     const num = 'px-2 py-1.5 text-center tabular-nums'
     /** One line of the 총괄표; a 소속 with departments below it counts them all (소계). */
     const totalRow = (key: string, label: React.ReactNode, depth: number, members: DutyMemberDto[], subtotal: boolean): React.JSX.Element => {
@@ -395,7 +388,10 @@ export function DutyPage(): React.JSX.Element {
             <span className="text-sm">
               사고 <b className="text-base text-urgent">{all.away.length}</b>명
             </span>
-            <span className="ml-auto text-xs text-muted-foreground">{format(day, 'yyyy. M. d. (EEE)', { locale: ko })} 기준</span>
+            <span className="ml-auto text-xs text-muted-foreground">
+              {holiday && <b className="mr-1.5 font-semibold text-urgent">{holiday}</b>}
+              {format(day, 'yyyy. M. d. (EEE)', { locale: ko })} 기준
+            </span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm" data-testid="duty-total-table">
@@ -540,12 +536,16 @@ export function DutyPage(): React.JSX.Element {
         <table className="w-full min-w-[720px] border-collapse text-sm" data-testid="duty-week">
           <thead>
             <tr className="border-b border-border text-xs text-muted-foreground">
-              <th className="w-36 px-3 py-2 text-left font-medium">이름</th>
-              {days.map((d, i) => (
-                <th key={d} className={cn('px-1 py-2 font-medium', d === today && 'bg-primary/10 text-primary', i >= 5 && 'text-urgent/80')}>
-                  {format(d, 'M/d (EEE)', { locale: ko })}
-                </th>
-              ))}
+              <th className="w-36 px-3 py-1.5 text-left align-top font-medium">이름</th>
+              {days.map((d, i) => {
+                const h = holidayOf(d)
+                return (
+                  <th key={d} className={cn('px-1 py-1.5 align-top font-medium', d === today && 'bg-primary/10 text-primary', (i >= 5 || h) && 'text-urgent/80', h && 'text-urgent')} data-holiday={h} title={h}>
+                    {format(d, 'M/d (EEE)', { locale: ko })}
+                    {h && <span className="block truncate text-[0.7rem] font-semibold leading-tight">{h}</span>}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
@@ -567,7 +567,7 @@ export function DutyPage(): React.JSX.Element {
                     return (
                       <td
                         key={d}
-                        className={cn('h-9 border-l border-border px-1 py-1 text-center align-middle', d === today && 'bg-primary/5', i >= 5 && !es.length && 'bg-muted/40', click && 'cursor-pointer hover:bg-primary/10')}
+                        className={cn('h-9 border-l border-border px-1 py-1 text-center align-middle', d === today && 'bg-primary/5', (i >= 5 || holidays.has(ymd(d))) && !es.length && 'bg-muted/40', click && 'cursor-pointer hover:bg-primary/10')}
                         onClick={click}
                         title={es.map((e) => `${e.type} ${dayPart(e, d, d + DAY)} ${[e.place, e.note].filter(Boolean).join(' · ')}`.trim()).join('\n') || undefined}
                       >
@@ -608,8 +608,19 @@ export function DutyPage(): React.JSX.Element {
       a.click()
       setTimeout(() => URL.revokeObjectURL(url), 3000)
     }
+    const monthHolidays = (holidaysQ.data ?? []).filter((h) => h.date.startsWith(format(monthStart, 'yyyy-MM')))
     return (
       <div className="space-y-3">
+        {monthHolidays.length > 0 && (
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground" data-testid="duty-month-holidays">
+            <span className="font-semibold">이 달의 공휴일</span>
+            {monthHolidays.map((h) => (
+              <span key={h.date}>
+                {format(new Date(`${h.date}T00:00:00`), 'M. d.(EEE)', { locale: ko })} <b className="font-semibold text-urgent">{h.name}</b>
+              </span>
+            ))}
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <Input aria-label="기록 검색" className="max-w-xs" value={q} onChange={(e) => setQ(e.target.value)} placeholder="이름·종류·행선지 검색" />
           <span className="text-xs text-muted-foreground">{rows.length}건</span>
@@ -704,6 +715,11 @@ export function DutyPage(): React.JSX.Element {
           </Button>
           <span className="min-w-40 text-center text-sm font-semibold" data-testid="duty-date">
             {label}
+            {tab === 'day' && holidayOf(day) && (
+              <span className="ml-1.5 text-xs font-semibold text-urgent" data-testid="duty-holiday">
+                {holidayOf(day)}
+              </span>
+            )}
           </span>
           <Button size="icon-sm" variant="ghost" aria-label="다음" onClick={() => move(1)}>
             <ChevronRight />
@@ -713,6 +729,11 @@ export function DutyPage(): React.JSX.Element {
           </Button>
           <Input aria-label="날짜 고르기" type="date" className="w-40" value={toInputValue(day, true)} onChange={(e) => e.target.value && setDay(fromInputValue(e.target.value))} />
         </div>
+        {tab === 'day' && (
+          <Button size="sm" variant="outline" disabled={!board} onClick={() => setReport(true)}>
+            <Printer /> 보고서 인쇄
+          </Button>
+        )}
         <Select aria-label="부서" className="ml-auto w-48" value={dept} onChange={(e) => setDept(e.target.value)}>
           <option value={DUTY_ALL_DEPTS}>전체 부서</option>
           {/* the department tree, indented, as in the org chart */}
@@ -729,6 +750,18 @@ export function DutyPage(): React.JSX.Element {
       </div>
       {dialog && board && <DutyDialog board={board} meId={meId} state={dialog} onClose={() => setDialog(null)} />}
       {clerks && board && <ClerksDialog board={board} onClose={() => setClerks(false)} />}
+      {report && board && tab === 'day' && (
+        <DutyReportDialog
+          board={board}
+          sections={sections}
+          day={day}
+          holiday={holidayOf(day)}
+          org={[org.orgName, org.teamName].filter(Boolean).join(' ')}
+          scope={dept === DUTY_ALL_DEPTS ? '' : dept === DUTY_NO_DEPT ? '부서 미지정' : deptPathText(deptOptions(board.departments).find((d) => d.id === dept)?.path ?? [])}
+          author={me ? [dn(me), me.title].filter(Boolean).join(' ') : ''}
+          onClose={() => setReport(false)}
+        />
+      )}
     </div>
   )
 }

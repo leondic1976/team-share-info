@@ -1,0 +1,152 @@
+/*
+ * 일일 근무상황 보고: a sheet of A4 paper. Shown on screen as a preview (white paper in the
+ * light and the dark theme alike) and printed alone: while it is being printed, everything else
+ * on the page is hidden (html.duty-printing).
+ */
+.duty-sheet {
+  --sheet-ink: #111827;
+  --sheet-muted: #4b5563;
+  --sheet-line: #9ca3af;
+  --sheet-soft: #f3f4f6;
+  --sheet-urgent: #b91c1c;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 210mm;
+  margin: 0 auto;
+  padding: 12mm 12mm 10mm;
+  background: #ffffff;
+  color: var(--sheet-ink);
+  font-family: 'Pretendard Variable', Pretendard, 'Malgun Gothic', '맑은 고딕', sans-serif;
+  font-size: 10pt;
+  line-height: 1.45;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
+}
+.duty-sheet h1 {
+  margin: 0;
+  text-align: center;
+  font-size: 16pt;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.duty-sheet .sheet-holiday {
+  margin-top: 1mm;
+  text-align: center;
+  color: var(--sheet-urgent);
+  font-size: 9.5pt;
+  font-weight: 600;
+}
+.duty-sheet .sheet-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1mm 6mm;
+  margin: 5mm 0 4mm;
+  padding-bottom: 2mm;
+  border-bottom: 1.5px solid var(--sheet-ink);
+  font-size: 9pt;
+}
+.duty-sheet .sheet-meta span b {
+  margin-right: 1.5mm;
+  font-weight: 600;
+  color: var(--sheet-muted);
+}
+.duty-sheet h2 {
+  margin: 5mm 0 2mm;
+  font-size: 11pt;
+  font-weight: 700;
+}
+.duty-sheet table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+}
+.duty-sheet th,
+.duty-sheet td {
+  border: 1px solid var(--sheet-line);
+  padding: 1.2mm 1.6mm;
+  vertical-align: middle;
+}
+.duty-sheet th {
+  background: var(--sheet-soft);
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+.duty-sheet td.n {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.duty-sheet td.zero {
+  color: var(--sheet-line);
+}
+.duty-sheet td.away {
+  color: var(--sheet-urgent);
+  font-weight: 700;
+}
+.duty-sheet tr.sum td {
+  font-weight: 700;
+  background: var(--sheet-soft);
+}
+.duty-sheet tr.sub td {
+  font-weight: 600;
+}
+.duty-sheet td.dept {
+  white-space: nowrap;
+}
+.duty-sheet td.dept .up {
+  color: var(--sheet-muted);
+  font-weight: 400;
+}
+.duty-sheet td.own {
+  color: var(--sheet-muted);
+}
+.duty-sheet .sheet-none {
+  padding: 3mm;
+  border: 1px solid var(--sheet-line);
+  text-align: center;
+  color: var(--sheet-muted);
+}
+.duty-sheet .sheet-foot {
+  margin-top: 6mm;
+  text-align: right;
+  font-size: 8pt;
+  color: var(--sheet-muted);
+}
+.duty-sheet tr {
+  break-inside: avoid;
+}
+.duty-sheet thead {
+  display: table-header-group;
+}
+
+/* the copy that goes to the printer, put on the body while the preview is open */
+.duty-print-root {
+  display: none;
+}
+@page dutyreport {
+  size: A4 portrait;
+  margin: 12mm;
+}
+@media print {
+  html.duty-printing body > *:not(.duty-print-root) {
+    display: none !important;
+  }
+  html.duty-printing,
+  html.duty-printing body {
+    background: #ffffff !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  html.duty-printing .duty-print-root {
+    display: block;
+    page: dutyreport;
+  }
+  .duty-print-root .duty-sheet {
+    max-width: none;
+    padding: 0;
+    box-shadow: none;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
