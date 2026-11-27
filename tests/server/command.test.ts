@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { createTestServer, type TestServer, type Cred } from './helpers'
 import { ymd } from '../../command/shared/logic'
+import { absenceDays } from '../../src/server/command-host'
 
 let s: TestServer | null = null
 afterEach(async () => {
@@ -297,14 +298,50 @@ describe('긴급구조지휘대 (command module through TeamHub)', () => {
     expect(after).toEqual([expect.objectContaining({ id: tmp.data.id, personId: park.memberId, substituteId: jung.memberId })])
   })
 
-  it('대리자 hint: who is away today by 근무현황 goes to those in charge only', async () => {
+  it('대리자 hint: who is away by 근무현황 from today through the next 7 days goes to those in charge only', async () => {
     s = await createTestServer()
     const b = await s.join('휴가자')
     const c = await s.join('팀원')
+    const e = await s.join('교육자')
     const d = new Date()
-    const from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-    expect((await s.req(b, { method: 'POST', url: '/api/duty', ip: IP, payload: { type: '연가', startAt: from, endAt: from + 86_400_000, allDay: true } })).statusCode).toBe(200)
-    expect((await call(s.admin, 'GET', '/api/command')).data.hostAbsences).toEqual([{ personId: b.memberId, type: '연가' }])
+    const at = (days: number, h = 0): number => new Date(d.getFullYear(), d.getMonth(), d.getDate() + days, h).getTime()
+    const day = (days: number): string => ymd(at(days))
+    const duty = async (who: Cred, payload: Body): Promise<void> => {
+      expect((await s!.req(who, { method: 'POST', url: '/api/duty', ip: IP, payload })).statusCode).toBe(200)
+    }
+    // today only (all-day: the end is the next midnight, not a day of the absence)
+    await duty(b, { type: '연가', startAt: at(0), endAt: at(1), allDay: true })
+    expect((await call(s.admin, 'GET', '/api/command')).data.hostAbsences).toEqual([{ personId: b.memberId, type: '연가', fromDate: day(0), toDate: day(0) }])
     expect((await call(c, 'GET', '/api/command')).data.hostAbsences).toBeUndefined()
+
+    // all-day from the day after tomorrow for 3 days; one that began yesterday shows from today;
+    // timed ones to the day of their end; one beyond the 7 days is not shown
+    await duty(c, { type: '연가', startAt: at(2), endAt: at(5), allDay: true })
+    await duty(e, { type: '교육', startAt: at(-1), endAt: at(2), allDay: true })
+    await duty(e, { type: '출장', startAt: at(3, 9), endAt: at(4, 18), allDay: false })
+    await duty(b, { type: '병가', startAt: at(7), endAt: at(8), allDay: true })
+    // a repeating calendar absence, day after day: one period
+    expect((await s.req(c, { method: 'POST', url: '/api/events', ip: IP, payload: { kind: 'absence', absenceType: '유연근무', title: '시차출퇴근', startAt: at(1, 9), endAt: at(1, 10), rrule: 'FREQ=DAILY;COUNT=3', scope: { type: 'team' } } })).statusCode).toBe(200)
+    const list = (await call(s.admin, 'GET', '/api/command')).data.hostAbsences
+    expect(list).toHaveLength(5)
+    expect(list).toEqual(
+      expect.arrayContaining([
+        { personId: b.memberId, type: '연가', fromDate: day(0), toDate: day(0) },
+        { personId: c.memberId, type: '연가', fromDate: day(2), toDate: day(4) },
+        { personId: c.memberId, type: '유연근무', fromDate: day(1), toDate: day(3) },
+        { personId: e.memberId, type: '교육', fromDate: day(0), toDate: day(1) },
+        { personId: e.memberId, type: '출장', fromDate: day(3), toDate: day(4) }
+      ])
+    )
+  })
+
+  it('대리자 hint: the days of an absence occurrence', () => {
+    const today0 = new Date(2026, 10, 27).getTime()
+    const t = (d: number, h = 0): number => new Date(2026, 10, d, h).getTime()
+    expect(absenceDays({ start: t(28), end: t(29) }, today0)).toEqual({ fromDate: '2026-11-28', toDate: '2026-11-28' })
+    expect(absenceDays({ start: t(25), end: t(30) }, today0)).toEqual({ fromDate: '2026-11-27', toDate: '2026-11-29' })
+    expect(absenceDays({ start: t(28, 9), end: t(30, 18) }, today0)).toEqual({ fromDate: '2026-11-28', toDate: '2026-11-30' })
+    expect(absenceDays({ start: t(28, 22), end: t(29) }, today0)).toEqual({ fromDate: '2026-11-28', toDate: '2026-11-28' })
+    expect(absenceDays({ start: t(28, 9), end: t(28, 9) }, today0)).toEqual({ fromDate: '2026-11-28', toDate: '2026-11-28' })
   })
 })

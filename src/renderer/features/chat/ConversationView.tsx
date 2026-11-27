@@ -443,7 +443,7 @@ export function ConversationView({ id, onLeft, onSwitch, compact = false, active
         <h2 className={cn('truncate font-bold', compact && 'text-sm')} data-testid="conv-title">
           {c ? convTitle(c, team, me?.id) : '…'}
         </h2>
-        {dmOther && <RoleMark role={dmOther.role} isOwner={dmOther.isOwner} className="ml-0" />}
+        {dmOther && <RoleMark memberId={dmOther.id} role={dmOther.role} isOwner={dmOther.isOwner} className="ml-0" />}
         <button
           type="button"
           className="shrink-0 cursor-pointer rounded px-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default"

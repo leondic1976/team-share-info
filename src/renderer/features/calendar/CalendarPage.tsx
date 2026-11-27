@@ -10,7 +10,7 @@ import koLocale from '@fullcalendar/core/locales/ko'
 import type { EventClickArg, EventDropArg, DatesSetArg, EventContentArg } from '@fullcalendar/core'
 import type { EventResizeDoneArg, DateClickArg } from '@fullcalendar/interaction'
 import { displayName } from '@shared/schemas/auth'
-import { CalendarClock, Plus, Printer, Upload, Download, Lock, Users } from 'lucide-react'
+import { CalendarClock, Plus, Printer, Upload, Download, Lock, Plane, Users } from 'lucide-react'
 import { PageHeader } from '@renderer/components/PageHeader'
 import { Button } from '@renderer/components/ui/button'
 import { Select } from '@renderer/components/ui/input'
@@ -21,6 +21,7 @@ import { useSpace } from '@renderer/app/space-store'
 import { useConn } from '@renderer/app/conn-store'
 import { DAY } from '@renderer/lib/dates'
 import { parseIcs, toIcs } from '@shared/ics'
+import { absenceTitle, myAbsencesForPersonal, shownAsPersonal } from '@shared/absenceLink'
 import { useHolidays, usePersonalEvents, useServerEvents, type Range } from './calendar-api'
 import { useNavigate } from 'react-router-dom'
 import { useAnnualTasks } from '@renderer/features/docs/AnnualCalendar'
@@ -55,7 +56,8 @@ export function CalendarPage(): React.JSX.Element {
   const [pendingMove, setPendingMove] = useState<null | { run: (m: EditMode) => Promise<void>; revert: () => void }>(null)
 
   const memberFilter = show !== 'all' && show !== 'personal' && show !== 'shared' ? (show === 'mine' ? me?.id : show) : undefined
-  const server = useServerEvents(show === 'personal' ? null : range, { groupId: space === 'team' ? undefined : space, memberId: memberFilter })
+  // 개인 일정만: my own 사고 from 근무현황 still show (instruction 145), so ask for my events only
+  const server = useServerEvents(range, { groupId: space === 'team' || show === 'personal' ? undefined : space, memberId: show === 'personal' ? me?.id : memberFilter })
   const personal = usePersonalEvents(show === 'all' || show === 'mine' || show === 'personal' ? range : null)
   const holidays = useHolidays(range)
   const navigate = useNavigate()
@@ -63,13 +65,16 @@ export function CalendarPage(): React.JSX.Element {
 
   const events = useMemo(() => {
     const out: Record<string, unknown>[] = []
-    for (const e of show === 'personal' ? [] : server.data ?? []) {
-      // Skip my own busy blocks: the personal original is shown instead.
+    const mine = personal.data ?? []
+    const fromServer = show === 'personal' ? myAbsencesForPersonal(server.data ?? [], mine, me?.id) : server.data ?? []
+    for (const e of fromServer) {
+      // Skip my own busy blocks: the personal original is shown instead. Same for a 사고 filed from a personal event.
       if (e.kind === 'busy' && e.authorId === me?.id) continue
+      if (show !== 'personal' && shownAsPersonal(e, mine, me?.id)) continue
       const color = e.kind === 'busy' ? '#94a3b8' : e.color ?? '#2563eb'
       out.push({
         id: `server:${e.id}:${e.key}`,
-        title: e.kind === 'absence' ? `[${e.absenceType ?? '부재'}] ${e.authorName}` : e.kind === 'busy' ? `바쁨 · ${e.authorName}` : e.title,
+        title: e.kind === 'absence' ? (show === 'personal' ? absenceTitle(e) : `[${e.absenceType ?? '부재'}] ${e.authorName}`) : e.kind === 'busy' ? `바쁨 · ${e.authorName}` : e.title,
         start: e.start,
         end: e.end,
         allDay: e.allDay,
@@ -194,16 +199,18 @@ export function CalendarPage(): React.JSX.Element {
   const renderContent = (arg: EventContentArg): React.JSX.Element => {
     const origin = (arg.event.extendedProps as { origin: string }).origin
     const local = origin === 'local'
+    const filed = local && !!(arg.event.extendedProps as { item?: { absenceEventId?: string | null } }).item?.absenceEventId
     // absence and busy blocks are titled by the person: a 서무 gets the mark there
     const item = origin === 'server' ? (arg.event.extendedProps as { item?: { kind?: string; authorId?: string } }).item : undefined
     const byPerson = item && (item.kind === 'absence' || item.kind === 'busy') ? item.authorId : undefined
     return (
       <div className="flex min-w-0 items-center gap-1 overflow-hidden px-0.5 text-[0.78rem]">
         {local && <Lock className="size-3 shrink-0" aria-label="개인 일정" />}
+        {filed && <Plane className="size-3 shrink-0" aria-label="근무현황에 사고 신청됨" />}
         {origin === 'annual' && <CalendarClock className="size-3 shrink-0" aria-label="연간 업무" />}
         {arg.timeText && !arg.event.allDay && <span className="shrink-0 opacity-80">{arg.timeText}</span>}
         <span className="truncate">{arg.event.title}</span>
-        {byPerson && <RoleMark memberId={byPerson} className="ml-0 bg-white/25 text-current" />}
+        {byPerson && <RoleMark memberId={byPerson} noAbsence className="ml-0 bg-white/25 text-current" />}
       </div>
     )
   }
@@ -263,7 +270,7 @@ export function CalendarPage(): React.JSX.Element {
           })}
         </div>
         <span className="text-xs text-muted-foreground">
-          {show === 'personal' ? '내 PC에만 저장된 일정입니다. 다른 사람에게 보이지 않고 서버가 꺼져 있어도 쓸 수 있습니다.' : show === 'shared' ? '서버에 저장되어 함께 보는 일정입니다(팀·부서·그룹·지정한 사람).' : '개인 일정(자물쇠 표시, 회색)과 공유 일정(색깔)을 함께 봅니다.'}
+          {show === 'personal' ? '내 PC에만 저장된 일정입니다. 다른 사람에게 보이지 않고 서버가 꺼져 있어도 쓸 수 있습니다. 근무현황에 올린 내 사고([연가] 근무현황처럼)도 함께 보입니다.' : show === 'shared' ? '서버에 저장되어 함께 보는 일정입니다(팀·부서·그룹·지정한 사람).' : '개인 일정(자물쇠 표시, 회색)과 공유 일정(색깔)을 함께 봅니다.'}
         </span>
       </div>
       {msg && (

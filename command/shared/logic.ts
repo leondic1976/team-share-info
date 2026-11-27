@@ -2,7 +2,7 @@
  * 긴급구조지휘대: rules worked out the same way on the server and on the screens. Pure functions
  * (no I/O, no host), unit-tested in command/tests.
  */
-import type { CmdAssignment, CmdCommon, CmdException, CmdOverride, CmdPerson, CmdRole, CmdRotation, CmdSubstitution, CmdTeam, Drill, DrillMember, DrillMsg, Grade, Mark, MarkChange, SummaryRow } from './types'
+import type { CmdAssignment, CmdCommon, CmdException, CmdHostAbsence, CmdOverride, CmdPerson, CmdRole, CmdRotation, CmdSubstitution, CmdTeam,Drill, DrillMember, DrillMsg, Grade, Mark, MarkChange, SummaryRow } from './types'
 
 const DAY = 86_400_000
 const pad = (n: number): string => String(n).padStart(2, '0')
@@ -228,6 +228,116 @@ export function checkSubstitution(
 /** A substitution that keeps somebody from being put on exception for a period (they cover for someone then). */
 export function coveringIn(list: CmdSubstitution[], substituteId: string, fromDate: string, toDate: string | null): CmdSubstitution | undefined {
   return list.find((x) => x.substituteId === substituteId && periodsOverlap(x.fromDate, x.toDate, fromDate, toDate))
+}
+
+// ---------- 대리자 hints from the host's 근무현황 ----------
+/** How far ahead (today included) the host's absences are looked at for the hint. */
+export const ABSENCE_HINT_DAYS = 7
+
+/** A day (YYYY-MM-DD) moved by `n` calendar days. */
+export function addDays(date: string, n: number): string {
+  const [y, m, d] = date.split('-').map(Number)
+  return ymd(new Date(y, m - 1, d + n).getTime())
+}
+
+/**
+ * The host's absences with the same person and reason merged when their days touch or overlap
+ * (a repeating absence, day after day, becomes one period); sorted by person, start, reason.
+ */
+export function mergeAbsences(list: CmdHostAbsence[]): CmdHostAbsence[] {
+  const sorted = [...list].sort((a, b) => a.personId.localeCompare(b.personId) || a.type.localeCompare(b.type) || a.fromDate.localeCompare(b.fromDate))
+  const out: CmdHostAbsence[] = []
+  for (const x of sorted) {
+    const last = out[out.length - 1]
+    if (last && last.personId === x.personId && last.type === x.type && x.fromDate <= addDays(last.toDate, 1)) {
+      if (x.toDate > last.toDate) last.toDate = x.toDate
+    } else out.push({ ...x })
+  }
+  return out.sort((a, b) => a.fromDate.localeCompare(b.fromDate) || a.personId.localeCompare(b.personId) || a.type.localeCompare(b.type))
+}
+
+/**
+ * The days of a period not covered by any of `covers` (substitutions or exceptions of the absent
+ * person; null toDate: no end), as periods in order. Empty: the whole period is covered.
+ */
+export function uncoveredDays(fromDate: string, toDate: string, covers: { fromDate: string; toDate: string | null }[]): { fromDate: string; toDate: string }[] {
+  const out: { fromDate: string; toDate: string }[] = []
+  let cur = fromDate
+  for (const c of [...covers].filter((x) => periodsOverlap(x.fromDate, x.toDate, fromDate, toDate)).sort((a, b) => a.fromDate.localeCompare(b.fromDate))) {
+    if (cur > toDate) break
+    if (c.fromDate > cur) {
+      const before = addDays(c.fromDate, -1)
+      out.push({ fromDate: cur, toDate: before < toDate ? before : toDate })
+    }
+    if (c.toDate === null) return out
+    const next = addDays(c.toDate, 1)
+    if (next > cur) cur = next
+  }
+  if (cur <= toDate) out.push({ fromDate: cur, toDate })
+  return out
+}
+
+/** The 조 on duty at some time between two moments (by the rotation and the periods set by hand). */
+export function teamsOnDuty(r: CmdRotation | null, overrides: CmdOverride[], from: number, to: number): Set<string> {
+  const out = new Set<string>()
+  let at = from
+  for (let guard = 0; at < to && guard < 400; guard++) {
+    const s = teamAt(r, overrides, at)
+    if (s) out.add(s.teamId)
+    // look again when this period ends or a period set by hand begins, whichever comes first
+    const nextSet = Math.min(Infinity, ...overrides.filter((x) => x.fromAt > at).map((x) => x.fromAt))
+    const next = Math.min(s ? s.to : Infinity, nextSet)
+    if (next === Infinity) break
+    at = Math.max(next, at + 60_000)
+  }
+  return out
+}
+
+/** "오늘", "11월 28일" (with the year when it is not this year's). */
+export function dayLabel(date: string, today: string): string {
+  if (date === today) return '오늘'
+  const [y, mo, d] = date.split('-').map(Number)
+  return `${y !== Number(today.slice(0, 4)) ? `${y}년 ` : ''}${mo}월 ${d}일`
+}
+
+/** "오늘", "11월 28일", "11월 28일~11월 30일", "오늘~11월 30일". */
+export function daysLabel(fromDate: string, toDate: string, today: string): string {
+  return fromDate === toDate ? dayLabel(fromDate, today) : `${dayLabel(fromDate, today)}~${dayLabel(toDate, today)}`
+}
+
+export interface AbsenceHint extends CmdHostAbsence {
+  /** the days of the absence nobody covers yet while the person has a place on duty (in order) */
+  gaps: { fromDate: string; toDate: string }[]
+  /** some days of the absence are covered already */
+  partial: boolean
+}
+
+/**
+ * The 근무현황 absences that need a substitute: days covered by a substitution (with a known
+ * substitute) or an exception of that person need nothing, nor days when the person has no
+ * place on duty (their 조 not on duty then and no 공통업무 to do).
+ */
+export function absenceHints(o: {
+  absences: CmdHostAbsence[]
+  substitutions: CmdSubstitution[]
+  exceptions: CmdException[]
+  assignments: CmdAssignment[]
+  common: CmdCommon[]
+  rotation: CmdRotation | null
+  overrides: CmdOverride[]
+  /** the substitute is still somebody who can be placed */
+  known: (personId: string) => boolean
+}): AbsenceHint[] {
+  const onDuty = (personId: string, fromDate: string, toDate: string): boolean => {
+    const teams = teamsOnDuty(o.rotation, o.overrides, atTime(fromDate, '00:00'), atTime(addDays(toDate, 1), '00:00'))
+    return o.assignments.some((a) => a.personId === personId && teams.has(a.teamId)) || o.common.some((c) => c.assign.some((a) => a.personId === personId && (!c.perTeam || teams.has(a.teamId))))
+  }
+  return o.absences.flatMap((x) => {
+    const covers = [...o.substitutions.filter((y) => y.personId === x.personId && y.substituteId !== x.personId && o.known(y.substituteId)), ...o.exceptions.filter((y) => y.personId === x.personId)]
+    const gaps = uncoveredDays(x.fromDate, x.toDate, covers).filter((g) => onDuty(x.personId, g.fromDate, g.toDate))
+    if (!gaps.length) return []
+    return [{ ...x, gaps, partial: gaps.length > 1 || gaps[0].fromDate !== x.fromDate || gaps[0].toDate !== x.toDate }]
+  })
 }
 
 export interface Headcount {

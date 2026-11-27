@@ -16,6 +16,16 @@ export function registerPersonalIpc(): void {
     return id
   })
   handle('local:events.setBusy', z.object({ id: z.string(), busyEventId: z.string().nullable() }), ({ id, busyEventId }) => localDb().events.setBusyLink(id, busyEventId))
+  handle('local:events.setAbsence', z.object({ id: z.string(), absenceEventId: z.string().nullable() }), ({ id, absenceEventId }) => localDb().events.setAbsenceLink(id, absenceEventId))
+  handle(
+    'local:events.absenceChanged',
+    z.object({ absenceEventId: z.string(), change: z.object({ startAt: z.number(), endAt: z.number(), allDay: z.boolean() }).nullable() }),
+    ({ absenceEventId, change }) => {
+      const n = localDb().events.absenceChanged(absenceEventId, change)
+      if (n) tick()
+      return n
+    }
+  )
   handle('local:events.delete', z.object({ id: z.string(), mode: z.enum(['all', 'this', 'following']).default('all'), occurrence: z.number().optional() }), ({ id, mode, occurrence }) =>
     localDb().events.delete(id, mode, occurrence)
   )

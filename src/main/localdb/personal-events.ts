@@ -15,6 +15,7 @@ interface Row {
   location: string | null
   reminders: string
   busy_event_id: string | null
+  absence_event_id: string | null
 }
 
 const toDto = (r: Row): PersonalEventDto => ({
@@ -28,7 +29,8 @@ const toDto = (r: Row): PersonalEventDto => ({
   exdates: parseJson<number[]>(r.exdates, []),
   location: r.location,
   reminders: parseJson<number[]>(r.reminders, []),
-  busyEventId: r.busy_event_id
+  busyEventId: r.busy_event_id,
+  absenceEventId: r.absence_event_id
 })
 
 /** Personal calendar stored only in the local DB (2.3). */
@@ -46,7 +48,7 @@ export class PersonalEventsRepo {
     for (const r of rows) {
       const d = toDto(r)
       for (const o of expand(d, from, to, 500)) {
-        out.push({ id: d.id, key: o.key, start: o.start, end: o.end, allDay: d.allDay, title: d.title, location: d.location, recurring: !!d.rrule, reminders: d.reminders, busyEventId: d.busyEventId })
+        out.push({ id: d.id, key: o.key, start: o.start, end: o.end, allDay: d.allDay, title: d.title, location: d.location, recurring: !!d.rrule, reminders: d.reminders, busyEventId: d.busyEventId, absenceEventId: d.absenceEventId })
       }
     }
     return out.sort((a, b) => a.start - b.start)
@@ -88,6 +90,23 @@ export class PersonalEventsRepo {
 
   setBusyLink(id: string, busyEventId: string | null): void {
     this.db.run('UPDATE personal_events SET busy_event_id = ?, updated_at = ? WHERE id = ?', [busyEventId, Date.now(), id])
+  }
+
+  setAbsenceLink(id: string, absenceEventId: string | null): void {
+    this.db.run('UPDATE personal_events SET absence_event_id = ?, updated_at = ? WHERE id = ?', [absenceEventId, Date.now(), id])
+  }
+
+  /**
+   * The 사고 changed in 근무현황 (or the calendar): the personal event that filed it takes the new
+   * times; a removed one only drops the link, the personal event stays. Returns how many followed.
+   */
+  absenceChanged(absenceEventId: string, change: { startAt: number; endAt: number; allDay: boolean } | null): number {
+    const rows = this.db.all<{ id: string }>('SELECT id FROM personal_events WHERE absence_event_id = ? AND rrule IS NULL', [absenceEventId])
+    for (const r of rows) {
+      if (!change) this.setAbsenceLink(r.id, null)
+      else this.db.run('UPDATE personal_events SET start_at = ?, end_at = ?, all_day = ?, updated_at = ? WHERE id = ?', [change.startAt, change.endAt, change.allDay ? 1 : 0, Date.now(), r.id])
+    }
+    return rows.length
   }
 
   delete(id: string, mode: 'all' | 'this' | 'following' = 'all', occurrence?: number): void {

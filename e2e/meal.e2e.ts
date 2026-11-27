@@ -591,4 +591,26 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     await shot(a.page, 'meal-settle')
     await fa.locator('nav [data-tab="apply"]').click()
   }, 150000)
+
+  it('근무현황 link (1.9.0): an absent day is marked, and requests on it are only warned about (instruction 145)', async () => {
+    const wait = { timeout: 15000 }
+    // 팀원B goes on 연가 today
+    await go(b.page, '/duty')
+    await b.page.getByRole('button', { name: '사고 신청' }).click()
+    const dlg = b.page.getByTestId('duty-dialog')
+    await dlg.getByRole('radio', { name: '연가' }).click()
+    await b.page.getByRole('button', { name: '올리기', exact: true }).click()
+    await expect.poll(() => b.page.getByTestId('duty-row').count(), wait).toBeGreaterThanOrEqual(1)
+    await open(b.page, '.day.today')
+    const fb = frame(b.page)
+    await expect.poll(() => fb.locator('.day.today [data-absent]').count(), wait).toBeGreaterThanOrEqual(1)
+    expect(await fb.locator('.day.today [data-absent]').first().textContent()).toContain('연가')
+    await shot(b.page, 'meal-absent-day')
+    // 현황 on the admin's PC: 팀원B carries the mark wherever listed
+    await open(a.page, '.day.today')
+    const fa = frame(a.page)
+    await fa.locator('nav [data-tab="status"]').click()
+    await expect.poll(() => fa.locator('[data-absent]').count(), wait).toBeGreaterThanOrEqual(1)
+    await shot(a.page, 'meal-absent-status')
+  }, 90000)
 })

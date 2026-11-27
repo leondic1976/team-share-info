@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { InstalledPlugin, PluginPermission, PluginRoomDto } from '@shared/schemas/plugins'
+import type { InstalledPlugin, PluginRoomDto } from '@shared/schemas/plugins'
+import type { DepartmentDto } from '@shared/schemas/org'
+import type { DutyBoardDto } from '@shared/schemas/duty'
+import { absenceRange, bridgeRefusal, orderedDepartments, pluginAbsences } from '@shared/plugin-bridge'
 import type { MemberDto } from '@shared/schemas/auth'
 import type { UnregisteredDto } from '@shared/schemas/unregistered'
 import { EmptyState } from '@renderer/components/EmptyState'
@@ -17,32 +20,6 @@ import { detectPii, PII_LABEL } from '@shared/pii'
 import { cachedRead } from '@renderer/lib/warm-cache'
 
 type Msg = { th: 1; id: string; method: string; params: Record<string, unknown> | null }
-
-/** Which permission each bridge method needs (manifest.permissions). */
-const NEEDS: Record<string, PluginPermission | null> = {
-  me: null,
-  time: null,
-  holidays: null,
-  members: 'members',
-  unregistered: 'members',
-  'storage.get': 'storage',
-  'storage.set': 'storage',
-  'storage.keys': 'storage',
-  'rooms.list': 'rooms',
-  'rooms.get': 'rooms',
-  'rooms.create': 'rooms',
-  'rooms.setShared': 'rooms',
-  'rooms.setEntry': 'rooms',
-  'rooms.delete': 'rooms',
-  notify: 'notify',
-  'clipboard.write': 'clipboard',
-  'file.save': 'files',
-  'file.open': 'files',
-  'ocr.recognize': 'ocr',
-  'copilot.open': 'copilot',
-  'pii.scan': null,
-  openRoute: null
-}
 
 /**
  * Runs an installed plugin in a sandboxed iframe (own origin, no network: CSP set by
@@ -131,8 +108,22 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
           return cachedRead(['plugin', 'holidays', from, to], () => api.get<{ date: string; name: string }[]>('/api/holidays', { from, to }))
         }
         case 'members':
-          // the same kept list as the rest of the program: readable while the server PC is off
-          return (await cachedRead(['members'], () => api.get<MemberDto[]>('/api/members'))).filter((x) => x.status === 'active').map((x) => ({ id: x.id, name: x.name, deptName: x.deptName, title: x.title, presence: x.presence }))
+          // the same kept list as the rest of the program: readable while the server PC is off.
+          // orgSort: the place inside the department an admin set (0: none), for lists in 직제순
+          return (await cachedRead(['members'], () => api.get<MemberDto[]>('/api/members')))
+            .filter((x) => x.status === 'active')
+            .map((x) => ({ id: x.id, name: x.name, deptId: x.deptId, deptName: x.deptName, title: x.title, presence: x.presence, orgSort: x.orgSort ?? 0 }))
+        case 'departments':
+          // the departments in the order of the org chart (설정 → 조직 관리): [{ id, name, path, order }]
+          return orderedDepartments(await cachedRead(['members', 'departments'], () => api.get<DepartmentDto[]>('/api/departments')))
+        case 'absences': {
+          // 근무현황: who is away between two dates (both included, 100 days at most), active members
+          // only, repeats expanded; just the reason and the time, not the place or the note
+          const range = absenceRange(str('from', 10), str('to', 10))
+          if ((me?.disabledFeatures ?? []).includes('duty')) return []
+          const board = await cachedRead(['plugin', 'absences', range.from, range.to], () => api.get<DutyBoardDto>('/api/duty', { from: range.from, to: range.to }))
+          return pluginAbsences(board.entries)
+        }
         case 'unregistered':
           // 미등록 인원 (관리): everybody ever on the list - `gone` deleted, `as` merged into that member
           return (await cachedRead(['unregistered'], () => api.get<UnregisteredDto[]>('/api/unregistered'))).map((x) => ({
@@ -203,9 +194,8 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
       if (e.source !== frame.current?.contentWindow) return
       const m = e.data as Msg
       if (!m || m.th !== 1 || typeof m.id !== 'string' || typeof m.method !== 'string') return
-      const need = NEEDS[m.method]
-      if (need === undefined) return post({ th: 1, id: m.id, error: `알 수 없는 기능: ${m.method}` })
-      if (need && !perms.has(need)) return post({ th: 1, id: m.id, error: `권한이 없습니다(${need}). 확장 기능 정보에 권한이 선언되어야 합니다.` })
+      const refused = bridgeRefusal(m.method, perms)
+      if (refused) return post({ th: 1, id: m.id, error: refused })
       run(m).then(
         (result) => post({ th: 1, id: m.id, result: result ?? null }),
         (err: unknown) => post({ th: 1, id: m.id, error: errorMessage(err) })
@@ -219,10 +209,20 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
     const offUnreg = realtime.on('unregistered.changed', () => {
       if (perms.has('members')) post({ th: 1, event: 'unregistered.changed', data: {} })
     })
+    // members, departments or their order changed (조직 관리): lists in 직제순 follow
+    const offMember = realtime.on('member.changed', () => {
+      if (perms.has('members')) post({ th: 1, event: 'members.changed', data: {} })
+    })
+    // an absence of 근무현황 (or another calendar event) changed: the frame reads its absences again
+    const offAbsence = realtime.on('event.changed', () => {
+      if (perms.has('duty')) post({ th: 1, event: 'absences.changed', data: {} })
+    })
     return () => {
       window.removeEventListener('message', onMessage)
       offRoom()
       offUnreg()
+      offMember()
+      offAbsence()
     }
   }, [plugin, id, me, navigate])
 

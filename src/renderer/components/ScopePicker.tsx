@@ -118,7 +118,7 @@ export function MemberPicker({
             <span key={m.id} className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
               {presence && <PresenceDot presence={m.presence} className="size-2" />}
               {displayName(m)}
-              <RoleMark role={m.role} isOwner={m.isOwner} className="-ml-0.5" />
+              <RoleMark memberId={m.id} role={m.role} isOwner={m.isOwner} className="-ml-0.5" />
               <button type="button" aria-label={`${m.name} 빼기`} className="cursor-pointer" onClick={() => onChange(value.filter((x) => x !== m.id))}>
                 <X className="size-3" />
               </button>
@@ -157,7 +157,7 @@ export function MemberPicker({
             {presence && <PresenceDot presence={m.presence} />}
             <span>
               {displayName(m)}
-              <RoleMark role={m.role} isOwner={m.isOwner} />
+              <RoleMark memberId={m.id} role={m.role} isOwner={m.isOwner} />
             </span>
             <span className="text-xs text-muted-foreground" title={affiliationText(m) || undefined}>
               {m.deptName}

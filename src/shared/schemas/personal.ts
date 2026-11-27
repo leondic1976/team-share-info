@@ -31,6 +31,8 @@ export interface PersonalEventDto {
   location: string | null
   reminders: number[]
   busyEventId: string | null
+  /** the 근무현황 사고 (server absence event) filed from this event, while linked */
+  absenceEventId: string | null
 }
 
 export interface PersonalOccurrenceDto {
@@ -44,6 +46,8 @@ export interface PersonalOccurrenceDto {
   recurring: boolean
   reminders: number[]
   busyEventId: string | null
+  /** the 근무현황 사고 (server absence event) filed from this event, while linked */
+  absenceEventId: string | null
 }
 
 export interface DiaryEntryDto {

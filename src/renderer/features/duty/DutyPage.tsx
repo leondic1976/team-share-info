@@ -5,6 +5,7 @@ import { addMonths, format, startOfMonth, startOfWeek } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import { Building2, CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Download, List, MessageSquare, Pencil, Plus, Printer, Repeat, Trash2, UserCheck, UserCog, UserPlus } from 'lucide-react'
 import { MemberLink } from '@renderer/components/MemberLink'
+import { invoke } from '@renderer/lib/bridge'
 import { useNavigate } from 'react-router-dom'
 import { DUTY_COLORS, DUTY_TYPE_NAMES, dayPart, dutyGroupOf, onDay, type DutyBoardDto, type DutyEntryDto, type DutyMemberDto } from '@shared/schemas/duty'
 import { dutyDayStat, entriesByMember, peopleIn, type DutyDayStat } from '@shared/dutyDay'
@@ -89,11 +90,15 @@ function DutyDialog({ board, meId, state, onClose }: { board: DutyBoardDto; meId
     setEnd(v ? Math.max(startOfDay(end - 1), s) + DAY : s + 18 * 3600000)
   }
   const save = useMutation({
-    mutationFn: (pii: PiiAck) => {
+    mutationFn: async (pii: PiiAck): Promise<unknown> => {
       const body = { type, startAt: start, endAt: end, allDay, place, note, ...pii }
-      return edit ? api.patch(`/api/duty/${edit.id}`, body) : sendOrQueue({ kind: 'duty', label: `근무현황: ${type}`, path: '/api/duty', body: { ...body, memberId } })
+      if (!edit) return sendOrQueue({ kind: 'duty', label: `근무현황: ${type}`, path: '/api/duty', body: { ...body, memberId } })
+      await api.patch(`/api/duty/${edit.id}`, body)
+      // a 사고 filed from my personal schedule: that event takes the new period (instruction 145)
+      return invoke('local:events.absenceChanged', { absenceEventId: edit.id, change: { startAt: start, endAt: end, allDay } })
     },
     onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['local', 'events'] })
       void qc.invalidateQueries({ queryKey: ['events'] })
       void qc.invalidateQueries({ queryKey: ['members'] })
       onClose()
@@ -284,8 +289,10 @@ export function DutyPage(): React.JSX.Element {
   const boardQ = useQuery({ queryKey: ['events', 'duty', from, to], queryFn: () => api.get<DutyBoardDto>('/api/duty', { from, to }), enabled: online, placeholderData: (prev) => prev })
   const board = boardQ.data
   const del = useMutation({
-    mutationFn: (id: string) => api.del(`/api/duty/${id}`),
+    // the personal event that filed it (if any) stays, only the link goes
+    mutationFn: (id: string) => api.del(`/api/duty/${id}`).then(() => invoke('local:events.absenceChanged', { absenceEventId: id, change: null })),
     onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['local', 'events'] })
       void qc.invalidateQueries({ queryKey: ['events'] })
       void qc.invalidateQueries({ queryKey: ['members'] })
     }
@@ -481,7 +488,7 @@ export function DutyPage(): React.JSX.Element {
                       {list.map(({ m, e }) => (
                         <div key={`${e.id}:${e.key}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5" data-testid="duty-row">
                           <span className="w-28 shrink-0 truncate font-medium">
-                            <MemberLink memberId={m.id} name={m.name}>{dn(m)}</MemberLink> <span className="text-xs font-normal text-muted-foreground">{m.title}</span>
+                            <MemberLink memberId={m.id} name={m.name} noAbsence>{dn(m)}</MemberLink> <span className="text-xs font-normal text-muted-foreground">{m.title}</span>
                           </span>
                           <span className="sr-only">{e.type}</span>
                           <span className="w-24 shrink-0 text-xs text-muted-foreground">{dayPart(e, day, d1)}</span>
@@ -504,7 +511,7 @@ export function DutyPage(): React.JSX.Element {
                       <span key={m.id} className="inline-flex items-center gap-0.5">
                         <button className="cursor-pointer rounded bg-muted px-1.5 py-0.5 text-xs hover:bg-primary/15" title="눌러서 사고 신청" onClick={() => setDialog({ memberId: m.id, day })}>
                           {dn(m)}
-                          <RoleMark memberId={m.id} />
+                          <RoleMark memberId={m.id} noAbsence />
                         </button>
                         {/* the name itself registers an absence here, so the messenger gets its own small button */}
                         {m.id !== meId && (
@@ -516,7 +523,7 @@ export function DutyPage(): React.JSX.Element {
                     ) : (
                       <MemberLink key={m.id} memberId={m.id} name={m.name} noMark className="rounded bg-muted px-1.5 py-0.5 text-xs">
                         {dn(m)}
-                        <RoleMark memberId={m.id} />
+                        <RoleMark memberId={m.id} noAbsence />
                       </MemberLink>
                     )
                   )}
@@ -561,7 +568,7 @@ export function DutyPage(): React.JSX.Element {
               ...s.members.map((m) => (
                 <tr key={m.id} className="border-b border-border last:border-0">
                   <td className="truncate py-1.5 pr-3" style={{ paddingLeft: 20 + s.depth * 14 }}>
-                    <MemberLink memberId={m.id} name={m.name}>{dn(m)}</MemberLink> <span className="text-xs text-muted-foreground">{m.title}</span>
+                    <MemberLink memberId={m.id} name={m.name} noAbsence>{dn(m)}</MemberLink> <span className="text-xs text-muted-foreground">{m.title}</span>
                   </td>
                   {days.map((d, i) => {
                     const es = (byMember.get(m.id) ?? []).filter((e) => onDay(e, d, d + DAY))
@@ -654,7 +661,7 @@ export function DutyPage(): React.JSX.Element {
                     </td>
                     <td className="px-2 py-1.5 text-muted-foreground">{d}</td>
                     <td className="whitespace-nowrap px-2 py-1.5 font-medium">
-                      <MemberLink memberId={m.id} name={m.name}>{dn(m)}</MemberLink>
+                      <MemberLink memberId={m.id} name={m.name} noAbsence>{dn(m)}</MemberLink>
                     </td>
                     <td className="px-2 py-1.5">
                       <TypeBadge type={e.type} />

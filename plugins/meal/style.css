@@ -293,6 +293,62 @@ table.week.edit td {
   height: 2rem;
 }
 
+/* ---------- 근무현황 (1.9.0): away that day - a mark and a warning, nothing is refused ---------- */
+.th-badge.absent {
+  gap: 0.125rem;
+}
+.th-badge.absent svg,
+.absent-count svg,
+.absent-warn svg {
+  width: 0.875em;
+  height: 0.875em;
+}
+.who .th-badge.absent {
+  padding: 0.0625rem 0.25rem;
+}
+.absent-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  color: var(--important);
+  white-space: nowrap;
+}
+.absent-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  margin: 0;
+  color: var(--important);
+}
+.absent-warn svg {
+  margin-top: 0.125rem;
+}
+.tile .absent-warn {
+  grid-column: 1 / -1;
+}
+.rows > [data-proxy-warn] {
+  border-top: 0;
+}
+.rows > [data-proxy-warn]:empty {
+  display: none;
+}
+[data-proxy-warn] .absent-warn {
+  padding: 0 1rem 0.5rem calc(7rem + 1.5rem);
+}
+.absent-notice {
+  display: grid;
+  gap: 0.25rem;
+}
+.absent-notice p {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  margin: 0;
+}
+#bulkAbsent {
+  margin-top: 0.5rem;
+}
+
 /* ---------- 설정 ---------- */
 .set-row {
   display: flex;

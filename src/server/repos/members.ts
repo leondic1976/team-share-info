@@ -2,7 +2,7 @@ import type { Db } from '../../node/sqlite'
 import { newId } from '../../node/sqlite'
 import type { MemberDto, Presence, Role } from '../../shared/schemas/auth'
 import type { DepartmentDto } from '../../shared/schemas/org'
-import { DEPT_MAX_DEPTH, cleanDeptName, deptPath, matchDeptPath } from '../../shared/org'
+import { DEPT_MAX_DEPTH, cleanDeptName, deptPath, deptRank, matchDeptPath } from '../../shared/org'
 
 export interface MemberRow {
   id: string
@@ -89,8 +89,12 @@ export function deptPathOf(db: Db, deptId: string): string[] {
 export function listMembers(db: Db, opts: { includeSuspended?: boolean } = {}): MemberRow[] {
   const where = opts.includeSuspended ? '' : `WHERE m.status = 'active'`
   // within a department: the order an admin set (org_sort, 관리 → 구성원 순서), then by name
-  const rows = db.all<MemberRow>(`${SELECT} ${where} ORDER BY d.sort, d.name, CASE WHEN m.org_sort > 0 THEN m.org_sort ELSE 2147483647 END, m.name`)
+  const rows = db.all<MemberRow>(`${SELECT} ${where} ORDER BY CASE WHEN m.org_sort > 0 THEN m.org_sort ELSE 2147483647 END, m.name`)
   const depts = listDepartments(db)
+  // departments in 직제순 (tree order the server PC sets); people with no department last
+  const rank = deptRank(depts)
+  const at = (r: MemberRow): number => (r.dept_id ? rank.get(r.dept_id) ?? depts.length : depts.length + 1)
+  rows.sort((a, b) => at(a) - at(b))
   const paths = new Map<string, string[]>()
   for (const r of rows) {
     if (!r.dept_id) r.dept_path = []
@@ -178,10 +182,13 @@ export function countAdmins(db: Db): number {
   return db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM members WHERE role = 'admin' AND status = 'active'`)?.n ?? 0
 }
 
+/** Every department in 직제순 (tree order, as the org chart shows them). */
 export function listDepartments(db: Db): DepartmentDto[] {
-  return db
+  const list = db
     .all<{ id: string; name: string; parent_id: string | null; sort: number; head_id: string | null; phone: string | null; duties: string | null; location: string | null; entered_by: string | null; entered_at: number | null }>(
       'SELECT id, name, parent_id, sort, head_id, phone, duties, location, entered_by, entered_at FROM departments ORDER BY sort, name'
     )
     .map((d) => ({ id: d.id, name: d.name, parentId: d.parent_id, sort: d.sort, headId: d.head_id, phone: d.phone, duties: d.duties, location: d.location, enteredBy: d.entered_by, enteredAt: d.entered_at }))
+  const rank = deptRank(list)
+  return list.sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0))
 }

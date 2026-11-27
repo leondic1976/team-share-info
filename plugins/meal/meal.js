@@ -291,7 +291,60 @@
     return { entry }
   }
 
-  const byDeptName = (a, b) => (a.deptName || '').localeCompare(b.deptName || '', 'ko') || a.name.localeCompare(b.name, 'ko')
+  // ---------- order of departments: 직제순 (1.9.0) ----------
+  /**
+   * The org-chart order of TeamHub (설정 → 조직 관리), from TeamHub.call('departments'):
+   * department name (and full path "본부 > 과") → its place. null: an older TeamHub without the
+   * call - departments by name as before.
+   */
+  let deptRank = null
+  function setDeptOrder(list) {
+    if (!Array.isArray(list) || !list.length) {
+      deptRank = null
+      return
+    }
+    deptRank = new Map()
+    const put = (k, i) => {
+      const key = String(k || '').trim()
+      if (key && !deptRank.has(key)) deptRank.set(key, i)
+    }
+    list
+      .filter((d) => d && typeof d.name === 'string')
+      .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+      .forEach((d, i) => {
+        put(d.name, i)
+        if (Array.isArray(d.path) && d.path.length) put(d.path.join(' > '), i)
+      })
+  }
+  const usesDeptOrder = () => !!deptRank
+  const UNLISTED = 1e9 // a department TeamHub does not know (typed for a 미등록 person): after the real ones
+  const NO_DEPT_RANK = 2e9 // 부서 미지정: last
+  const deptRankOf = (name) => {
+    const n = String(name || '').trim()
+    if (!n || n === NO_DEPT_NAME) return NO_DEPT_RANK
+    return deptRank.has(n) ? deptRank.get(n) : UNLISTED
+  }
+  /** Two department names in 직제순; the unknown ones by name, 부서 미지정 last. */
+  function deptCompare(a, b) {
+    if (!deptRank) return (a || '').localeCompare(b || '', 'ko')
+    const ra = deptRankOf(a)
+    const rb = deptRankOf(b)
+    if (ra !== rb) return ra - rb
+    // the same place under two names (a name and its path "본부 > 과"), or departments TeamHub does not know: by name
+    return ra === NO_DEPT_RANK ? 0 : String(a).trim().localeCompare(String(b).trim(), 'ko')
+  }
+  /**
+   * The order of people in lists: by department (직제순 once TeamHub gives it), inside one the
+   * order an admin set for the members (orgSort; 미등록 people and members without one after
+   * them), then by name.
+   */
+  function orgSorter(members) {
+    const sort = new Map()
+    for (const m of members || []) if (m && Number(m.orgSort) > 0) sort.set(m.id, Number(m.orgSort))
+    const ord = (p) => (sort.has(p.id) ? sort.get(p.id) : Number.MAX_SAFE_INTEGER)
+    return (a, b) => deptCompare(a.deptName, b.deptName) || (deptRank ? ord(a) - ord(b) : 0) || a.name.localeCompare(b.name, 'ko')
+  }
+  const byDeptName = orgSorter(null)
   /**
    * Every member with a request, own or made for them: Map id → { id, name, deptName, days }
    * where days[date][meal] = { on, at, by, byName, firm? } (by = who requested it for them, '' = themselves).
@@ -372,7 +425,7 @@
       const r = p.days[date] && p.days[date][meal]
       if (r && r.on) out.push({ id: p.id, name: p.name, deptName: p.deptName, at: r.at, by: r.by, byName: r.byName, manual: !!p.manual })
     }
-    return out.sort(byDeptName)
+    return out.sort(orgSorter(members))
   }
   /** Who marked that meal of that day 확실히 신청안함 themselves (they are not eating, for certain). */
   function declinedList(room, date, meal, members) {
@@ -381,7 +434,7 @@
       const r = p.days[date] && p.days[date][meal]
       if (r && r.firm) out.push({ id: p.id, name: p.name, deptName: p.deptName, at: r.at, manual: !!p.manual })
     }
-    return out.sort(byDeptName)
+    return out.sort(orgSorter(members))
   }
   /** Meals per person in a month ('YYYY-MM'). Only days whose deadline has passed count, unless `all`. */
   function monthTally(room, month, members, now, all) {
@@ -395,7 +448,7 @@
       }
       if (row.lunch || row.dinner) rows.push(row)
     }
-    rows.sort(byDeptName)
+    rows.sort(orgSorter(members))
     return { rows, lunch: rows.reduce((s, r) => s + r.lunch, 0), dinner: rows.reduce((s, r) => s + r.dinner, 0) }
   }
 
@@ -646,7 +699,7 @@
       }
       if (dates.lunch.length || dates.dinner.length) out.push({ id: p.id, name: p.name, deptName: p.deptName, manual: !!p.manual, gone: !!p.gone, dates })
     }
-    return out.sort(byDeptName)
+    return out.sort(orgSorter(members))
   }
   /**
    * 식대 정산 of people with their final meal dates (mealDates() or the rows of a snapshot):
@@ -672,7 +725,9 @@
       row.amount = row.lunchAmt + row.dinnerAmt
       if (row.lunch || row.dinner) rows.push(row)
     }
-    rows.sort(byDeptName)
+    // 직제순: only the departments are put in order, the people keep the order they came in
+    // (mealDates or a snapshot already have it); before that, by department and name as always
+    rows.sort(deptRank ? (a, b) => deptCompare(a.deptName, b.deptName) : byDeptName)
     const depts = []
     const at = new Map()
     const total = { people: rows.length, manual: rows.filter((r) => r.manual).length, lunch: 0, dinner: 0, lunchAmt: 0, dinnerAmt: 0, amount: 0 }
@@ -1110,9 +1165,10 @@
   // ---------- requests for many people at once (anybody, see canProxy) ----------
   const NO_DEPT = '부서 미지정'
   /**
-   * Members by department for the pick list: [{ dept, own, members }]. Departments and the
-   * people in them stay in the order the list arrives in (TeamHub already orders them the way
-   * the admins set it); the department of the one who acts comes first.
+   * Members by department for the pick list: [{ dept, own, members }]. The people of a
+   * department stay in the order the list arrives in (TeamHub orders them the way the admins
+   * set it); departments in 직제순 (setDeptOrder; before that as they arrive), 부서 미지정 last;
+   * the department of the one who acts comes first.
    */
   function deptGroups(members, ownDept) {
     const groups = []
@@ -1126,6 +1182,8 @@
       }
       groups[at.get(dept)].members.push(m)
     }
+    // 직제순 once TeamHub gives it (the people of a department keep their order)
+    if (deptRank) groups.sort((a, b) => deptCompare(a.dept, b.dept))
     return groups.filter((g) => g.own).concat(groups.filter((g) => !g.own))
   }
   /** The header checkbox of a department: 'all', 'some' or 'none' of `ids` are in `selected` (a Set or an array). */
@@ -1316,6 +1374,98 @@
     }
     return lines.join('\n')
   }
+  // ---------- 근무현황: who is away (1.9.0) ----------
+  const clock = (ms) => {
+    const d = new Date(ms)
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+  /**
+   * Who is away on a day by 근무현황: Map memberId → { types, text, parts, allDay }.
+   * absences = [{ memberId, type, start, end, allDay }] from TeamHub.call('absences') (active
+   * members only; 미등록 people have none). text = "연가" or "출장, 교육"; parts = the time of each
+   * that day ("종일", "14:00~16:00", "~11:00").
+   */
+  function absentOn(absences, date) {
+    const out = new Map()
+    if (!isYmd(date)) return out
+    const from = dayStart(date)
+    const to = dayStart(addDays(date, 1))
+    for (const a of absences || []) {
+      if (!a || !isId(a.memberId)) continue
+      const start = Number(a.start)
+      const end = Number(a.end)
+      if (!(start < to && end > from)) continue
+      const type = line(a.type, 20) || '기타'
+      const whole = !!a.allDay || (start <= from && end >= to)
+      const part = whole ? '종일' : `${start > from ? clock(start) : ''}~${end < to ? clock(end) : ''}`
+      let r = out.get(a.memberId)
+      if (!r) {
+        r = { types: [], parts: [], allDay: false, text: '' }
+        out.set(a.memberId, r)
+      }
+      if (!r.types.includes(type)) r.types.push(type)
+      if (!r.parts.includes(part)) r.parts.push(part)
+      if (whole) r.allDay = true
+    }
+    for (const r of out.values()) r.text = r.types.join(', ')
+    return out
+  }
+  /** "부재(연가)". */
+  const absentLabel = (a) => `부재(${a.text})`
+  /** The time of the absence that day: '' for the whole day, else "14:00~16:00". */
+  const absentTime = (a) => (a.allDay ? '' : a.parts.filter((x) => x !== '종일').join(', '))
+  /** 로 or 으로 after a word (a final consonant other than ㄹ takes 으로). */
+  function ro(word) {
+    const c = String(word || '').trim().slice(-1).charCodeAt(0)
+    if (!(c >= 0xac00 && c <= 0xd7a3)) return '(으)로'
+    const jong = (c - 0xac00) % 28
+    return jong && jong !== 8 ? '으로' : '로'
+  }
+  /**
+   * "이 날은 근무현황에 출장으로 부재입니다." (part of the day: "… 외출로 부재입니다(14:00~16:00)."),
+   * about somebody else: "김○○ 님은 이 날 근무현황에 출장으로 부재입니다."
+   */
+  function absenceWarning(a, name) {
+    const t = absentTime(a)
+    return `${name ? `${name} 님은 이 날` : '이 날은'} 근무현황에 ${a.text}${ro(a.text)} 부재입니다${t ? `(${t})` : ''}.`
+  }
+  /** Of a list of people (dayList and the like), those away that day: [{ id, name, deptName, manual, text }]. */
+  const absentAmong = (list, absent) =>
+    (list || []).filter((p) => p && absent && absent.has(p.id)).map((p) => ({ id: p.id, name: p.name, deptName: p.deptName, manual: !!p.manual, text: absent.get(p.id).text }))
+  /** "부재 중 신청 2명: 김○○(연가), 이○○(출장)". */
+  const absentText = (list) => `부재 중 신청 ${(list || []).length}명${list && list.length ? `: ${list.map((p) => `${p.name}(${p.text})`).join(', ')}` : ''}`
+  /** The days of `dates` one person is away: [{ date, text }]. */
+  const absentDays = (absences, id, dates) =>
+    (dates || [])
+      .map((date) => ({ date, a: absentOn(absences, date).get(id) }))
+      .filter((x) => x.a)
+      .map((x) => ({ date: x.date, text: x.a.text }))
+  /**
+   * Requests made for days the person is away, day by day: { date: { lunch: [{ id, name, deptName, text }], dinner } }.
+   * Every request that stands counts (final or not is up to the caller). No count is changed
+   * anywhere: this is shown next to the counts for the 식수서무 to judge.
+   */
+  function absentRequests(room, members, dates, absences) {
+    const people = Array.from(resolve(room, members).values())
+    const sort = orgSorter(members)
+    const out = {}
+    for (const date of dates || []) {
+      const absent = absentOn(absences, date)
+      const day = {}
+      for (const k of MEAL_KEYS) {
+        day[k] = []
+        if (!absent.size) continue
+        for (const p of people) {
+          const r = p.days[date] && p.days[date][k]
+          if (r && r.on && absent.has(p.id)) day[k].push({ id: p.id, name: p.name, deptName: p.deptName, text: absent.get(p.id).text })
+        }
+        day[k].sort(sort)
+      }
+      out[date] = day
+    }
+    return out
+  }
+
   const csvCell = (v) => (/[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v))
   function monthCsv(room, month, members, now) {
     const t = monthTally(room, month, members, now, false)
@@ -1323,5 +1473,5 @@
     return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n'
   }
 
-  g.Meal = { setCorePeople, usesCorePeople, cleanPrices, isPriceRoom, pickPriceRoom, effectivePrices, priceAt, monthPrices, savePrices, mealDates, settle, settlement, snapSettlement, wonText, settleCsv, isFirm, firmRefusal, declinedList, firmAny, settled, monthDays, dailyTally, deptTally, monthSummary, personMonth, personMonths, statsSnapshot, betterOf, dailyCsv, deptCsv, personCsv, isManualId, newManualId, cleanPerson, cleanPeople, manualList, roster, nameClash, splitCount, countText, MEALS, MEAL_KEYS, MENU_SLOTS, LIMITS, deptGroups, groupState, bulkSlots, alreadySet, pickStatus, applyBulk, bulkSummary, weekStart, menuWindow, cleanMenuText, cleanMenus, pickSettings, effective, menuOf, menuStamp, weekDays, menuMeals, saveAs, fitMenus, weekText, parseBlock, placeBlock, canManage, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
+  g.Meal = { setDeptOrder, usesDeptOrder, deptCompare, orgSorter, absentOn, absentLabel, absentTime, ro, absenceWarning, absentAmong, absentText, absentDays, absentRequests, setCorePeople, usesCorePeople, cleanPrices, isPriceRoom, pickPriceRoom, effectivePrices, priceAt, monthPrices, savePrices, mealDates, settle, settlement, snapSettlement, wonText, settleCsv, isFirm, firmRefusal, declinedList, firmAny, settled, monthDays, dailyTally, deptTally, monthSummary, personMonth, personMonths, statsSnapshot, betterOf, dailyCsv, deptCsv, personCsv, isManualId, newManualId, cleanPerson, cleanPeople, manualList, roster, nameClash, splitCount, countText, MEALS, MEAL_KEYS, MENU_SLOTS, LIMITS, deptGroups, groupState, bulkSlots, alreadySet, pickStatus, applyBulk, bulkSummary, weekStart, menuWindow, cleanMenuText, cleanMenus, pickSettings, effective, menuOf, menuStamp, weekDays, menuMeals, saveAs, fitMenus, weekText, parseBlock, placeBlock, canManage, ymd, addDays, dateLabel, cleanConfig, isConfig, pickRoom, withHolidays, holidayName, skipped, isServed, cutoffAt, stateOf, upcoming, remaining, cleanEntry, wants, requestedAt, apply, canProxy, applyFor, resolve, recordOf, dayList, monthTally, orderText, monthCsv }
 })(typeof window !== 'undefined' ? window : globalThis)

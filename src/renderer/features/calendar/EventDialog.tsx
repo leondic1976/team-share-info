@@ -14,7 +14,7 @@ import { Input, Select } from '@renderer/components/ui/input'
 import { Editor, RichView } from '@renderer/components/Editor'
 import { MemberPicker, ScopePicker, defaultScope, scopeIsValid } from '@renderer/components/ScopePicker'
 import { Field } from '@renderer/features/setup/SetupFrame'
-import { api, errorMessage } from '@renderer/lib/api'
+import { ApiError, api, errorMessage } from '@renderer/lib/api'
 import { invoke } from '@renderer/lib/bridge'
 import { DAY, REMINDER_CHOICES, fmtRange, fromInputValue, startOfDay, toInputValue } from '@renderer/lib/dates'
 import { useMe } from '@renderer/lib/queries'
@@ -59,6 +59,9 @@ interface Form {
   absenceType: string
   busy: boolean
   busyEventId: string | null
+  /** personal: also file it in 근무현황 as a 사고 of the type in absenceType (instruction 145) */
+  duty: boolean
+  dutyEventId: string | null
 }
 
 /** Ask how to apply a change to a recurring event. */
@@ -139,9 +142,13 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
       attendeeIds: [],
       absenceType: '연가',
       busy: false,
-      busyEventId: null
+      busyEventId: null,
+      duty: false,
+      dutyEventId: null
     }
   })
+  /** what became of the linked 사고: removed in 근무현황, or its times changed there */
+  const [dutyNote, setDutyNote] = useState('')
   const [err, setErr] = useState('')
   const [busyAct, setBusyAct] = useState(false)
   const [askMode, setAskMode] = useState<null | { verb: string; run: (m: EditMode) => Promise<void> }>(null)
@@ -164,9 +171,23 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
           location: e.location ?? '',
           reminders: e.reminders,
           busy: !!e.busyEventId,
-          busyEventId: e.busyEventId
+          busyEventId: e.busyEventId,
+          duty: !!e.absenceEventId,
+          dutyEventId: e.absenceEventId
         }))
         setLoaded(true)
+        // the 사고 may have been changed or taken back in 근무현황 (also from another PC)
+        if (e.absenceEventId && online)
+          void api
+            .get<EventDto>(`/api/events/${e.absenceEventId}`)
+            .then((a) => {
+              setF((p) => ({ ...p, absenceType: a.absenceType ?? p.absenceType }))
+              if (a.startAt !== e.startAt || a.endAt !== e.endAt) setDutyNote(`근무현황의 사고 기간은 ${fmtRange(a.startAt, a.endAt, a.allDay)}입니다. 저장하면 이 일정의 시간으로 맞춥니다.`)
+            })
+            .catch(() => {
+              setF((p) => ({ ...p, duty: false }))
+              setDutyNote('근무현황에서 이 사고 신청이 취소되었습니다. 다시 신청하려면 아래에서 고르세요.')
+            })
       })
     } else if (target.origin === 'server' && target.id) {
       void api
@@ -234,6 +255,27 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
     await invoke('local:events.setBusy', { id: localId, busyEventId: busyId })
   }
 
+  /** Personal -> 근무현황: file, move or take back the 사고 this event carries. */
+  const syncDuty = async (localId: string): Promise<void> => {
+    let id = f.dutyEventId
+    if (f.duty) {
+      // only the type and the period go to the team; the title, place and body stay on this PC
+      const body = { type: f.absenceType, startAt: f.start, endAt: f.end, allDay: f.allDay }
+      try {
+        if (id) await api.patch(`/api/duty/${id}`, body)
+      } catch (e) {
+        // taken back in 근무현황 meanwhile: file it again
+        if (!(e instanceof ApiError && e.status === 404)) throw e
+        id = null
+      }
+      if (!id) id = (await api.post<{ id: string }>('/api/duty', body)).id
+    } else if (id) {
+      await api.del(`/api/duty/${id}`).catch(() => undefined)
+      id = null
+    }
+    if (id !== f.dutyEventId) await invoke('local:events.setAbsence', { id: localId, absenceEventId: id })
+  }
+
   const saveLocal = async (mode: EditMode): Promise<void> => {
     const times = mode === 'all' && isRecurringExisting ? seriesTimes() : { startAt: f.start, endAt: f.end }
     const id = await invoke('local:events.save', {
@@ -249,6 +291,7 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
       occurrenceStart: target.occurrence
     })
     if (f.busy || f.busyEventId) await syncBusy(id)
+    if ((f.duty || f.dutyEventId) && online) await syncDuty(id)
   }
 
   /** Changing a shared event that exists needs the server; a new one can wait in the outbox. */
@@ -279,9 +322,14 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
     if (!f.title.trim()) return setErr('제목을 입력하세요.')
     if (f.end < f.start) return setErr('끝나는 시각이 시작보다 빠릅니다.')
     if (f.kind === 'team' && !scopeIsValid(f.scope)) return setErr('공개 범위를 정하세요.')
+    if (f.kind === 'personal' && f.duty && f.rrule) return setErr('반복 일정은 근무현황에 사고 신청할 수 없습니다. 반복을 없애거나 사고 신청을 끄세요.')
     const run = async (m: EditMode): Promise<void> => {
       if (f.kind === 'personal') await saveLocal(m)
-      else await saveServer(m)
+      else {
+        await saveServer(m)
+        // an absence filed from a personal event: that event follows the new times
+        if (f.kind === 'absence' && target.origin === 'server' && target.id && !f.rrule) await invoke('local:events.absenceChanged', { absenceEventId: target.id, change: { startAt: f.start, endAt: f.end, allDay: f.allDay } })
+      }
     }
     if (isRecurringExisting) setAskMode({ verb: '수정', run: (m) => wrap(() => run(m)) })
     else void wrap(() => run('all'))
@@ -291,9 +339,11 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
     const run = async (m: EditMode): Promise<void> => {
       if (target.origin === 'local' && target.id) {
         if (f.busyEventId && m === 'all') await api.del(`/api/events/${f.busyEventId}`).catch(() => undefined)
+        if (f.duty && f.dutyEventId && m === 'all' && online && window.confirm('근무현황에 올린 사고 신청도 취소할까요? [취소]를 누르면 사고는 그대로 둡니다.')) await api.del(`/api/duty/${f.dutyEventId}`).catch(() => undefined)
         await invoke('local:events.delete', { id: target.id, mode: m, occurrence: target.occurrence })
       } else if (target.origin === 'server' && target.id) {
         await api.del(`/api/events/${target.id}?mode=${m}${target.occurrence !== undefined ? `&occurrence=${target.occurrence}` : ''}`)
+        if (server?.kind === 'absence' && m === 'all') await invoke('local:events.absenceChanged', { absenceEventId: target.id, change: null })
       }
     }
     if (isRecurringExisting) setAskMode({ verb: '삭제', run: (m) => wrap(() => run(m)) })
@@ -519,8 +569,31 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
             )}
             {f.kind === 'personal' && (
               <>
+                <div className="space-y-1.5" data-testid="event-duty">
+                  <label className="flex items-start gap-2 text-sm">
+                    <input type="checkbox" className="mt-1" checked={f.duty} onChange={(e) => setF((p) => ({ ...p, duty: e.target.checked, busy: e.target.checked ? false : p.busy }))} disabled={!online || !!f.rrule} aria-label="근무현황에 사고 신청" />
+                    <span>
+                      <b>근무현황에 사고 신청</b>
+                      <span className="block text-xs text-muted-foreground">
+                        {f.rrule ? '반복 일정은 사고 신청할 수 없습니다.' : '사고 종류와 기간만 근무현황에 올라가고 제목·장소·내용은 내 PC에만 남습니다. 일정이나 근무현황에서 시간을 고치면 서로 따라갑니다.'}
+                      </span>
+                    </span>
+                  </label>
+                  {f.duty && (
+                    <Field label="사고 종류">
+                      <Select aria-label="사고 종류" value={f.absenceType} onChange={(e) => set('absenceType', e.target.value)}>
+                        {!ABSENCE_TYPES.includes(f.absenceType) && <option>{f.absenceType}</option>}
+                        {ABSENCE_TYPES.map((t) => (
+                          <option key={t}>{t}</option>
+                        ))}
+                      </Select>
+                    </Field>
+                  )}
+                  {dutyNote && <p className="text-xs text-important">{dutyNote}</p>}
+                  {f.dutyEventId && !online && <p className="text-xs text-muted-foreground">서버가 꺼져 있어 근무현황의 사고는 바뀌지 않습니다. 연결된 뒤 다시 저장하세요.</p>}
+                </div>
                 <label className="flex items-start gap-2 text-sm">
-                  <input type="checkbox" className="mt-1" checked={f.busy} onChange={(e) => set('busy', e.target.checked)} disabled={!online} />
+                  <input type="checkbox" className="mt-1" checked={f.busy} onChange={(e) => set('busy', e.target.checked)} disabled={!online || f.duty} />
                   <span>
                     팀원에게 <b>바쁨</b>으로만 표시
                     <span className="block text-xs text-muted-foreground">제목·내용은 내 PC에만 두고, 시간대만 서버에 올립니다.</span>

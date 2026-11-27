@@ -364,5 +364,15 @@ CREATE INDEX idx_outbox_owner ON outbox(owner, created_at);
 -- cached server data from before sealing was plain text: not kept
 DELETE FROM query_cache;
 `
+  },
+  {
+    id: 9,
+    name: 'personal_event_absence',
+    sql: `
+-- A personal event can carry a 근무현황 사고 (the server's absence event it filed): times follow
+-- each other while linked (instruction 145).
+ALTER TABLE personal_events ADD COLUMN absence_event_id TEXT;
+CREATE INDEX idx_pe_absence ON personal_events(absence_event_id);
+`
   }
 ]

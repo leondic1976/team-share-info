@@ -1,4 +1,4 @@
-import { onDay, type DutyEntryDto, type DutyMemberDto } from './schemas/duty'
+import { dayPart, onDay, type DutyEntryDto, type DutyMemberDto } from './schemas/duty'
 import type { DutySection } from './dutySections'
 
 /**
@@ -108,6 +108,29 @@ export function dutyAbsentGroups<M extends { id: string }>(
   for (const s of sections) {
     const people = s.members.map((m) => ({ m, entries: awayOn(byMember, m.id, dayStart) })).filter((x) => x.entries.length)
     if (people.length) out.push({ section: s, people })
+  }
+  return out
+}
+
+export interface DayAbsence {
+  /** the reasons, in time order (연가, 출장...) */
+  types: string[]
+  /** e.g. "오늘 연가 종일 · 출장 14:00~" */
+  title: string
+}
+
+/**
+ * Who is away on the day starting at `dayStart`, by member, for the 사고명 badge next to names.
+ * Entries already over at `now` are left out, so the badge stays only while the absence holds.
+ */
+export function absencesOn(entries: DutyEntryDto[], dayStart: number, now: number): Map<string, DayAbsence> {
+  const dayEnd = dayStart + DAY_MS
+  const by = new Map<string, DutyEntryDto[]>()
+  for (const e of entries) if (onDay(e, dayStart, dayEnd) && e.end > now) by.set(e.memberId, [...(by.get(e.memberId) ?? []), e])
+  const out = new Map<string, DayAbsence>()
+  for (const [id, list] of by) {
+    list.sort((a, b) => a.start - b.start)
+    out.set(id, { types: [...new Set(list.map((e) => e.type))], title: `오늘 ${list.map((e) => `${e.type} ${dayPart(e, dayStart, dayEnd)}`).join(' · ')}` })
   }
   return out
 }

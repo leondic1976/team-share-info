@@ -78,10 +78,12 @@ export interface CommandServerHost {
   /** wraps a reply body the way the host answers */
   ok<T>(data: T): unknown
   /**
-   * who is away today by the host's own attendance board (TeamHub: 근무현황), with the reason
-   * (optional; shown to those in charge as "away today — name a substitute")
+   * who is away from today through the next `days` days (today included) by the host's own
+   * attendance board (TeamHub: 근무현황), with the reason and the days of each absence
+   * (YYYY-MM-DD, both included; fromDate is today at the earliest, toDate the absence's last day).
+   * Optional; shown to those in charge as "away then — name a substitute".
    */
-  absencesToday?(): { memberId: string; type: string }[]
+  absencesAhead?(days: number): { memberId: string; type: string; fromDate: string; toDate: string }[]
   /** activity log of the host (optional) */
   log?(req: FastifyRequest, action: string, detail?: Record<string, unknown>): void
   /** report an error of a background job */

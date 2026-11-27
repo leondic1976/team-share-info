@@ -1,12 +1,12 @@
 /**
  * 대리자: who takes an absent person's places (분류 in every 근무 유형, 공통업무) for a period.
  * The register (설정), its dialog, the marks shown in 현황·편성 and the hint from the host's
- * 근무현황 ("away today — name a substitute").
+ * 근무현황 ("away from today through the next days — name a substitute").
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Pencil, Plus, Trash2, UserRoundCheck } from 'lucide-react'
 import type { CmdPerson, CmdSubstitution } from '../shared/types'
-import { checkSubstitution, periodText, periodsOverlap, rolePath, substitutionPhase, ymd } from '../shared/logic'
+import { absenceHints, checkSubstitution, daysLabel, periodText, periodsOverlap, rolePath, substitutionPhase, ymd } from '../shared/logic'
 import type { Model, PlacedNow } from './model'
 import { useAct } from './data'
 import { useHost } from './host'
@@ -305,25 +305,25 @@ export function SubstitutionsToday({ m, now, upcoming = false }: { m: Model; now
 }
 
 /**
- * For those in charge: somebody with a place today (in today's 조 or a 공통업무) is away by the
- * host's 근무현황 and has no substitute — a button names one.
+ * For those in charge: somebody with a place on duty (in a 조 on duty then, or a 공통업무) is away
+ * by the host's 근무현황 from today through the next days and has no substitute for (some of)
+ * those days — a button names one for the first days left uncovered.
  */
 export function AbsenceHints({ m, now }: { m: Model; now: number }): React.JSX.Element | null {
   const [edit, setEdit] = useState<Partial<Draft> | null>(null)
   const today = ymd(now)
-  const teamId = m.shift?.teamId
-  const onDuty = new Set<string>([...m.s.assignments.filter((a) => a.teamId === teamId).map((a) => a.personId), ...m.s.common.flatMap((c) => c.assign.filter((a) => !c.perTeam || a.teamId === teamId).map((a) => a.personId))])
-  const hints = (m.s.hostAbsences ?? []).filter((x) => onDuty.has(x.personId) && !m.absent.has(x.personId) && !m.excepted.has(x.personId))
+  const hints = absenceHints({ ...m.s, absences: m.s.hostAbsences ?? [], known: (id) => !!m.person(id) })
   if (!m.s.me.isManager || !hints.length) return null
   return (
     <div className="space-y-1" data-testid="cmd-absence-hints">
       {hints.map((x) => (
-        <div key={x.personId} className="flex flex-wrap items-center gap-2 rounded-md border border-important/40 bg-important/10 px-3 py-1.5 text-sm">
+        <div key={`${x.personId}|${x.type}|${x.fromDate}`} className="flex flex-wrap items-center gap-2 rounded-md border border-important/40 bg-important/10 px-3 py-1.5 text-sm" data-testid="cmd-absence-hint">
           <UserRoundCheck className="size-4 text-important" />
           <span>
-            <b>{titled(m.person(x.personId))}</b> 오늘 {x.type} — 근무현황에 부재로 올라 있는데 대리자가 없습니다.
+            <b>{titled(m.person(x.personId))}</b> {daysLabel(x.fromDate, x.toDate, today)} {x.type} — 근무현황에 부재로 올라 있는데{' '}
+            {x.partial ? `${x.gaps.map((g) => daysLabel(g.fromDate, g.toDate, today)).join(', ')}에 ` : ''}대리자가 없습니다.
           </span>
-          <Button size="sm" variant="outline" className="ml-auto" onClick={() => setEdit({ personId: x.personId, reason: x.type, fromDate: today, toDate: today })} data-testid="cmd-absence-sub">
+          <Button size="sm" variant="outline" className="ml-auto" onClick={() => setEdit({ personId: x.personId, reason: x.type, fromDate: x.gaps[0].fromDate, toDate: x.gaps[0].toDate })} data-testid="cmd-absence-sub">
             대리자 지정
           </Button>
         </div>

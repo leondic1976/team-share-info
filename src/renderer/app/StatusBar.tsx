@@ -54,7 +54,7 @@ export function StatusBar(): React.JSX.Element {
         <span className="text-border">│</span>
         <span className="truncate">
           {me?.name ?? app?.winUser ?? ''}
-          {me && <RoleMark role={me.role} isOwner={me.isOwner} />}
+          {me && <RoleMark memberId={me.id} role={me.role} isOwner={me.isOwner} />}
         </span>
         <span className="text-border">│</span>
         <span className="flex items-center gap-1.5 whitespace-nowrap" data-testid="conn-state">

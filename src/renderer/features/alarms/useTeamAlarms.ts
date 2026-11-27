@@ -6,6 +6,8 @@ import { api } from '@renderer/lib/api'
 import { invoke, localKv } from '@renderer/lib/bridge'
 import { useConn } from '@renderer/app/conn-store'
 import { startOfDay, DAY, ymd } from '@renderer/lib/dates'
+import type { EventOccurrenceDto } from '@shared/schemas/events'
+import { myAbsencesForPersonal } from '@shared/absenceLink'
 
 /** Alarms sent by teammates (6.12 ②): pushed when due, and fetched on (re)connect. */
 export function useTeamAlarms(): void {
@@ -43,11 +45,18 @@ export function useMorningSummary(): void {
       if ((await localKv.get<string>('summaryDate')) === today) return
       await localKv.set('summaryDate', today)
       const s = startOfDay(Date.now())
-      const [events, items] = await Promise.all([invoke('local:events.list', { from: s, to: s + DAY }), todayReminders()])
+      const conn = useConn.getState()
+      const [events, items, server] = await Promise.all([
+        invoke('local:events.list', { from: s, to: s + DAY }),
+        todayReminders(),
+        // my 사고 in 근무현황 belongs to my day too (instruction 145)
+        conn.state === 'online' && conn.memberId ? api.get<EventOccurrenceDto[]>('/api/events', { from: s, to: s + DAY, memberId: conn.memberId }).catch(() => []) : Promise.resolve([])
+      ])
+      const away = [...new Set(myAbsencesForPersonal(server, [], conn.memberId).map((e) => e.absenceType ?? '부재'))]
       const alarms = items.filter((i) => i.source === 'alarms').length
       const ev = events.length + new Set(items.filter((i) => i.source === 'events').map((i) => i.body)).size
-      if (!ev && !alarms) return
-      void invoke('notify:toast', { title: '오늘의 업무', body: `일정 ${ev}건 · 알람 ${alarms}건`, route: '/home' })
+      if (!ev && !alarms && !away.length) return
+      void invoke('notify:toast', { title: '오늘의 업무', body: `${away.length ? `오늘 ${away.join('·')} · ` : ''}일정 ${ev}건 · 알람 ${alarms}건`, route: '/home' })
     }, 8000)
     return () => window.clearTimeout(t)
   }, [])

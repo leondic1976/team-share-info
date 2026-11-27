@@ -68,7 +68,8 @@
     if (room && room.entries && room.entries[id] && room.entries[id].name) return room.entries[id].name
     return room && room.createdBy === id ? room.createdByName || '관리자' : '(이름 없음)'
   }
-  const byDept = (a, b) => (a.deptName || '').localeCompare(b.deptName || '', 'ko') || a.name.localeCompare(b.name, 'ko')
+  /** People in 직제순: by department as TeamHub orders them, inside one as an admin set (Meal.orgSorter). */
+  const byDept = () => M.orgSorter(members)
   /** "식수서무 김○○, 이○○ · 관리자 박○○": whom to ask. */
   const chargeText = () => `식수서무 ${eff().stewards.map(nameOf).join(', ') || '지정 안 됨'} · 관리자 ${nameOf(room.createdBy)}`
   function toast(msg, ms) {
@@ -89,6 +90,52 @@
   /** " (미등록 3명 포함)" after a count, when there are any. */
   const manualNote = (list) => (M.splitCount(list).manual ? ` <span class="th-xs th-muted">(미등록 ${M.splitCount(list).manual}명 포함)</span>` : '')
   const menuLines = (t) => `<p class="menu-lines">${esc(t)}</p>`
+
+  // ---------- 근무현황 (1.9.0): who is away, read a month at a time ----------
+  const abs = {} // 'YYYY-MM' → { list: [{ memberId, type, start, end, allDay }], ok }
+  let absUsable = true // false: an older TeamHub without the call (or without the permission): nothing is shown
+  async function readAbsences(m) {
+    try {
+      const list = await call('absences', { from: `${m}-01`, to: M.monthDays(m).slice(-1)[0] })
+      abs[m] = { list: Array.isArray(list) ? list : [], ok: true }
+    } catch (e) {
+      if (/알 수 없는 기능|권한이 없습니다/.test((e && e.message) || '')) absUsable = false
+      abs[m] = { list: abs[m] ? abs[m].list : [], ok: true }
+    }
+  }
+  /** Draw again for what came in, without throwing away what is being typed. */
+  function redraw() {
+    if (!me) return
+    if (!typing() && !busy) render()
+    else if ($('bulkDlg').open && !$('personDlg').open && !busy) renderBulkPeople()
+  }
+  /** The absences of the month of a date; the first ask reads them and draws again. */
+  function absencesOf(date) {
+    if (!absUsable || !room || typeof date !== 'string' || date.length < 7) return []
+    const m = date.slice(0, 7)
+    if (!abs[m]) {
+      abs[m] = { list: [], ok: false }
+      void readAbsences(m).then(redraw)
+    }
+    return abs[m].list
+  }
+  /** The absences of every month the dates fall in. */
+  const absencesFor = (dates) => Array.from(new Set((dates || []).map((d) => d.slice(0, 7)))).flatMap((m) => absencesOf(`${m}-01`))
+  /** Who is away on a date by 근무현황: Map memberId → { text, … } (see Meal.absentOn). */
+  const awayOn = (date) => M.absentOn(absencesOf(date), date)
+  /** "부재(연가)" after a name. */
+  const absentMark = (a) => {
+    if (!a) return ''
+    const t = M.absentTime(a)
+    return ` <span class="th-badge absent" data-absent title="${esc(`근무현황: ${a.text} ${t || '종일'}`)}">${icon('luggage')}${esc(M.absentLabel(a))}</span>`
+  }
+  /** A warning line (warns only: nothing is refused because of an absence). */
+  const warnLine = (text, attr) => `<p class="absent-warn th-xs" ${attr || ''}>${icon('triangle-alert')} ${esc(text)}</p>`
+  /** " · 부재 중 신청 2명" after a count, with the names on hover. */
+  const absentNote = (list, away) => {
+    const a = M.absentAmong(list, away)
+    return a.length ? ` <span class="absent-count th-xs" data-absent-count title="${esc(M.absentText(a))}">${icon('luggage')}부재 중 신청 ${a.length}명</span>` : ''
+  }
 
   async function syncClock() {
     try {
@@ -116,6 +163,14 @@
       M.setCorePeople(null)
     }
   }
+  /** 1.9.0: the org-chart order of departments (직제순); an older TeamHub without it: by name as before. */
+  async function loadOrg() {
+    try {
+      M.setDeptOrder(await call('departments'))
+    } catch {
+      M.setDeptOrder(null)
+    }
+  }
   async function load() {
     const all = await call('rooms.list')
     room = M.pickRoom(all)
@@ -132,7 +187,10 @@
     const firm = !!(rec && rec.firm)
     const at = rec ? rec.at : 0
     const who = rec && rec.by ? ` · ${esc(rec.byName)} 대신` : ''
-    const count = M.dayList(room, date, meal, members).length
+    const all = M.dayList(room, date, meal, members)
+    const count = all.length
+    const away = awayOn(date)
+    const meAway = away.get(me.id)
     const cut = M.cutoffAt(c, date, meal)
     const open = st === 'open'
     const text = M.menuOf(eff().menus, date, meal)
@@ -147,18 +205,24 @@
         ? `${btn('unfirm', '표시 풀기', 'th-btn-outline', '확실히 신청안함을 풉니다. 그 뒤에는 신청할 수 있고, 다른 사람도 대신 신청할 수 있습니다.')}${btn('apply', '신청', '')}`
         : `${btn('firm', '확실히 신청안함', 'th-btn-outline firm-btn', '이 식사는 먹지 않습니다. 표시해 두면 다른 사람이 대신 신청하거나 취소할 수 없고, 본인만 풀 수 있습니다.')}${btn(on ? 'cancel' : 'apply', on ? '취소' : at ? '다시 신청' : '신청', on ? 'th-btn-outline cancel' : '')}`
     return `<div class="tile ${on ? 'on' : ''} ${firm ? 'firm' : ''} ${open ? '' : 'locked'}" data-tile="${date}:${meal}">
-      <div class="meal"><b>${M.MEALS[meal]}</b><span class="count th-xs th-muted th-nums">${count}명 신청</span></div>
+      <div class="meal"><b>${M.MEALS[meal]}</b><span class="count th-xs th-muted th-nums">${count}명 신청</span>${absentNote(all, away)}</div>
       <div class="menu">${text ? esc(text.split('\n').join(', ')) : noMenu()}</div>
       <div class="state">${state}</div>
       <div class="deadline th-xs th-nums ${open ? '' : 'over'}">${open ? `${c.meals[meal].cutoff} 마감 · ${M.remaining(cut - now())}` : `${c.meals[meal].cutoff} 마감됨`}</div>
       <div class="act">${acts}</div>
+      ${meAway && open && !firm ? warnLine(`${M.absenceWarning(meAway)}${on ? ' 신청한 식사가 맞는지 확인하세요.' : ' 신청은 할 수 있습니다.'}`, 'data-absent-warn') : ''}
     </div>`
   }
   function summaryCard(c, today) {
     const meals = M.menuMeals(c)
     const served = meals.filter((k) => M.stateOf(c, today, k, now()) !== 'off')
     const counts = served.length
-      ? served.map((k) => `<span>${M.MEALS[k]} <b class="big">${M.dayList(room, today, k, members).length}</b>명${manualNote(M.dayList(room, today, k, members))}</span>`).join('')
+      ? served
+          .map((k) => {
+            const list = M.dayList(room, today, k, members)
+            return `<span>${M.MEALS[k]} <b class="big">${list.length}</b>명${manualNote(list)}${absentNote(list, awayOn(today))}</span>`
+          })
+          .join('')
       : `<span class="th-muted">${M.holidayName(c, today) ? `공휴일(${esc(M.holidayName(c, today))})이라 신청을 받지 않습니다` : '오늘은 신청을 받지 않습니다'}</span>`
     return `<section class="th-card" data-summary><div class="th-card-header">
       <h2 class="th-card-title">${M.dateLabel(today, today)}</h2>${counts}
@@ -198,7 +262,7 @@
       ...days.map((date) => ({
         date,
         html: `<section class="th-card day ${date === today ? 'today' : ''}" data-day="${date}"><div class="th-card-header">
-          <h2 class="th-card-title">${M.dateLabel(date, today)}</h2>${M.menuOf(menus, date, 'note') ? `<span class="th-xs th-muted day-note">${esc(M.menuOf(menus, date, 'note'))}</span>` : ''}
+          <h2 class="th-card-title">${M.dateLabel(date, today)}</h2>${absentMark(awayOn(date).get(me.id))}${M.menuOf(menus, date, 'note') ? `<span class="th-xs th-muted day-note">${esc(M.menuOf(menus, date, 'note'))}</span>` : ''}
           ${canManage() ? `<button class="th-btn th-btn-ghost th-btn-sm push" data-menu-day="${date}">${icon('pencil')} 메뉴 등록</button>` : ''}
         </div><div class="rows">${M.MEAL_KEYS.map((k) => mealTile(c, date, k)).join('')}</div></section>`
       })),
@@ -254,7 +318,10 @@
       else {
         room = await call('rooms.setEntry', { roomId: room.id, value: r.entry })
         const what = `${target ? `${target.name} 님의 ` : ''}${M.dateLabel(date, M.ymd(now()))} ${M.MEALS[meal]}을`
-        toast(firm ? `${what} 확실히 신청안함으로 정했습니다. 다른 사람은 대신 신청할 수 없습니다.` : was && !on ? `${what} 확실히 신청안함에서 풀었습니다.` : `${what} ${on ? '신청했습니다' : '취소했습니다'}.`)
+        // 근무현황 says the person is away that day: said with the result (a warning; the request stands)
+        const away = on ? awayOn(date).get(target ? target.id : me.id) : null
+        const warn = away ? ` ${M.absenceWarning(away, target ? target.name : '')}` : ''
+        toast(firm ? `${what} 확실히 신청안함으로 정했습니다. 다른 사람은 대신 신청할 수 없습니다.` : was && !on ? `${what} 확실히 신청안함에서 풀었습니다.` : `${what} ${on ? '신청했습니다' : '취소했습니다'}.${warn}`, warn ? 7000 : undefined)
       }
     } catch (e) {
       // the server refuses a change after the deadline by its own clock (1.7.0): say why, a bit
@@ -400,6 +467,12 @@
   }
 
   // ---------- 현황 ----------
+  /** Under 대신 신청: the person picked is away that day by 근무현황 (a warning; the request can still be made). */
+  function proxyWarn(meal) {
+    const a = proxySel[meal] ? awayOn(statusDate).get(proxySel[meal]) : null
+    const p = a ? everyone().find((m) => m.id === proxySel[meal]) : null
+    return `<div data-proxy-warn="${meal}">${p ? warnLine(M.absenceWarning(a, p.name)) : ''}</div>`
+  }
   function renderStatus() {
     const c = config()
     const today = M.ymd(now())
@@ -407,6 +480,8 @@
     const meals = M.menuMeals(c)
     const lists = Object.fromEntries(meals.map((k) => [k, M.dayList(room, statusDate, k, members)]))
     const declined = Object.fromEntries(meals.map((k) => [k, M.declinedList(room, statusDate, k, members)]))
+    // 근무현황 of that day: marked next to the names and counted apart (the counts stay as they are)
+    const away = awayOn(statusDate)
     const blocks = meals
       .map((k) => {
         const list = lists[k]
@@ -415,7 +490,7 @@
         const rest = proxy
           ? everyone()
               .filter((m) => m.id !== me.id && !list.some((p) => p.id === m.id))
-              .sort(byDept)
+              .sort(byDept())
           : []
         const state = st === 'open' ? badge('important', `신청 받는 중 · ${c.meals[k].cutoff} 마감`) : st === 'closed' ? badge('success', '마감 · 확정') : badge('muted', M.holidayName(c, statusDate) ? `공휴일(${esc(M.holidayName(c, statusDate))})` : '받지 않는 날')
         const text = M.menuOf(eff().menus, statusDate, k)
@@ -423,18 +498,21 @@
         const firmIds = new Set(no.map((p) => p.id))
         const depts = new Map()
         for (const p of list) depts.set(p.deptName || '부서 미지정', [...(depts.get(p.deptName || '부서 미지정') || []), p])
-        return `<section class="th-card" data-status="${k}"><div class="th-card-header" style="align-items:center"><h2 class="th-card-title">${M.MEALS[k]}</h2><span><b class="big primary total">${list.length}</b>명${manualNote(list)}</span>${state}${text ? `<span class="th-xs th-muted">${esc(text.split('\n').join(', '))}</span>` : ''}</div>
+        return `<section class="th-card" data-status="${k}"><div class="th-card-header" style="align-items:center"><h2 class="th-card-title">${M.MEALS[k]}</h2><span><b class="big primary total">${list.length}</b>명${manualNote(list)}</span>${absentNote(list, away)}${state}${text ? `<span class="th-xs th-muted">${esc(text.split('\n').join(', '))}</span>` : ''}</div>
           <div class="rows">
-          ${list.length ? [...depts].map(([d, ps]) => `<div class="dept"><span class="dept-name th-xs th-muted">${esc(d)} <b class="th-nums">${ps.length}</b></span><div class="who">${ps.map((p) => `<span data-who="${esc(p.id)}" title="${hm(p.at)} ${p.by ? `${esc(p.byName)} 님이 대신 신청` : '신청'}">${esc(p.name)}${manualMark(p)}${p.by ? ' <small>대신</small>' : ''}${proxy && p.id !== me.id ? `<button class="x" data-unproxy="${esc(p.id)}" data-meal="${k}" aria-label="${esc(p.name)} 신청 대신 취소" title="대신 취소" ${busy ? 'disabled' : ''}>${icon('x') || '취소'}</button>` : ''}</span>`).join('')}</div></div>`).join('') : '<p class="line th-xs th-muted">신청한 사람이 없습니다.</p>'}
-          ${no.length ? `<div class="dept declined" data-declined="${k}"><span class="dept-name th-xs th-muted">확실히 신청안함 <b class="th-nums">${no.length}</b></span><div class="who">${no.map((p) => `<span data-firm="${esc(p.id)}" title="${hm(p.at)} 본인이 확실히 신청안함으로 정함 · 다른 사람은 대신 신청·취소할 수 없음">${icon('lock')}${esc(p.name)}</span>`).join('')}</div></div>` : ''}
-          ${proxy ? `<div class="proxy"><label for="proxy-${k}" class="th-xs th-muted">대신 신청</label><select class="th-input" id="proxy-${k}" data-proxy-sel="${k}"><option value="">사람 고르기</option>${rest.map((m) => (firmIds.has(m.id) ? `<option value="${esc(m.id)}" disabled>${esc(`${m.deptName ? `${m.deptName} · ` : ''}${m.name} (본인이 확실히 신청안함 · 대신 신청 불가)`)}</option>` : `<option value="${esc(m.id)}" ${proxySel[k] === m.id ? 'selected' : ''}>${esc(`${m.deptName ? `${m.deptName} · ` : ''}${m.name}${m.manual ? ' (미등록)' : ''}`)}</option>`)).join('')}</select><button class="th-btn th-btn-outline th-btn-sm" data-proxy="${k}" ${busy ? 'disabled' : ''}>대신 신청</button></div>` : ''}
+          ${list.length ? [...depts].map(([d, ps]) => `<div class="dept"><span class="dept-name th-xs th-muted">${esc(d)} <b class="th-nums">${ps.length}</b></span><div class="who">${ps.map((p) => `<span data-who="${esc(p.id)}" title="${hm(p.at)} ${p.by ? `${esc(p.byName)} 님이 대신 신청` : '신청'}">${esc(p.name)}${manualMark(p)}${absentMark(away.get(p.id))}${p.by ? ' <small>대신</small>' : ''}${proxy && p.id !== me.id ? `<button class="x" data-unproxy="${esc(p.id)}" data-meal="${k}" aria-label="${esc(p.name)} 신청 대신 취소" title="대신 취소" ${busy ? 'disabled' : ''}>${icon('x') || '취소'}</button>` : ''}</span>`).join('')}</div></div>`).join('') : '<p class="line th-xs th-muted">신청한 사람이 없습니다.</p>'}
+          ${no.length ? `<div class="dept declined" data-declined="${k}"><span class="dept-name th-xs th-muted">확실히 신청안함 <b class="th-nums">${no.length}</b></span><div class="who">${no.map((p) => `<span data-firm="${esc(p.id)}" title="${hm(p.at)} 본인이 확실히 신청안함으로 정함 · 다른 사람은 대신 신청·취소할 수 없음">${icon('lock')}${esc(p.name)}${absentMark(away.get(p.id))}</span>`).join('')}</div></div>` : ''}
+          ${proxy ? `<div class="proxy"><label for="proxy-${k}" class="th-xs th-muted">대신 신청</label><select class="th-input" id="proxy-${k}" data-proxy-sel="${k}"><option value="">사람 고르기</option>${rest.map((m) => (firmIds.has(m.id) ? `<option value="${esc(m.id)}" disabled>${esc(`${m.deptName ? `${m.deptName} · ` : ''}${m.name} (본인이 확실히 신청안함 · 대신 신청 불가)`)}</option>` : `<option value="${esc(m.id)}" ${proxySel[k] === m.id ? 'selected' : ''}>${esc(`${m.deptName ? `${m.deptName} · ` : ''}${m.name}${m.manual ? ' (미등록)' : ''}${away.has(m.id) ? ` · ${M.absentLabel(away.get(m.id))}` : ''}`)}</option>`)).join('')}</select><button class="th-btn th-btn-outline th-btn-sm" data-proxy="${k}" ${busy ? 'disabled' : ''}>대신 신청</button></div>${proxyWarn(k)}` : ''}
           </div>
         </section>`
       })
       .join('')
     const note = M.menuOf(eff().menus, statusDate, 'note')
+    // for the 식수서무: requests of people 근무현황 says are away that day (not taken out of the counts)
+    const awayLists = meals.map((k) => [k, M.absentAmong(lists[k], away)]).filter(([, a]) => a.length)
     return `<div class="stack">
       <section class="th-card" data-summary><div class="th-card-header"><h2 class="th-card-title">신청 인원</h2>${meals.map((k) => `<span>${M.MEALS[k]} <b class="big">${lists[k].length}</b>명${manualNote(lists[k])}</span>`).join('')}${note ? `<span class="th-xs th-muted">${esc(note)}</span>` : ''}<span class="push th-xs th-muted">${M.dateLabel(statusDate, today)} 기준</span></div></section>
+      ${awayLists.length ? `<div class="th-notice absent-notice" data-absent-notice>${awayLists.map(([k, a]) => `<p>${icon('triangle-alert')} ${M.MEALS[k]} ${esc(M.absentText(a))}</p>`).join('')}<p class="th-xs">근무현황에 부재로 올라 있는 사람의 신청입니다. 인원에는 그대로 들어 있습니다. 실제로 먹는지 확인하세요.</p></div>` : ''}
       ${blocks}
     </div>`
   }
@@ -497,13 +575,22 @@
         <section class="th-card"><div class="th-card-header"><h2 class="th-card-title">부서별</h2></div>${deptTable(snap)}</section>`
     } else if (statsView === 'daily') {
       const rows = snap.daily.filter((d) => d.served || d.why)
+      // 근무현황 (1.9.0): requests of people away that day, shown apart (the counts stay as they are)
+      const served = rows.filter((d) => d.served).map((d) => d.date)
+      const awayReq = fromSaved || !served.length ? {} : M.absentRequests(room, members, served, absencesFor(served))
+      const awayCell = (date) =>
+        meals
+          .map((k) => [k, (awayReq[date] && awayReq[date][k]) || []])
+          .filter(([, a]) => a.length)
+          .map(([k, a]) => `<span class="absent-count" data-absent-count title="${esc(M.absentText(a))}">${icon('luggage')}${M.MEALS[k]} 부재 중 신청 ${a.length}명</span>`)
+          .join(' ')
       body = `<section class="th-card" data-stats="daily"><div class="th-card-header"><h2 class="th-card-title">${y}년 ${mo}월 일별</h2></div>
         <div class="th-table-wrap"><table class="th-table"><thead><tr><th>날짜</th>${meals.map((k) => `<th class="th-num">${M.MEALS[k]}</th>`).join('')}<th class="th-num">합계</th><th>비고</th></tr></thead><tbody>
         ${rows
           .map((d) => {
             const today = M.ymd(now())
             const open = !fromSaved && d.served && meals.some((k) => M.stateOf(config(), d.date, k, now()) === 'open')
-            return `<tr data-day-row="${d.date}" class="${d.date === today ? 'today' : ''}"><td class="th-nums">${M.dateLabel(d.date, today)}</td>${meals.map((k) => `<td class="th-num">${d.served ? d[k] || 0 : ''}</td>`).join('')}<td class="th-num"><b>${d.served ? meals.reduce((s, k) => s + (d[k] || 0), 0) : ''}</b></td><td class="th-xs th-muted">${d.served ? (open ? badge('important', '신청 받는 중') : '') : d.why ? `공휴일(${esc(d.why)})` : ''}</td></tr>`
+            return `<tr data-day-row="${d.date}" class="${d.date === today ? 'today' : ''}"><td class="th-nums">${M.dateLabel(d.date, today)}</td>${meals.map((k) => `<td class="th-num">${d.served ? d[k] || 0 : ''}</td>`).join('')}<td class="th-num"><b>${d.served ? meals.reduce((s, k) => s + (d[k] || 0), 0) : ''}</b></td><td class="th-xs th-muted">${d.served ? `${open ? badge('important', '신청 받는 중') : ''} ${awayCell(d.date)}` : d.why ? `공휴일(${esc(d.why)})` : ''}</td></tr>`
           })
           .join('')}
         </tbody><tfoot><tr><td>합계(확정)</td>${meals.map((k) => `<td class="th-num">${sm[k]}</td>`).join('')}<td class="th-num">${sm.total}</td><td></td></tr></tfoot></table></div></section>`
@@ -637,7 +724,7 @@
         <div class="members" id="stewards">${
           members
             .filter((m) => m.id !== ownerId)
-            .sort(byDept)
+            .sort(byDept())
             .map((m) => `<label class="th-check"><input type="checkbox" value="${esc(m.id)}" ${picked.includes(m.id) ? 'checked' : ''} ${owner ? '' : 'disabled'} /> ${esc(m.name)} <span class="th-xs th-muted">${esc(m.deptName || '')}</span></label>`)
             .join('') || '<p class="th-hint">팀원이 없습니다.</p>'
         }</div>
@@ -794,7 +881,7 @@
       ${
         link
           ? `<div class="th-field"><label class="th-label" for="p-as">합칠 구성원</label><select class="th-input" id="p-as"><option value="">구성원 고르기</option>${[...members]
-              .sort(byDept)
+              .sort(byDept())
               .map((m) => `<option value="${esc(m.id)}" ${m.name === p.name ? 'selected' : ''}>${esc(m.deptName ? `${m.deptName} · ${m.name}` : m.name)}</option>`)
               .join('')}</select><p class="th-hint">이 사람이 TeamHub에 가입했을 때 씁니다. 지금까지 대신 신청한 기록과 앞으로의 기록이 그 구성원의 것으로 보이고 "미등록" 표시가 없어집니다. 같은 날 양쪽에 신청이 있어도 한 번만 셉니다.</p></div>`
           : ''
@@ -850,6 +937,7 @@
     $('bulkFilter').value = ''
     $('bulkAddPerson').hidden = !canManage() || M.usesCorePeople()
     $('bulkResult').hidden = true
+    bulkAbsent([], [])
     $('bulkError').textContent = ''
     renderBulk()
     $('bulkDlg').showModal()
@@ -910,6 +998,16 @@
     const all = everyone()
     for (const id of Array.from(bulk.sel)) if (done(id) || !all.some((m) => m.id === id)) bulk.sel.delete(id)
     const groups = M.deptGroups(all, me.deptName)
+    // 근무현황: away on one of the chosen days (a mark; they can still be picked)
+    const dates = Array.from(new Set(chosen.map((s) => s.date)))
+    const awayList = absencesFor(dates)
+    const awayMark = (id) => {
+      const days = awayList.length ? M.absentDays(awayList, id, dates) : []
+      if (!days.length) return ''
+      const types = Array.from(new Set(days.map((d) => d.text))).join(', ')
+      const when = days.map((d) => `${M.dateLabel(d.date, '')} ${d.text}`).join(', ')
+      return ` <span class="th-badge absent" data-absent title="${esc(`근무현황: ${when}`)}">${icon('luggage')}${esc(`부재(${types}${dates.length > 1 ? ` ${days.length}일` : ''})`)}</span>`
+    }
     $('bulkPeople').innerHTML =
       groups
         .map((g) => {
@@ -930,7 +1028,7 @@
                     const st = chosen.length ? M.pickStatus(people, m.id, chosen) : { kind: 'none' }
                     // a "no" the person set for themselves is not ticked: nothing was requested
                     const firm = st.kind === 'firm'
-                    return `<label class="th-check${firm ? ' firm' : ''}"><input type="checkbox" data-bid="${esc(m.id)}" ${d ? (bulk.on && !firm ? 'checked disabled' : 'disabled') : bulk.sel.has(m.id) ? 'checked' : ''} /> <span>${esc(m.name)}</span>${manualMark(m)}${m.id === me.id ? ` ${badge('muted', '나')}` : ''}${statusMark(st)}</label>`
+                    return `<label class="th-check${firm ? ' firm' : ''}"><input type="checkbox" data-bid="${esc(m.id)}" ${d ? (bulk.on && !firm ? 'checked disabled' : 'disabled') : bulk.sel.has(m.id) ? 'checked' : ''} /> <span>${esc(m.name)}</span>${manualMark(m)}${awayMark(m.id)}${m.id === me.id ? ` ${badge('muted', '나')}` : ''}${statusMark(st)}</label>`
                   })
                   .join('')}</div>`
               : ''
@@ -953,6 +1051,18 @@
       .filter((m) => (!q || m.name.includes(q)) && !M.settled(people, m.id, chosen, bulk.on))
       .map((m) => m.id)
   }
+  /** After a bulk request: who of `targets` now has a meal on a day 근무현황 says they are away (a warning). */
+  function bulkAbsent(slots, targets) {
+    const el = $('bulkAbsent')
+    const ids = new Set(targets.map((t) => t.id))
+    const dates = Array.from(new Set(slots.map((s) => s.date)))
+    const list = dates.length ? absencesFor(dates) : []
+    const got = list.length ? M.absentRequests(room, members, dates, list) : {}
+    const hits = []
+    for (const s of slots) for (const p of (got[s.date] && got[s.date][s.meal]) || []) if (ids.has(p.id)) hits.push(`${p.name}(${M.dateLabel(s.date, '')} ${M.MEALS[s.meal]}, ${p.text})`)
+    el.innerHTML = hits.length ? `${icon('triangle-alert')} <span>근무현황에 부재인 날에 신청됨 ${hits.length}건: ${esc(hits.join(', '))}. 신청은 그대로 두었습니다. 맞는지 확인하세요.</span>` : ''
+    el.hidden = !hits.length
+  }
   async function applyBulk() {
     if (busy) return
     const chosen = bulkChosen().map((s) => ({ date: s.date, meal: s.meal }))
@@ -971,6 +1081,7 @@
         if (r.result.applied) room = await call('rooms.setEntry', { roomId: room.id, value: r.entry })
         $('bulkResult').textContent = M.bulkSummary(r.result, bulk.on, chosen.length > 1)
         $('bulkResult').hidden = false
+        bulkAbsent(bulk.on && r.result.applied ? chosen : [], targets)
         bulk.sel = new Set()
       }
     } catch (e) {
@@ -1186,7 +1297,11 @@
   })
   document.addEventListener('change', (e) => {
     const el = e.target
-    if (el.dataset && el.dataset.proxySel) proxySel[el.dataset.proxySel] = el.value
+    if (el.dataset && el.dataset.proxySel) {
+      proxySel[el.dataset.proxySel] = el.value
+      const w = document.querySelector(`[data-proxy-warn="${el.dataset.proxySel}"]`)
+      if (w) w.outerHTML = proxyWarn(el.dataset.proxySel)
+    }
     if (el.id === 'statusPick' && el.value) {
       statusDate = el.value
       render()
@@ -1261,6 +1376,22 @@
     if (!typing()) render()
     else if ($('bulkDlg').open && !busy) renderBulkPeople()
   })
+  // 근무현황 changed (an absence or another calendar event): read the months shown again, once things settle
+  let absTimer = 0
+  window.TeamHub.on('absences.changed', () => {
+    clearTimeout(absTimer)
+    absTimer = setTimeout(() => void Promise.all(Object.keys(abs).map(readAbsences)).then(redraw), 1500)
+  })
+  // members, departments or the org order changed (조직 관리): lists follow the new 직제순
+  let orgTimer = 0
+  window.TeamHub.on('members.changed', () => {
+    clearTimeout(orgTimer)
+    orgTimer = setTimeout(async () => {
+      members = await call('members').catch(() => members)
+      await loadOrg()
+      redraw()
+    }, 1000)
+  })
   // countdowns, and the lock at the deadline
   setInterval(() => {
     // not while a list or a date field is open: a redraw would close it
@@ -1274,6 +1405,7 @@
       me = await call('me')
       await syncClock()
       members = await call('members').catch(() => [])
+      await loadOrg()
       await loadPeople()
       await loadHolidays()
       await load()

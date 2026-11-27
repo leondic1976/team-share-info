@@ -399,6 +399,8 @@ export interface IpcMap {
   'local:events.get': { req: { id: string }; res: PersonalEventDto | null }
   'local:events.save': { req: PersonalEventInput; res: string }
   'local:events.setBusy': { req: { id: string; busyEventId: string | null }; res: void }
+  'local:events.setAbsence': { req: { id: string; absenceEventId: string | null }; res: void }
+  'local:events.absenceChanged': { req: { absenceEventId: string; change: { startAt: number; endAt: number; allDay: boolean } | null }; res: number }
   'local:events.delete': { req: { id: string; mode?: 'all' | 'this' | 'following'; occurrence?: number }; res: void }
   'local:diary.get': { req: { date: string }; res: DiaryEntryDto | null }
   'local:diary.save': { req: { date: string; bodyHtml: string; tags: string[] }; res: DiaryEntryDto | null }
@@ -734,6 +736,8 @@ export const IPC_CHANNELS: readonly IpcChannel[] = [
   'local:events.get',
   'local:events.save',
   'local:events.setBusy',
+  'local:events.setAbsence',
+  'local:events.absenceChanged',
   'local:events.delete',
   'local:diary.get',
   'local:diary.save',

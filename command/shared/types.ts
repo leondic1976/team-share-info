@@ -96,10 +96,15 @@ export interface CmdSubstitution {
   toDate: string | null
 }
 
-/** A 근무현황 entry of the host for today (who is away and why), shown to those in charge. */
+/**
+ * A 근무현황 entry of the host from today through the next days (who is away, why, and which
+ * days: YYYY-MM-DD, both included, starting today at the earliest), shown to those in charge.
+ */
 export interface CmdHostAbsence {
   personId: string
   type: string
+  fromDate: string
+  toDate: string
 }
 
 export interface CmdRotation {
@@ -159,7 +164,7 @@ export interface CommandState {
   unreadNotices: number
   /** drills that are scheduled, running or paused, and the last ended ones */
   drills: CmdDrillBrief[]
-  /** those in charge only, when the host keeps a 근무현황: who is away today */
+  /** those in charge only, when the host keeps a 근무현황: who is away from today through the next days */
   hostAbsences?: CmdHostAbsence[]
   serverNow: number
 }

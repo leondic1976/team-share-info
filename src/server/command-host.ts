@@ -21,26 +21,45 @@ import { getSection } from './settings'
 import { parseJson } from '../node/sqlite'
 import { expand } from '../shared/recurrence'
 
-/** Who is away today by 근무현황 (the calendar's absence events, recurring ones expanded). */
-function absencesToday(ctx: ServerContext, now = Date.now()): { memberId: string; type: string }[] {
+const pad = (n: number): string => String(n).padStart(2, '0')
+/** Local calendar day of a moment (YYYY-MM-DD, as the command post's period fields). */
+const dayOf = (ms: number): string => {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/**
+ * The days an absence occurrence covers, from `today0` (local midnight of today) at the
+ * earliest. All-day events end at the next midnight (exclusive), so their last day is the day
+ * before `end`; a timed one lasts to the day of its end (one ending exactly at midnight, to the
+ * day before).
+ */
+export function absenceDays(o: { start: number; end: number }, today0: number): { fromDate: string; toDate: string } {
+  return { fromDate: dayOf(Math.max(o.start, today0)), toDate: dayOf(Math.max(o.start, o.end - 1)) }
+}
+
+/**
+ * Who is away by 근무현황 (the calendar's absence events, recurring ones expanded, each
+ * occurrence on its own) from today through the next `days` days, with each absence's days.
+ */
+export function absencesAhead(ctx: ServerContext, days: number, now = Date.now()): { memberId: string; type: string; fromDate: string; toDate: string }[] {
   if (getSection(ctx.db, 'ops').disabledFeatures.includes('duty')) return []
   const d = new Date(now)
   const from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const to = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime()
+  const to = new Date(d.getFullYear(), d.getMonth(), d.getDate() + Math.max(1, Math.min(31, Math.floor(days)))).getTime()
   const rows = ctx.db.all<{ created_by: string; absence_type: string | null; start_at: number; end_at: number; all_day: number; rrule: string | null; exdates: string }>(
     `SELECT e.created_by, e.absence_type, e.start_at, e.end_at, e.all_day, e.rrule, e.exdates FROM events e JOIN members m ON m.id = e.created_by AND m.status = 'active'
       WHERE e.kind = 'absence' AND e.deleted_at IS NULL AND e.start_at < ? AND (e.rrule IS NOT NULL OR e.end_at > ?)`,
     [to, from]
   )
-  const out = new Map<string, string[]>()
+  const out: { memberId: string; type: string; fromDate: string; toDate: string }[] = []
   for (const r of rows) {
-    if (!expand({ startAt: r.start_at, endAt: r.end_at, allDay: !!r.all_day, rrule: r.rrule, exdates: parseJson<number[]>(r.exdates, []) }, from, to, 5).length) continue
     const type = r.absence_type ?? '기타'
-    const cur = out.get(r.created_by) ?? []
-    if (!cur.includes(type)) cur.push(type)
-    out.set(r.created_by, cur)
+    for (const o of expand({ startAt: r.start_at, endAt: r.end_at, allDay: !!r.all_day, rrule: r.rrule, exdates: parseJson<number[]>(r.exdates, []) }, from, to, 100)) {
+      out.push({ memberId: r.created_by, type, ...absenceDays(o, from) })
+    }
   }
-  return [...out].map(([memberId, types]) => ({ memberId, type: types.join('·') }))
+  return out
 }
 
 export function registerCommand(app: FastifyInstance, ctx: ServerContext, guards: { requireAuth: preHandlerAsyncHookHandler }, opts: { memory?: boolean } = {}): CommandServer {
@@ -89,7 +108,7 @@ export function registerCommand(app: FastifyInstance, ctx: ServerContext, guards
     emit: (memberIds, event, payload) => (memberIds ? ctx.hub.sendTo(memberIds, event, payload) : ctx.hub.broadcast(event, payload)),
     fail: (status, code, message) => new AppError((code in ERROR_CODES ? code : status === 404 ? 'NOT_FOUND' : status === 403 ? 'FORBIDDEN' : 'BAD_REQUEST') as ErrorCode, message, status),
     ok: (data) => ok(data),
-    absencesToday: () => absencesToday(ctx),
+    absencesAhead: (days) => absencesAhead(ctx, days),
     log: (req, action, detail) => logActivity(ctx, req, action, null, detail),
     report: (message) => recordError(ctx, `command: ${message}`)
   }

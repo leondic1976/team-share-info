@@ -221,6 +221,15 @@ export function deptOptions<D extends DeptLike & { sort: number }>(depts: D[]): 
   return out
 }
 
+/**
+ * 직제순: each department's place in the org order the server PC sets (tree order, siblings by
+ * their order then name). Lists sort by it so a sub-department never lands among another
+ * parent's departments.
+ */
+export function deptRank<D extends DeptLike & { sort: number }>(depts: D[]): Map<string, number> {
+  return new Map(deptOptions(depts).map((o, i) => [o.id, i]))
+}
+
 /** Names are unique among the departments of one parent, not in the whole tree. */
 export function siblingNameTaken(depts: DeptLike[], parentId: string | null, name: string, selfId?: string): boolean {
   const key = deptKey(name)

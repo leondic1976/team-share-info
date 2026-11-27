@@ -8,7 +8,8 @@ import { RoleMark } from './RoleMark'
  * A member's name that opens the 1:1 conversation with them in a small messenger window.
  * My own name (or an unknown member) is plain text. It is a span with the link role, not a
  * button, because names also sit inside clickable rows and cards.
- * A 서무 gets the small "서무" mark right after the name (outside the link); pass
+ * A 서무 gets the small "서무" mark right after the name (outside the link), and anyone away
+ * today the 사고명 badge (연가, 출장...); pass
  * `noMark` where the link shows something other than the name (e.g. an icon).
  */
 export function MemberLink({
@@ -17,7 +18,8 @@ export function MemberLink({
   className,
   children,
   onOpen,
-  noMark
+  noMark,
+  noAbsence
 }: {
   memberId: string | null | undefined
   name: string
@@ -26,12 +28,14 @@ export function MemberLink({
   children?: ReactNode
   /** called after the window was asked for (e.g. to close the dialog the name is in) */
   onOpen?: () => void
-  /** leave out the 서무 mark */
+  /** leave out the 서무 mark (and the 사고명) */
   noMark?: boolean
+  /** leave out the 사고명 badge where the screen already shows the absence */
+  noAbsence?: boolean
 }): React.JSX.Element {
   const meId = useConn((s) => s.memberId)
   const label = children ?? name
-  const mark = noMark ? null : <RoleMark memberId={memberId} />
+  const mark = noMark ? null : <RoleMark memberId={memberId} noAbsence={noAbsence} />
   if (!memberId || memberId === meId)
     return (
       <>

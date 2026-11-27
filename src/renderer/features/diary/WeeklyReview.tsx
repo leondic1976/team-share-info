@@ -12,6 +12,7 @@ import { invoke } from '@renderer/lib/bridge'
 import { ymd } from '@renderer/lib/dates'
 import { useMe } from '@renderer/lib/queries'
 import { useConn } from '@renderer/app/conn-store'
+import { absenceTitle, myAbsencesForPersonal } from '@shared/absenceLink'
 
 const esc = (s: string): string => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)
 const text = (html: string): string => {
@@ -54,7 +55,9 @@ export function WeeklyReview(): React.JSX.Element {
         ...events
           .filter((e) => e.kind !== 'busy' && e.kind !== 'absence' && (e.authorId === me?.id || e.myResponse === 'yes' || e.scope.type === 'team'))
           .map((e) => ({ at: e.start, s: `${format(e.start, e.allDay ? 'M/d(EEE)' : 'M/d(EEE) HH:mm', { locale: ko })} ${esc(e.title)}` })),
-        ...pevents.map((e) => ({ at: e.start, s: `${format(e.start, e.allDay ? 'M/d(EEE)' : 'M/d(EEE) HH:mm', { locale: ko })} ${esc(e.title)}` }))
+        ...pevents.map((e) => ({ at: e.start, s: `${format(e.start, e.allDay ? 'M/d(EEE)' : 'M/d(EEE) HH:mm', { locale: ko })} ${esc(e.title)}${e.absenceEventId ? ' (사고 신청)' : ''}` })),
+        // my 사고 from 근무현황 (instruction 145); one filed from a personal event is that event above
+        ...myAbsencesForPersonal(events, pevents, me?.id).map((e) => ({ at: e.start, s: `${format(e.start, e.allDay ? 'M/d(EEE)' : 'M/d(EEE) HH:mm', { locale: ko })} ${esc(absenceTitle(e))}` }))
       ]
         .sort((a, b) => a.at - b.at)
         .map((e) => e.s)

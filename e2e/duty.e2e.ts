@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import type { Page } from 'playwright-core'
-import { go, joinAndApprove, launch, runWizard, type Launched } from './helpers'
+import { fillDateTime, go, joinAndApprove, launch, runWizard, type Launched } from './helpers'
 
 const PORT = '47917'
 const SHOTS = process.env.TEAMHUB_SHOT_DIR
@@ -150,6 +150,61 @@ describe('근무현황: who is away today, by department', () => {
     await go(a.page, '/calendar')
     await expect.poll(() => a.page.getByText('[출장] 팀원B').count(), { timeout: 15000 }).toBeGreaterThanOrEqual(1)
   }, 60000)
+
+  it('the 사고명 sits next to the name elsewhere in the program', async () => {
+    await go(a.page, '/directory')
+    await expect.poll(() => a.page.locator('[data-absence-mark="출장"]').count(), { timeout: 15000 }).toBeGreaterThanOrEqual(1)
+    expect(await a.page.locator('[data-absence-mark="출장"]').first().getAttribute('title')).toContain('오늘 출장')
+    await shot(a.page, 'duty-name-badge')
+  }, 60000)
+
+  it('my 사고 shows in my personal schedule, and a personal event files one (instruction 145)', async () => {
+    const p = b.page
+    // 근무현황 -> 개인 일정: the trip of today, without a copy
+    await go(p, '/calendar')
+    await p.getByRole('tab', { name: '개인 일정' }).click()
+    await expect.poll(() => p.getByText('[출장] 근무현황').count(), { timeout: 15000 }).toBeGreaterThanOrEqual(1)
+    await shot(p, 'calendar-personal-absence')
+    await p.getByRole('tab', { name: '전체' }).click()
+
+    // 개인 일정 -> 근무현황: only the type and the period go to the team
+    const day = new Date(2026, 11, 10)
+    const at = (h: number): number => new Date(2026, 11, 10, h).getTime()
+    await p.getByRole('button', { name: '새 일정' }).click()
+    const dlg = p.getByRole('dialog', { name: '새 일정' })
+    await dlg.getByRole('radio', { name: /개인 일정/ }).click()
+    await dlg.getByLabel('일정 제목').fill('병원E2E')
+    await fillDateTime(dlg, '시작', at(9))
+    await fillDateTime(dlg, '끝', at(12))
+    await dlg.getByLabel('근무현황에 사고 신청').check()
+    await dlg.getByLabel('사고 종류').selectOption('병가')
+    await shot(p, 'calendar-personal-duty')
+    await dlg.getByRole('button', { name: '저장' }).click()
+    await dlg.waitFor({ state: 'detached', timeout: 10000 })
+    const linked = (): Promise<{ title: string; absenceEventId: string | null }[]> =>
+      p.evaluate(([f, t]) => window.teamhub.invoke('local:events.list', { from: f, to: t }), [day.getTime(), day.getTime() + 86400000] as const).then((l) => l.map((e) => ({ title: e.title, absenceEventId: e.absenceEventId })))
+    expect((await linked())[0]?.absenceEventId).toBeTruthy()
+
+    await go(a.page, '/duty')
+    await a.page.getByRole('tab', { name: '일별' }).click()
+    await a.page.getByLabel('날짜 고르기').fill('2026-12-10')
+    await expect.poll(() => a.page.getByTestId('duty-row').count(), { timeout: 15000 }).toBe(1)
+    const row = (await a.page.getByTestId('duty-row').textContent()) ?? ''
+    expect(row).toContain('팀원B')
+    expect(row).toContain('병가')
+    expect(row).toContain('09:00~12:00')
+    expect(row).not.toContain('병원E2E')
+
+    // taken back in 근무현황: the personal event stays, only the link goes
+    await go(p, '/duty')
+    await p.getByRole('tab', { name: '일별' }).click()
+    await p.getByLabel('날짜 고르기').fill('2026-12-10')
+    await expect.poll(() => p.getByTestId('duty-row').count(), { timeout: 15000 }).toBe(1)
+    await p.getByTestId('duty-row').getByRole('button', { name: /지우기/ }).click()
+    await expect.poll(() => a.page.getByTestId('duty-row').count(), { timeout: 15000 }).toBe(0)
+    await expect.poll(async () => (await linked())[0], { timeout: 10000 }).toEqual({ title: '병원E2E', absenceEventId: null })
+    await a.page.getByLabel('날짜 고르기').fill(new Date().toISOString().slice(0, 10))
+  }, 90000)
 
   it('the admin names a 대리 등록자, who may then record for others', async () => {
     await go(a.page, '/duty')

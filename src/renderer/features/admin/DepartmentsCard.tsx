@@ -105,7 +105,7 @@ export function MemberOrderCard(): React.JSX.Element {
                       <span className="w-6 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
                       <span className="min-w-0 flex-1 truncate">
                         {displayName(m)}
-                        <RoleMark role={m.role} isOwner={m.isOwner} /> <span className="text-xs text-muted-foreground">{m.title}</span>
+                        <RoleMark memberId={m.id} role={m.role} isOwner={m.isOwner} /> <span className="text-xs text-muted-foreground">{m.title}</span>
                       </span>
                       <Button size="icon-sm" variant="ghost" aria-label={`${m.name} 위로`} disabled={i === 0 || save.isPending} onClick={() => move(r.id, list, i, -1)}>
                         <ArrowUp />

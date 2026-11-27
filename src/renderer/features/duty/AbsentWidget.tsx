@@ -70,7 +70,7 @@ export function AbsentWidget(): React.JSX.Element | null {
                 {people.map(({ m, entries }) => (
                   <div key={m.id} className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted" data-testid="absent-row">
                     <span className="w-28 shrink-0 truncate">
-                      <MemberLink memberId={m.id} name={m.name} className="font-medium">
+                      <MemberLink memberId={m.id} name={m.name} noAbsence className="font-medium">
                         {dn(m)}
                       </MemberLink>{' '}
                       <span className="text-xs text-muted-foreground">{m.title}</span>

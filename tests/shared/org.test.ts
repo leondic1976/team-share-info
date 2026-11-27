@@ -11,6 +11,7 @@ import {
   deptOptions,
   deptPath,
   deptPathText,
+  deptRank,
   findDeptByPath,
   findOrgNode,
   flattenOrg,
@@ -175,5 +176,14 @@ describe('affiliation: a path through the department tree', () => {
     expect(findDeptByPath(depts, ['본부', '기획과', '서무팀'])).toBe('plan1')
     expect(findDeptByPath(depts, ['본부', '없는과'])).toBeNull()
     expect(findDeptByPath(depts, [])).toBeNull()
+  })
+})
+
+describe('직제순 (deptRank)', () => {
+  it('walks the tree: a sub-department stays under its parent, siblings by their order', () => {
+    // flat "ORDER BY sort" would give A, A1, B1, B: B1 (sort 0) jumped ahead of its parent B
+    const depts = [dept('B', null, 1), dept('A', null, 0), dept('B1', 'B', 0), dept('A2', 'A', 1), dept('A1', 'A', 0)]
+    const rank = deptRank(depts)
+    expect([...depts].sort((a, b) => rank.get(a.id)! - rank.get(b.id)!).map((d) => d.id)).toEqual(['A', 'A1', 'A2', 'B', 'B1'])
   })
 })

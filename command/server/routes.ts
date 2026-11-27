@@ -12,7 +12,7 @@ import * as S from './store'
 import { newId, parseJson } from './sqlite'
 import * as V from '../shared/schemas'
 import type { CmdMaterial, CmdNotice, CommandState, Mark, ScenarioMsg } from '../shared/types'
-import { answerRefusal, applyMarkChanges, checkSubstitution, coveringIn, drillElapsedMs, periodText, rolePath, roleWithChildren, ymd } from '../shared/logic'
+import { ABSENCE_HINT_DAYS, answerRefusal, applyMarkChanges, checkSubstitution, coveringIn, drillElapsedMs, mergeAbsences, periodText, rolePath, roleWithChildren, ymd } from '../shared/logic'
 import type { CommandChangedPayload, CommandDrillPayload } from '../shared/events'
 
 export const OWNER = { notice: 'cmd_notice', material: 'cmd_material', scenario: 'cmd_scenario', answer: 'cmd_answer' } as const
@@ -172,10 +172,17 @@ export function registerCommandRoutes(app: FastifyInstance, host: CommandServerH
       drills: S.drillBriefs(db, u.id),
       serverNow: Date.now()
     }
-    // the hint "away today — name a substitute" is for those in charge
-    if (u.manager && host.absencesToday) {
+    // the hint "away then (today through the next days) — name a substitute" is for those in charge
+    if (u.manager && host.absencesAhead) {
       try {
-        state.hostAbsences = host.absencesToday().map((x) => ({ personId: x.memberId, type: x.type }))
+        const today = ymd(Date.now())
+        const day = /^\d{4}-\d{2}-\d{2}$/
+        const list = host
+          .absencesAhead(ABSENCE_HINT_DAYS)
+          .filter((x) => day.test(x.fromDate) && day.test(x.toDate))
+          .map((x) => ({ personId: x.memberId, type: x.type, fromDate: x.fromDate < today ? today : x.fromDate, toDate: x.toDate }))
+          .filter((x) => x.toDate >= x.fromDate)
+        state.hostAbsences = mergeAbsences(list)
       } catch (e) {
         host.report?.(`absences: ${e instanceof Error ? e.message : String(e)}`)
       }

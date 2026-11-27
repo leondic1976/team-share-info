@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { activeSubstitutions, checkSubstitution, coveringIn, effectiveAssignments, effectiveCommon, headcount, periodsOverlap, substitutionPhase } from '../shared/logic'
-import type { CmdAssignment, CmdCommon, CmdException, CmdPerson, CmdRole, CmdSubstitution, CmdTeam } from '../shared/types'
+import { absenceHints, activeSubstitutions, addDays, atTime, checkSubstitution, coveringIn, daysLabel, effectiveAssignments, effectiveCommon, headcount, mergeAbsences, periodsOverlap, substitutionPhase, teamsOnDuty, uncoveredDays } from '../shared/logic'
+import type { CmdAssignment, CmdCommon, CmdException, CmdHostAbsence, CmdOverride, CmdPerson, CmdRole, CmdRotation, CmdSubstitution, CmdTeam } from '../shared/types'
 
 const person = (id: string, name: string, temp = false): CmdPerson => ({ id, name, title: '', dept: '', temp })
 const people = [person('kim', '김부재'), person('lee', '이대리'), person('park', '박조원'), person('choi', '최예외'), person('x:t', '정임시', true), person('han', '한바깥')]
@@ -124,5 +124,92 @@ describe('대리자: rules', () => {
     expect(coveringIn([s], 'lee', '2026-12-05', null)).toBe(s)
     expect(coveringIn([s], 'lee', '2026-12-06', null)).toBeUndefined()
     expect(coveringIn([s], 'kim', '2026-12-01', null)).toBeUndefined()
+  })
+})
+
+describe('대리자: hints from the host 근무현황', () => {
+  const abs = (o: Partial<CmdHostAbsence>): CmdHostAbsence => ({ personId: 'kim', type: '연가', fromDate: '2026-11-28', toDate: '2026-11-30', ...o })
+  // A조 and B조 by turns, a day each, from 09:00 (A조 on 11-27 09:00 ~ 11-28 09:00)
+  const rotation: CmdRotation = { baseDate: '2026-11-27', shiftTime: '09:00', periodDays: 1, order: ['A', 'B'] }
+  const base = { substitutions: [] as CmdSubstitution[], exceptions: [] as CmdException[], assignments, common, rotation, overrides: [] as CmdOverride[], known: () => true }
+
+  it('days: moved across months, labelled with 오늘 and the year when it is another year', () => {
+    expect(addDays('2026-11-30', 1)).toBe('2026-12-01')
+    expect(addDays('2026-12-31', 1)).toBe('2027-01-01')
+    expect(addDays('2026-03-01', -1)).toBe('2026-02-28')
+    expect(daysLabel('2026-11-27', '2026-11-27', '2026-11-27')).toBe('오늘')
+    expect(daysLabel('2026-11-28', '2026-11-28', '2026-11-27')).toBe('11월 28일')
+    expect(daysLabel('2026-11-28', '2026-11-30', '2026-11-27')).toBe('11월 28일~11월 30일')
+    expect(daysLabel('2026-11-27', '2026-11-29', '2026-11-27')).toBe('오늘~11월 29일')
+    expect(daysLabel('2026-12-30', '2027-01-02', '2026-11-27')).toBe('12월 30일~2027년 1월 2일')
+  })
+
+  it('a repeating absence day after day becomes one period; another reason or a gap stays apart', () => {
+    const merged = mergeAbsences([
+      abs({ fromDate: '2026-11-29', toDate: '2026-11-29' }),
+      abs({ fromDate: '2026-11-28', toDate: '2026-11-28' }),
+      abs({ fromDate: '2026-11-30', toDate: '2026-12-01' }),
+      abs({ fromDate: '2026-12-03', toDate: '2026-12-03' }),
+      abs({ type: '교육', fromDate: '2026-11-29', toDate: '2026-11-29' }),
+      abs({ personId: 'park', fromDate: '2026-11-27', toDate: '2026-11-27' })
+    ])
+    expect(merged).toEqual([
+      abs({ personId: 'park', fromDate: '2026-11-27', toDate: '2026-11-27' }),
+      abs({ fromDate: '2026-11-28', toDate: '2026-12-01' }),
+      abs({ type: '교육', fromDate: '2026-11-29', toDate: '2026-11-29' }),
+      abs({ fromDate: '2026-12-03', toDate: '2026-12-03' })
+    ])
+  })
+
+  it('uncovered days: whole, none, the days left before, between and after; an open end covers the rest', () => {
+    expect(uncoveredDays('2026-11-28', '2026-11-30', [])).toEqual([{ fromDate: '2026-11-28', toDate: '2026-11-30' }])
+    expect(uncoveredDays('2026-11-28', '2026-11-30', [{ fromDate: '2026-11-20', toDate: '2026-12-02' }])).toEqual([])
+    expect(uncoveredDays('2026-11-28', '2026-11-30', [{ fromDate: '2026-11-29', toDate: null }])).toEqual([{ fromDate: '2026-11-28', toDate: '2026-11-28' }])
+    expect(
+      uncoveredDays('2026-11-28', '2026-12-04', [
+        { fromDate: '2026-12-02', toDate: '2026-12-02' },
+        { fromDate: '2026-11-29', toDate: '2026-11-30' },
+        { fromDate: '2026-12-10', toDate: '2026-12-12' }
+      ])
+    ).toEqual([
+      { fromDate: '2026-11-28', toDate: '2026-11-28' },
+      { fromDate: '2026-12-01', toDate: '2026-12-01' },
+      { fromDate: '2026-12-03', toDate: '2026-12-04' }
+    ])
+  })
+
+  it('the 조 on duty in a period by the rotation, a period set by hand included', () => {
+    expect([...teamsOnDuty(rotation, [], atTime('2026-11-27', '10:00'), atTime('2026-11-27', '20:00'))]).toEqual(['A'])
+    expect([...teamsOnDuty(rotation, [], atTime('2026-11-28', '00:00'), atTime('2026-11-29', '00:00'))].sort()).toEqual(['A', 'B'])
+    const o: CmdOverride = { id: 'o', fromAt: atTime('2026-11-27', '12:00'), toAt: atTime('2026-11-27', '13:00'), teamId: 'B', note: '', createdAt: 1 }
+    expect([...teamsOnDuty(rotation, [o], atTime('2026-11-27', '10:00'), atTime('2026-11-27', '20:00'))].sort()).toEqual(['A', 'B'])
+    expect(teamsOnDuty(null, [], atTime('2026-11-27', '00:00'), atTime('2026-11-28', '00:00')).size).toBe(0)
+  })
+
+  it('a hint for the whole absence, none when a substitution or exception covers it, the days left when only some are', () => {
+    expect(absenceHints({ ...base, absences: [abs({})] })).toEqual([{ ...abs({}), gaps: [{ fromDate: '2026-11-28', toDate: '2026-11-30' }], partial: false }])
+    // covered all through: nothing to say
+    expect(absenceHints({ ...base, absences: [abs({})], substitutions: [sub({ fromDate: '2026-11-28', toDate: '2026-11-30' })] })).toEqual([])
+    expect(absenceHints({ ...base, absences: [abs({})], substitutions: [sub({ fromDate: '2026-11-28', toDate: '2026-11-28' }), sub({ id: 's2', fromDate: '2026-11-29', toDate: null })] })).toEqual([])
+    expect(absenceHints({ ...base, absences: [abs({})], exceptions: [{ id: 'e', personId: 'kim', reason: '', fromDate: '2026-11-01', toDate: null }] })).toEqual([])
+    // covered in part: the days left
+    const part = absenceHints({ ...base, absences: [abs({})], substitutions: [sub({ fromDate: '2026-11-28', toDate: '2026-11-28' })] })
+    expect(part).toEqual([{ ...abs({}), gaps: [{ fromDate: '2026-11-29', toDate: '2026-11-30' }], partial: true }])
+    // somebody else's substitution, or one by a substitute no longer there, covers nothing
+    expect(absenceHints({ ...base, absences: [abs({})], substitutions: [sub({ personId: 'park', fromDate: '2026-11-28', toDate: '2026-11-30' })] })[0].partial).toBe(false)
+    expect(absenceHints({ ...base, absences: [abs({})], substitutions: [sub({ fromDate: '2026-11-28', toDate: '2026-11-30' })], known: () => false })[0].partial).toBe(false)
+  })
+
+  it('only for somebody with a place on duty then: in a 조 on duty or with a 공통업무', () => {
+    // 박조원 (A조, no 공통업무)
+    expect(absenceHints({ ...base, absences: [abs({ personId: 'park', fromDate: '2026-11-27', toDate: '2026-11-27' })] })).toHaveLength(1)
+    // a week each: A조 until 12-04 09:00, then B조 — 박조원 away on 12-05 needs nobody
+    const weekly = { ...rotation, periodDays: 7 }
+    expect(absenceHints({ ...base, rotation: weekly, absences: [abs({ personId: 'park', fromDate: '2026-12-05', toDate: '2026-12-05' })] })).toEqual([])
+    expect(absenceHints({ ...base, rotation: weekly, absences: [abs({ personId: 'park', fromDate: '2026-12-04', toDate: '2026-12-05' })] })).toHaveLength(1)
+    // no rotation: only a fixed 공통업무 counts (김부재 drives 장비운반차; 박조원 has nothing)
+    expect(absenceHints({ ...base, rotation: null, absences: [abs({ personId: 'park' }), abs({})] }).map((x) => x.personId)).toEqual(['kim'])
+    // 한바깥 has no place at all
+    expect(absenceHints({ ...base, absences: [abs({ personId: 'han' })] })).toEqual([])
   })
 })

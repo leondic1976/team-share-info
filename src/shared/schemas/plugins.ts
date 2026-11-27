@@ -9,6 +9,7 @@ import { scopeSchema, type ScopeDto } from './scope'
 
 export const PLUGIN_PERMISSIONS = {
   members: '팀원 이름·부서 보기',
+  duty: '근무현황의 부재(사유·기간) 보기',
   storage: '이 PC에 확장 기능 데이터 저장',
   rooms: '팀원과 함께하는 방 만들기·참여(서버에 저장)',
   notify: 'Windows 알림 보내기',

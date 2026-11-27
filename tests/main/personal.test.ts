@@ -37,6 +37,25 @@ describe('personal events (local DB)', () => {
   })
 })
 
+describe('personal event <-> 근무현황 사고 (instruction 145)', () => {
+  it('keeps the link, follows the 사고 times, and only unlinks when the 사고 is taken back', () => {
+    const repo = new PersonalEventsRepo(open())
+    const id = repo.save({ title: '병원', startAt: L(2026, 12, 3, 9), endAt: L(2026, 12, 3, 12) })
+    repo.setAbsenceLink(id, 'abs1')
+    expect(repo.get(id)?.absenceEventId).toBe('abs1')
+    expect(repo.list(L(2026, 12, 3), L(2026, 12, 4))[0]?.absenceEventId).toBe('abs1')
+    // changed in 근무현황: the personal event takes the new period
+    expect(repo.absenceChanged('abs1', { startAt: L(2026, 12, 4), endAt: L(2026, 12, 5), allDay: true })).toBe(1)
+    const moved = repo.get(id)!
+    expect([moved.startAt, moved.endAt, moved.allDay, moved.title]).toEqual([L(2026, 12, 4), L(2026, 12, 5), true, '병원'])
+    // another 사고: nothing follows
+    expect(repo.absenceChanged('other', { startAt: 0, endAt: 1, allDay: false })).toBe(0)
+    // taken back: the personal event stays, unlinked
+    expect(repo.absenceChanged('abs1', null)).toBe(1)
+    expect(repo.get(id)).toMatchObject({ title: '병원', absenceEventId: null })
+  })
+})
+
 describe('diary (local DB)', () => {
   it('saves one entry per day, lists month, searches, and deletes empty entries', () => {
     const repo = new DiaryRepo(open())
