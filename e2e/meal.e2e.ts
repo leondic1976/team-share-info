@@ -34,15 +34,12 @@ describe('식사 신청 extension: request, cancel, request again until the dead
     await a?.close()
   })
 
-  it('setup: both PCs install it', async () => {
+  it('setup: nothing to install, it is part of the program (instruction 148)', async () => {
     a = await launch({ profile: 'e2e-meala' })
     await runWizard(a.page, PORT)
     b = await launch({ profile: 'e2e-mealb' })
     await joinAndApprove(a.page, b.page, PORT, '팀원B')
-    for (const l of [a, b]) {
-      const r = await l.page.evaluate(() => window.teamhub.invoke('plugins:installCatalog', { id: 'meal', builtin: true }))
-      expect(r.ok, r.error ?? '').toBe(true)
-    }
+    for (const l of [a, b]) expect((await l.page.evaluate(() => window.teamhub.invoke('plugins:list', undefined))).some((p) => p.manifest.id === 'meal')).toBe(false)
   }, 120000)
 
   it('nothing can be requested until the admin (server PC) sets the deadlines', async () => {

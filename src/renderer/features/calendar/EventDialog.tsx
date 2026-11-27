@@ -177,7 +177,8 @@ export function EventDialog({ target, onClose }: { target: EventTarget; onClose:
         }))
         setLoaded(true)
         // the 사고 may have been changed or taken back in 근무현황 (also from another PC)
-        if (e.absenceEventId && online)
+        // read at this moment: a later change of the connection must not reload the form
+        if (e.absenceEventId && useConn.getState().state === 'online')
           void api
             .get<EventDto>(`/api/events/${e.absenceEventId}`)
             .then((a) => {

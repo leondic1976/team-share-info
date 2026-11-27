@@ -5,6 +5,7 @@ import { dirname, extname, join, normalize } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import log from 'electron-log/main'
 import { DOWNLOAD_SITE } from '../shared/constants'
+import { CORE_PLUGINS } from '../shared/corePlugins'
 import { compareVersions } from '../shared/semver'
 import { fetchDownloadCounts, hitDownload, type CounterFetch } from '../shared/plugin-stats'
 import { pluginBundleSchema, PLUGIN_ID_RE, type CatalogPlugin, type InstalledPlugin, type PluginBundle, type PluginManifest, type PluginPermission } from '../shared/schemas/plugins'
@@ -47,8 +48,9 @@ const CSP = `default-src ${PLUGIN_SCHEME}:; script-src ${PLUGIN_SCHEME}: 'unsafe
  * Features of the app itself that run in the same isolated frame as plugins but ship in
  * resources/<folder> (no install, cannot be removed). 관리대장 used to be the "스마트 대장"
  * plugin with this id, so it keeps that id and its local data (kv keys plugin:ledger:*).
+ * The core screens (src/shared/corePlugins.ts: 식사 신청) likewise, with the host's own frame.
  */
-export const BUILTIN_APPS: Record<string, string> = { ledger: 'ledger' }
+export const BUILTIN_APPS: Record<string, string> = { ledger: 'ledger', ...Object.fromEntries(Object.keys(CORE_PLUGINS).map((id) => [id, id])) }
 const isBuiltinApp = (id: string): boolean => Object.hasOwn(BUILTIN_APPS, id)
 
 const root = (): string => localDataPath('plugins')
@@ -81,7 +83,12 @@ function retireBuiltinPlugins(): void {
   const gone = Object.keys(r).filter(isBuiltinApp)
   if (!gone.length) return
   for (const id of gone) {
-    rmSync(join(root(), id), { recursive: true, force: true })
+    // a file held open (a virus scan) must not keep the old copy registered: the screen comes from the program either way
+    try {
+      rmSync(join(root(), id), { recursive: true, force: true })
+    } catch (e) {
+      log.warn(`[plugins] could not remove the old files of ${id}`, e)
+    }
     delete r[id]
     log.info(`[plugins] ${id} is now built in; removed the installed plugin and kept its data`)
   }

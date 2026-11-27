@@ -16,7 +16,7 @@ export default tseslint.config(
   },
   {
     // Plugins and the built-in ledger screen are plain browser scripts running in a sandboxed frame.
-    files: ['plugins/**/*.js', 'resources/ledger/**/*.js'],
+    files: ['plugins/**/*.js', 'resources/ledger/**/*.js', 'resources/meal/**/*.js'],
     languageOptions: { sourceType: 'script', globals: { ...globals.browser } }
   },
   {

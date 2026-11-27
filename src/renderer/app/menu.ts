@@ -57,7 +57,7 @@ export const MENU: MenuItem[] = [
   { key: 'collect', label: '자료 취합', path: '/collect', icon: FolderInput },
   { key: 'org', label: '조직도', path: '/org', icon: Network },
   { key: 'directory', label: '주소록', path: '/directory', icon: Contact },
-  // a built-in extension (plugins/meal) shown as a menu of its own; installed by itself when first opened
+  // part of the program (resources/meal, src/shared/corePlugins.ts): no install, no version of its own
   { key: 'meal', label: '식사 신청', path: '/meal', icon: Utensils },
   { key: 'docs', label: '기록', path: '/docs', icon: BookOpen },
   // 긴급구조통제단·긴급구조현장지휘대(지휘반) 운영·훈련·연습·숙지 (지시 79, 내용은 나중에)

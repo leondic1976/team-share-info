@@ -8,7 +8,7 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const SCAN_DIRS = ['src', 'plugins', 'resources/ledger', 'site', 'docs/manual'];
+export const SCAN_DIRS = ['src', 'plugins', 'resources/ledger', 'resources/meal', 'site', 'docs/manual'];
 const TEXT_EXT = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs', '.css', '.html', '.json', '.md', '.svg', '.txt']);
 const SKIP_DIRS = new Set(['node_modules', 'out', 'dist', '.git']);
 // The one file where emoji belong: the messenger's emoticon set (user decision 2026-11-25, 지시 62).

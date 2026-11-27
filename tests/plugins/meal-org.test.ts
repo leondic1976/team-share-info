@@ -6,7 +6,7 @@ import { runInNewContext } from 'node:vm'
 /* 식사 신청 1.9.0: departments in 직제순 (지시 146) and 근무현황 absences next to the meals (지시 145-4). */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const ctx: Record<string, any> = {}
-runInNewContext(readFileSync(join(import.meta.dirname, '../../plugins/meal/meal.js'), 'utf8'), ctx)
+runInNewContext(readFileSync(join(import.meta.dirname, '../../resources/meal/meal.js'), 'utf8'), ctx)
 const M = ctx.Meal
 const plain = (v: unknown): any => JSON.parse(JSON.stringify(v))
 

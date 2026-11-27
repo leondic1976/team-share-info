@@ -44,7 +44,7 @@ TeamHub가 모든 확장 기능 화면에 `__ui.css`(`resources/ui/base.css`)를
 - `<html class="th-ui">`로 쓰겠다고 하면 글자 크기(14px 기준 rem)·바탕·글자색·스크롤바가 본 화면과 같아집니다. 쓰지 않는 확장 기능에는 아무것도 바뀌지 않습니다(클래스는 모두 `th-`로 시작).
 - 틀: `.th-page` > `.th-page-header`(제목 `h1` + 한 줄 설명 `p`, 오른쪽 `.th-actions`) + `.th-toolbar`(`.th-tabs` 안에 `.th-btn.th-tab[aria-selected]`) + `.th-body`.
 - 부품: `.th-btn`(+ `-outline` `-secondary` `-ghost` `-destructive` `-sm` `-icon`), `.th-card`(`.th-card-header` `.th-card-title` `.th-card-body`), `.th-input`(input·select·textarea), `.th-field` `.th-label` `.th-hint` `.th-check` `.th-error`, `.th-badge`(+ `-success` `-important` `-muted` `-urgent`), `.th-table`(`.th-num`), `.th-empty`(`.th-empty-title`), `.th-chips` > `.th-chip`(필터·태그·선택 단추: `aria-pressed`/`aria-checked`가 true이거나 안의 input이 체크되면 선택 표시, 개수는 `<b>`), `.th-meter`(비율·진행 막대: 안에 `<i style="width:40%">`), `.th-notice`, `.th-toast`, `.th-dialog`, `.th-menu`(단추에서 펼치는·오른쪽 클릭 메뉴: 안에 `button`, 구분선 `hr`, 위험한 항목 `.th-menu-danger`), `.th-print-only` `.th-no-print`.
-- 예시: `plugins/meal`(이 모양만 쓰고 자기 CSS에는 배치만 둠). 기본 제공 확장 기능과 관리대장은 모두 이 공용 스타일을 씁니다.
+- 예시: `resources/meal`(식사 신청, 지금은 프로그램에 들어 있는 화면. 이 모양만 쓰고 자기 CSS에는 배치만 둠). 기본 제공 확장 기능과 관리대장은 모두 이 공용 스타일을 씁니다.
 - `__ui.css`는 이 기능이 들어간 TeamHub부터 있습니다. 예전 TeamHub에서는 꾸밈 없이 보이므로, 확인하려면 `getComputedStyle(document.documentElement).getPropertyValue('--th-ui')`가 비어 있는지 봅니다.
 
 ## 아이콘 (이모지 금지)

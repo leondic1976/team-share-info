@@ -40,7 +40,7 @@ const ALLOWED: { file: string; pattern: RegExp; why: string }[] = [
 describe('no emoji in the program', () => {
   it('scans the folders a user can see', async () => {
     const s = await load()
-    expect(s.SCAN_DIRS).toEqual(['src', 'plugins', 'resources/ledger', 'site', 'docs/manual'])
+    expect(s.SCAN_DIRS).toEqual(['src', 'plugins', 'resources/ledger', 'resources/meal', 'site', 'docs/manual'])
   })
 
   it('recognises emoji and leaves plain typography alone', async () => {

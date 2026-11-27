@@ -7,7 +7,7 @@ import { mealPeopleOf } from '../../src/server/meal-people'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const ctx: Record<string, any> = {}
-runInNewContext(readFileSync(join(import.meta.dirname, '../../plugins/meal/meal.js'), 'utf8'), ctx)
+runInNewContext(readFileSync(join(import.meta.dirname, '../../resources/meal/meal.js'), 'utf8'), ctx)
 const M = ctx.Meal
 
 // Monday 2026-11-23

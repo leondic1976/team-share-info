@@ -18,6 +18,7 @@ import { MENU_PLUGINS } from '@renderer/app/menu'
 import { Puzzle } from 'lucide-react'
 import { detectPii, PII_LABEL } from '@shared/pii'
 import { cachedRead } from '@renderer/lib/warm-cache'
+import { coreManifest, isCorePlugin } from '@shared/corePlugins'
 
 type Msg = { th: 1; id: string; method: string; params: Record<string, unknown> | null }
 
@@ -31,6 +32,12 @@ type Msg = { th: 1; id: string; method: string; params: Record<string, unknown> 
  * any other extension.
  */
 export function MenuPlugin({ id }: { id: string }): React.JSX.Element {
+  // part of the program (식사 신청): nothing to install or switch on
+  if (isCorePlugin(id)) return <PluginHost fixedId={id} />
+  return <InstalledMenuPlugin id={id} />
+}
+
+function InstalledMenuPlugin({ id }: { id: string }): React.JSX.Element {
   const qc = useQueryClient()
   const list = useQuery({ queryKey: ['local', 'plugins'], queryFn: () => invoke('plugins:list'), networkMode: 'always' })
   const have = list.data?.find((p) => p.manifest.id === id)
@@ -65,15 +72,31 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
   const { data: me } = useMe()
   const theme = usePrefs((s) => s.theme)
   const list = useQuery({ queryKey: ['local', 'plugins'], queryFn: () => invoke('plugins:list'), networkMode: 'always' })
-  const plugin: InstalledPlugin | undefined = list.data?.find((p) => p.manifest.id === id)
+  const core = isCorePlugin(id)
+  const [coreEntry] = useState<InstalledPlugin | null>(() => (core ? { manifest: coreManifest(id), installedAt: 0, source: 'builtin', enabled: true } : null))
+  const plugin: InstalledPlugin | undefined = coreEntry ?? list.data?.find((p) => p.manifest.id === id)
   const [src, setSrc] = useState('')
   const room = params.get('room')
+  // a screen that never asks the host for anything did not start (a file that did not load, an
+  // error before its first call): say so and offer to load it again instead of a blank page
+  const heard = useRef(false)
+  const [stuck, setStuck] = useState(false)
+  const [reload, setReload] = useState(0)
+  useEffect(() => {
+    if (!src) return
+    heard.current = false
+    setStuck(false)
+    const t = window.setTimeout(() => {
+      if (!heard.current) setStuck(true)
+    }, 20000)
+    return () => window.clearTimeout(t)
+  }, [src, reload])
 
   // opened on this PC: counted as using it (확장 기능 page, 지시 92); offline it is simply not counted
   const enabled = !!plugin?.enabled
   useEffect(() => {
-    if (enabled) void api.post(`/api/plugins/${encodeURIComponent(id)}/used`).catch(() => undefined)
-  }, [enabled, id])
+    if (enabled && !core) void api.post(`/api/plugins/${encodeURIComponent(id)}/used`).catch(() => undefined)
+  }, [enabled, id, core])
 
   useEffect(() => {
     if (!plugin?.enabled) return
@@ -192,6 +215,10 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
     }
     const onMessage = (e: MessageEvent): void => {
       if (e.source !== frame.current?.contentWindow) return
+      if (!heard.current) {
+        heard.current = true
+        setStuck(false)
+      }
       const m = e.data as Msg
       if (!m || m.th !== 1 || typeof m.id !== 'string' || typeof m.method !== 'string') return
       const refused = bridgeRefusal(m.method, perms)
@@ -230,15 +257,23 @@ export function PluginHost({ fixedId }: { fixedId?: string } = {}): React.JSX.El
   if (id === 'ledger') return <Navigate to={`/ledger${room ? `?room=${room}` : ''}`} replace />
   // extensions with a menu of their own are opened there
   if (!fixedId && MENU_PLUGINS[id]) return <Navigate to={`${MENU_PLUGINS[id]}${room ? `?room=${room}` : ''}`} replace />
-  if (list.isFetched && !plugin)
+  if (!core && list.isFetched && !plugin)
     return <EmptyState icon={Puzzle} title="설치되지 않은 확장 기능입니다" action={<Button onClick={() => navigate(`/plugins?install=${id}`)}>확장 기능 화면으로</Button>} />
   if (plugin && !plugin.enabled) return <EmptyState icon={Puzzle} title={`${plugin.manifest.name}이(가) 꺼져 있습니다`} description="확장 기능 화면에서 켤 수 있습니다." />
   return (
     <div className="flex h-full flex-col">
+      {stuck && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-important/10 px-5 py-2 text-sm" role="alert" data-testid="plugin-stuck">
+          <span className="min-w-0 flex-1">{plugin?.manifest.name ?? '화면'}이(가) 열리지 않고 있습니다. 다시 불러오세요. 계속되면 서버 연결을 확인하거나 TeamHub를 다시 시작하세요.</span>
+          <Button size="sm" variant="outline" onClick={() => setReload((n) => n + 1)}>
+            다시 불러오기
+          </Button>
+        </div>
+      )}
       {src && (
         <iframe
           ref={frame}
-          key={src}
+          key={`${src}#${reload}`}
           src={src}
           title={plugin?.manifest.name ?? '확장 기능'}
           sandbox="allow-scripts allow-forms allow-modals"
