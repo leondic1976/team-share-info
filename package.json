@@ -1,7 +1,7 @@
 {
   "name": "teamhub",
   "productName": "TeamHub",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "description": "TeamHub - 팀 정보공유 프로그램",
   "author": "TeamHub",
   "private": true,
